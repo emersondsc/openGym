@@ -9,7 +9,10 @@
 # module-resolution errors.
 FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
+# build deps para node-gyp compilar 'sharp' (libvips) em aarch64
+RUN apk add --no-cache python3 make g++ libc-dev vips-dev pkgconfig
 COPY frontend/package.json frontend/package-lock.json* ./
+ENV npm_config_build_from_source=true
 RUN npm ci 2>/dev/null || npm install
 COPY frontend/ ./
 RUN npm run build
