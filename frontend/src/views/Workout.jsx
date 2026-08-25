@@ -54,6 +54,47 @@ function Elapsed({ start }) {
 }
 
 /* ---------- one exercise block (reps: weight×reps · time: a held duration · cardio: duration+speed) ---------- */
+
+// Rest-time chip (spec: timer de descanso por exercício). Shows the entry's own override,
+// or the global default when none is set — the highlight colour marks an override. Tapping
+// opens the preset sheet; choosing "Default" clears the override so the global applies again.
+const REST_PRESETS = [60, 90, 120, 150, 180]
+function RestChip({ entry, onChange }) {
+  const S = useStore(s => s.S)
+  const openSheet = useUI(s => s.openSheet)
+  const sec = entry.restSec ?? S.restSec
+  const custom = entry.restSec != null
+  const open = () => {
+    openSheet(close => (
+      <>
+        <h3>{t('Rest time')}</h3>
+        <div className="sect-b">
+          {REST_PRESETS.map(v => (
+            <button key={v} className="lrow tap" onClick={() => { close(); onChange(v) }}>
+              <span className="lrow-m"><span className="lrow-t">{v}s</span></span>
+              {(entry.restSec ?? S.restSec) === v && <Icon name="check" className="lrow-k" />}
+            </button>
+          ))}
+          <button className="lrow tap" onClick={() => { close(); onChange(null) }}>
+            <span className="lrow-m">
+              <span className="lrow-t">{t('Default')} ({S.restSec}s)</span>
+              <span className="lrow-s">{t('Use the global rest setting')}</span>
+            </span>
+            {!custom && <Icon name="check" className="lrow-k" />}
+          </button>
+        </div>
+        <div style={{ height: 8 }} />
+      </>
+    ))
+  }
+  return (
+    <button className={'tag tap nocap' + (custom ? ' acc' : '')} onClick={open}
+      aria-label={t('Rest time')}>
+      <Icon name="timer" />{sec}s
+    </button>
+  )
+}
+
 function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemoveSet, onStartTimed }) {
   const S = useStore(s => s.S)
   const working = useUI(s => s.work)
@@ -122,6 +163,7 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       {(ex.tg || ex.bp) && <span className="tag">{t(ex.tg || ex.bp)}</span>}
       {ex.eq && <span className="tag">{t(ex.eq)}</span>}
       {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {S.unit}</span>}
+      <RestChip entry={entry} onChange={v => mutEntryFromBlock(entryIdx, e => { if (v == null) delete e.restSec; else e.restSec = v })} />
     </div>
     {last && <div className="small dim" style={{ marginBottom: 4 }}>{t('Last time')} ({fmtDate(last.d)}): {last.sets.map(s => setLabel(entry.id, s, last.target)).join(', ')}</div>}
     {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
@@ -168,6 +210,9 @@ function ActiveWorkout() {
   const done = setsDoneActive(A)
 
   const mutEntry = (idx, fn) => update(s => { fn(s.active.entries[idx]) }, true)
+  // Same clearing semantics as setField: an absent key instead of null, so the session
+  // only carries what was actually chosen (spec §3.1).
+  const mutEntryFromBlock = mutEntry
   // Clearing an optional field drops the key rather than storing null, so a set only carries
   // what was actually logged — in the session, in history and in a backup.
   const setField = (idx, i, field, v) => mutEntry(idx, e => {
@@ -206,7 +251,7 @@ function ActiveWorkout() {
         beep(S.sound, 1040, 0.12); vibrate(30)
         const isLastExInUnit = idx === unit[unit.length - 1]
         const unitDone = unit.every(ui => (ui === idx ? e : A.entries[ui]).sets.every(x => x.done))
-        if (isLastExInUnit && !unitDone) startRest(S.restSec)
+        if (isLastExInUnit && !unitDone) startRest(e.restSec ?? S.restSec)
         else if (unitDone) stopRest()
         if (unitDone && isLastUnit) workoutDone = true      // last exercise's last set → done
         // Only loaded reps training has a "working weight" worth confirming — a bodyweight
