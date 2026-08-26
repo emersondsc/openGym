@@ -821,7 +821,9 @@ export function WorkoutRow({ w, onClick }) {
 
 /* ============================ workout lifecycle ============================ */
 export function startFlow(routineId) {
-  bwSheet({ required: true, onDone: bw => beginWorkout(routineId, bw) })
+  // Quick check-in removed by product decision (spec: spec_remover_quick_checkin.md) —
+  // tapping a workout starts it immediately. beginWorkout already tolerates a missing bw.
+  beginWorkout(routineId)
 }
 export function beginWorkout(routineId, bw) {
   const st = S()
