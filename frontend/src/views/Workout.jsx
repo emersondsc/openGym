@@ -258,7 +258,22 @@ function ActiveWorkout() {
         // plank has nothing to put in that slider, and neither does a set of push-ups
         // (issue #32: the fewest taps that still record what happened).
         const loaded = m === 'reps' && !(isBw({ ...(e.target || {}), id: e.id }) && !e.sets.some(x => x.w > 0))
-        if (e.sets.every(x => x.done)) { exJustDone = true; if (loaded && !e.asked) { e.asked = true; askTop = true } }
+        if (e.sets.every(x => x.done)) {
+          exJustDone = true
+          if (loaded && !e.asked) {
+            e.asked = true
+            if (s.confirmTopWeight) {
+              askTop = true
+            } else {
+              // B: auto-save silencioso sem modal — o maior peso do dia vira default da próxima vez
+              const maxSet = Math.max(0, ...e.sets.filter(x => x.done).map(x => x.w || 0))
+              if (maxSet > 0) {
+                const cur = s.exWeights[e.id]
+                s.exWeights[e.id] = { w: Math.max(maxSet, cur ? cur.w : 0), d: todayISO() }
+              }
+            }
+          }
+        }
       }
     })
     // reps: topWeight first (it chains into the finish/continue prompt on the last unit).

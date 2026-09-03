@@ -138,6 +138,9 @@ export default function Settings() {
           options={[{ value: 'none', label: t('Off') }, { value: 'rir', label: t('RIR') }, { value: 'rpe', label: t('RPE') }]}
           value={effortOf(S)} onChange={v => update(s => { s.effort = v; delete s.showRir })} />
       </Row>
+      <Row icon="scale" iconTint="var(--teal)" title={t('Confirm top weight')} subtitle={t('Ask to confirm the heaviest weight after each exercise')}>
+        <Switch checked={!!S.confirmTopWeight} onChange={v => update(s => { s.confirmTopWeight = v })} />
+      </Row>
     </Section>
 
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
