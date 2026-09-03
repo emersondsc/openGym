@@ -245,12 +245,14 @@ function ActiveWorkout() {
     const cardioEntry = m === 'cardio'
     const isLastUnit = unitIdx >= units.length - 1
     let askTop = false, exJustDone = false, workoutDone = false
-    mutEntry(idx, e => {
+    const shouldAskTop = !!S.confirmTopWeight
+    update(s => {
+      const e = s.active.entries[idx]
       e.sets[i].done = !e.sets[i].done
       if (e.sets[i].done) {
         beep(S.sound, 1040, 0.12); vibrate(30)
         const isLastExInUnit = idx === unit[unit.length - 1]
-        const unitDone = unit.every(ui => (ui === idx ? e : A.entries[ui]).sets.every(x => x.done))
+        const unitDone = unit.every(ui => (ui === idx ? e : s.active.entries[ui]).sets.every(x => x.done))
         if (isLastExInUnit && !unitDone) startRest(e.restSec ?? S.restSec)
         else if (unitDone) stopRest()
         if (unitDone && isLastUnit) workoutDone = true      // last exercise's last set → done
@@ -262,7 +264,7 @@ function ActiveWorkout() {
           exJustDone = true
           if (loaded && !e.asked) {
             e.asked = true
-            if (s.confirmTopWeight) {
+            if (shouldAskTop) {
               askTop = true
             } else {
               // B: auto-save silencioso sem modal — o maior peso do dia vira default da próxima vez
