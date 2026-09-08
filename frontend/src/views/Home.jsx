@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutine, effectiveRoutineId, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
+import { loadOfRoutine, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan, bwDeltaColor } from '../sheets.jsx'
@@ -41,6 +42,23 @@ export default function Home() {
   const wThisWeek = S.workouts.filter(w => weekKey(w.d) === weekKey(todayISO())).length
   const plannedPerWeek = Object.keys(S.week).filter(k => S.week[k]).length
   const bwPoints = S.bodyweight.slice(-30).map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))
+
+  // Planned weekly volume per muscle (spec_home_weekly_volume_card.md): effective
+  // routine of each day in the strip week -> loadOfRoutine, ranked; follows weekOffset.
+  const plan = {}
+  let nPlan = 0
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday); d.setDate(monday.getDate() + i)
+    const r = S.routines.find(r => r.id === effectiveRoutineId(S, isoOf(d)))
+    if (!r) continue
+    nPlan++
+    const l = loadOfRoutine(r)
+    for (const k in l) plan[k] = (plan[k] || 0) + l[k]
+  }
+  const planWorked = rankOf(plan).worked
+  const planTop = planWorked.slice(0, 4)
+  const planMax = planWorked.length ? plan[planWorked[0]] : 0
+  const fmtPlan = m => Math.round((plan[m] || 0) * 10) / 10
 
   // today's session shown right under the week strip
   const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
@@ -128,5 +146,34 @@ export default function Home() {
         <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
       </div>
     </div>
+
+    {planWorked.length > 0 ? (
+      <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
+        onClick={() => nav('/plan')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') nav('/plan') }}
+        aria-label={t('Weekly volume planned, {0} workouts planned — open Plan', nPlan)}>
+        <div className="row between" style={{ marginBottom: 8 }}>
+          <h2 style={{ margin: 0 }}>{t('Weekly volume')} · {t('planned')}</h2>
+          <span className="muted small">{t('{0} workouts', nPlan)}</span>
+        </div>
+        {planTop.map(m => <div key={m} className="mrow">
+          <span className="nm">{t(MUSCLE_NAME[m])}</span>
+          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(plan[m] / planMax * 100) + '%' }} /></span>
+          <span className="v">{t('{0} sets', fmtPlan(m))}</span>
+        </div>)}
+        {planWorked.length > 4 && <div className="muted small" style={{ marginTop: 6 }}>{t('+{0} more', planWorked.length - 4)}</div>}
+      </div>
+    ) : (
+      <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
+        onClick={() => nav('/plan')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') nav('/plan') }}
+        aria-label={t('No plan this week yet. — open Plan')}>
+        <div className="row between">
+          <h2 style={{ margin: 0 }}>{t('Weekly volume')} · {t('planned')}</h2>
+          <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
+        </div>
+        <div className="muted small" style={{ marginTop: 6 }}>{t('No plan this week yet.')}</div>
+      </div>
+    )}
   </div>
 }
