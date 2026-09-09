@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useStore } from '../store/useStore.js'
+import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
 import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, stepEffort, capEffort } from '../lib/history.js'
@@ -61,26 +61,28 @@ function Elapsed({ start }) {
 const REST_PRESETS = [60, 90, 120, 150, 180]
 function RestChip({ entry, onChange }) {
   const S = useStore(s => s.S)
+  const cfgRest = S.routines.find(r=>r.id===S.active?.routineId)?.ex.find(x=>x.id===entry.id)?.restSec
+  const effective = entry.restSec ?? cfgRest ?? S.globalRestSec ?? 90
+  const custom = entry.restSec!=null || cfgRest!=null
+  const sec = effective
   const openSheet = useUI(s => s.openSheet)
-  const sec = entry.restSec ?? S.restSec
-  const custom = entry.restSec != null
   const open = () => {
     openSheet(close => (
       <>
         <h3>{t('Rest time')}</h3>
         <div className="sect-b">
           {REST_PRESETS.map(v => (
-            <button key={v} className="lrow tap" onClick={() => { close(); onChange(v) }}>
+            <button key={v} className="lrow tap" onClick={() => { if(!isValidRest(v)) return; close(); onChange(v) }}>
               <span className="lrow-m"><span className="lrow-t">{v}s</span></span>
-              {(entry.restSec ?? S.restSec) === v && <Icon name="check" className="lrow-k" />}
+              {effective===v && <Icon name="check" className="lrow-k" />}
             </button>
           ))}
           <button className="lrow tap" onClick={() => { close(); onChange(null) }}>
             <span className="lrow-m">
-              <span className="lrow-t">{t('Default')} ({S.restSec}s)</span>
-              <span className="lrow-s">{t('Use the global rest setting')}</span>
+              <span className="lrow-t">{t('Default')} ({S.globalRestSec}s)</span>
+              <span className="lrow-s">{t('Use the routine rest setting')}</span>
             </span>
-            {!custom && <Icon name="check" className="lrow-k" />}
+            {(entry.restSec==null && cfgRest==null) && <Icon name="check" className="lrow-k" />}
           </button>
         </div>
         <div style={{ height: 8 }} />
@@ -163,7 +165,29 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       {(ex.tg || ex.bp) && <span className="tag">{t(ex.tg || ex.bp)}</span>}
       {ex.eq && <span className="tag">{t(ex.eq)}</span>}
       {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {S.unit}</span>}
-      <RestChip entry={entry} onChange={v => mutEntryFromBlock(entryIdx, e => { if (v == null) delete e.restSec; else e.restSec = v })} />
+      <RestChip entry={entry} onChange={v=>{
+  if(v!=null && !isValidRest(v)){
+    useUI.getState().toast(t('Rest must be between 30 and 300s')); return
+  }
+  const routineId = useStore.getState().S.active?.routineId
+  const routineName = useStore.getState().S.routines.find(r=>r.id===routineId)?.name || ''
+  useStore.getState().update(s=>{
+    const e = s.active.entries[entryIdx]
+    if(v==null) delete e.restSec; else e.restSec=v
+    if(routineId){
+      const cfg = s.routines.find(r=>r.id===routineId)?.ex.find(x=>x.id===entry.id)
+      if(cfg){
+        if(v==null) delete cfg.restSec; else cfg.restSec=v
+      }
+    }
+  })
+  const now=Date.now()
+  if(!window.__restToastAt || now - window.__restToastAt > 900){
+    window.__restToastAt=now
+    if(v==null) useUI.getState().toast(t('Rest reset to default'))
+    else useUI.getState().toast(t('Rest saved for {0} — {1}s', routineName, v))
+  }
+}} />
     </div>
     {last && <div className="small dim" style={{ marginBottom: 4 }}>{t('Last time')} ({fmtDate(last.d)}): {last.sets.map(s => setLabel(entry.id, s, last.target)).join(', ')}</div>}
     {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
@@ -253,7 +277,9 @@ function ActiveWorkout() {
         beep(S.sound, 1040, 0.12); vibrate(30)
         const isLastExInUnit = idx === unit[unit.length - 1]
         const unitDone = unit.every(ui => (ui === idx ? e : s.active.entries[ui]).sets.every(x => x.done))
-        if (isLastExInUnit && !unitDone) startRest(e.restSec ?? S.restSec)
+        const cfgRest2 = useStore.getState().S.routines.find(r=>r.id===useStore.getState().S.active?.routineId)?.ex.find(x=>x.id===e.id)?.restSec
+        const secToStart = e.restSec ?? cfgRest2 ?? useStore.getState().S.globalRestSec ?? 90
+        if (isLastExInUnit && !unitDone) startRest(secToStart)
         else if (unitDone) stopRest()
         if (unitDone && isLastUnit) workoutDone = true      // last exercise's last set → done
         // Only loaded reps training has a "working weight" worth confirming — a bodyweight

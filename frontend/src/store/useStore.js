@@ -7,23 +7,48 @@ import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
 
 const KEY = 'gym_state_v1'
 export const DEF = {
-  unit: 'kg', restSec: 90, sound: true, keepAwake: true, lang: 'en',
+  unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
   theme: 'dark', accent: 'lime', body: 'male', targetW: null,
   bodyweight: [], routines: [], week: {}, dayPlan: {},
   exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'full',
   confirmTopWeight: false,
-  // effort: which per-set effort scale is logged — 'none' | 'rir' | 'rpe'. null, not 'none', so
-  // that a profile which never chose (loaded state is overlaid on DEF, on every path: local,
-  // server pull, backup import) still falls back to the `showRir` boolean this replaced and
-  // keeps the column it had. See effortOf.
   reminder: { on: false, time: '08:00', tz: null }, effort: null
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 
+export const isValidRest = n => typeof n === 'number' && Number.isInteger(n) && n>=30 && n<=300
+
 function loadState() {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return Object.assign(clone(DEF), JSON.parse(raw))
+    if (raw){
+      const parsed = JSON.parse(raw)
+      const state = Object.assign(clone(DEF), parsed)
+      // Migração S.restSec -> S.globalRestSec (1x)
+      if(state.globalRestSec == null && isValidRest(state.restSec)){
+        state.globalRestSec = state.restSec
+      }
+      if('restSec' in state && state.globalRestSec !== undefined){
+        state.restSec = state.globalRestSec
+      }
+      if(!isValidRest(state.globalRestSec)) state.globalRestSec = 90
+      // Limpeza por-rotina
+      ;(state.routines||[]).forEach(r=>{
+        ;(r.ex||[]).forEach(ex=>{
+          if('restSec' in ex && !isValidRest(ex.restSec)){
+            console.warn('[restSec] limpeza: removido invalido', r.id, ex.id, ex.restSec)
+            delete ex.restSec
+          }
+        })
+      })
+      // Limpeza active se houver
+      if(state.active?.entries){
+        state.active.entries.forEach(e=>{
+          if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec
+        })
+      }
+      return state
+    }
   } catch (e) { /* ignore */ }
   return clone(DEF)
 }
@@ -34,8 +59,6 @@ export const useStore = create((set, get) => {
   let pushTm = null
   let saveTm = null
 
-  // Mobile build: mirror the state into a file in the app's data directory (survives WebView
-  // storage eviction) and keep the native reminder schedule in step with the weekly plan.
   const nativePersist = () => {
     clearTimeout(saveTm)
     saveTm = setTimeout(() => { saveTm = null; nativeSave(get().S); syncReminder(get().S) }, 800)
@@ -53,10 +76,6 @@ export const useStore = create((set, get) => {
     }
   }
 
-  // A setting changed right before switching away/closing the tab must not get lost mid-debounce
-  // (e.g. setting the reminder time then immediately backgrounding to test it). On mobile the
-  // same applies to the file mirror — backgrounding is often the last thing before the OS
-  // kills the app.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'hidden') return
     if (MOBILE && saveTm) {
@@ -67,14 +86,11 @@ export const useStore = create((set, get) => {
     if (pushTm) {
       clearTimeout(pushTm)
       pushTm = null
-      // Belt before the flush: if this push never lands (killed tab, offline),
-      // the dirty flag survives and the next boot merges instead of losing data.
       try { localStorage.setItem('gym_dirty', '1') } catch { /* */ }
-      get().pushState()   // clears gym_dirty on success
+      get().pushState()
     }
   })
 
-  // Everything a sign-out leaves behind on this device, whichever way it was triggered.
   const clearLocalSession = () => {
     get().setUser(null)
     localStorage.removeItem('gym_guest')
@@ -88,7 +104,6 @@ export const useStore = create((set, get) => {
     user: (() => { try { return JSON.parse(localStorage.getItem('gym_user')) || null } catch { return null } })(),
     ready: false,
 
-    // Mutate a draft of S via producer fn, then persist + schedule sync.
     update(mut, push = true) {
       const S = clone(get().S)
       mut(S)
@@ -108,19 +123,21 @@ export const useStore = create((set, get) => {
     async pushState() {
       if (!get().user) return
       clearTimeout(pushTm)
-      const send = () => api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) })
+      const sanitized = JSON.parse(JSON.stringify(get().S))
+      sanitized.routines?.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
+      if(sanitized.active?.entries) sanitized.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
+      if(!isValidRest(sanitized.globalRestSec)) sanitized.globalRestSec = 90
+      const send = () => api('/api/data', { method: 'PUT', body: JSON.stringify({ state: sanitized }) })
       try { await send(); localStorage.removeItem('gym_dirty') }
       catch (e) {
         localStorage.setItem('gym_dirty', '1')
-        // Expired/revoked session: surface as logged-out (like boot does) instead of
-        // forking silently — local data stays, next login pulls + merges.
         if (e && e.status === 401) { get().setUser(null); return }
-        // Stale base (server moved ahead): pull, merge local-only workouts, stamp past
-        // the server clock (also heals a device clock running behind), retry once.
         if (e && e.status === 409) {
           try {
             const { state: srv } = await api('/api/data')
             if (srv) {
+              if(srv.routines) srv.routines.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
+              if(!isValidRest(srv.globalRestSec) && srv.globalRestSec!=null) delete srv.globalRestSec
               const S = get().S
               const byId = new Map()
               ;(srv.workouts || []).forEach(w => byId.set(w.id, w))
@@ -142,15 +159,17 @@ export const useStore = create((set, get) => {
         const { state } = await api('/api/data')
         const S = get().S
         const dirty = localStorage.getItem('gym_dirty') === '1'
+        if (state) {
+          if(state.routines) state.routines.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
+          if(!isValidRest(state.globalRestSec) && state.globalRestSec!=null) delete state.globalRestSec
+          if(state.active?.entries) state.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
+        }
         if (state && (!hasData(S) || ((state._ts || 0) >= (S._ts || 0) && !dirty))) {
           const active = S.active
           const next = Object.assign(clone(DEF), state)
           if (active) next.active = active
           persist(next, false)
         } else if (hasData(S)) {
-          // Dirty boot with a NEWER server copy: a blind full-state push would wipe
-          // server-side sessions and templates (2026-09-08 sync incident). Keep the
-          // server body, preserve local-only workouts + the local active session.
           if (state && (state._ts || 0) > (S._ts || 0)) {
             const byId = new Map()
             ;(state.workouts || []).forEach(w => byId.set(w.id, w))
@@ -171,43 +190,32 @@ export const useStore = create((set, get) => {
       clearLocalSession()
     },
 
-    // "Sign out everywhere": the server bumps this profile's session version, which kills every
-    // session it has on any device — this browser included, so the app has to end up exactly
-    // where a normal signOut leaves it. Unlike signOut the request is NOT swallowed: if it fails
-    // the sessions elsewhere are all still valid, and wiping this device's copy of the data
-    // would sign the user out of the one place the bump didn't reach. Caller reports the error.
     async signOutAll() {
-      await get().pushState()   // never throws — stores gym_dirty and moves on when offline
+      await get().pushState()
       await api('/api/logout/all', { method: 'POST', body: '{}' })
       clearLocalSession()
     },
 
-    // Demo build only: drop the seeded example profile back in (Settings → "Reset demo data").
-    // Dynamic import so the generator never ships in a self-hosted bundle.
     async resetDemo() {
       const { buildDemoState } = await import('../lib/demoSeed.js')
       localStorage.removeItem('gym_dirty')
       persist(Object.assign(clone(DEF), buildDemoState()), false)
     },
 
-    // Boot: ask the server who we are, then pull.
     async boot() {
-      // Mobile build: no backend either — restore from the file mirror (the durable copy;
-      // localStorage may have been evicted since the last run) and go straight in.
       if (MOBILE) {
         const saved = await nativeLoad()
         const S = get().S
         if (saved && (!hasData(S) || (saved._ts || 0) >= (S._ts || 0))) {
           persist(Object.assign(clone(DEF), saved), false)
         } else if (hasData(S)) {
-          nativeSave(S)   // first run after an update from a file-less version: seed the mirror
+          nativeSave(S)
         }
         get().setGuest(true)
         syncReminder(get().S)
         set({ ready: true })
         return
       }
-      // Demo build (GitHub Pages): no backend at all — seed once, stay in guest mode.
       if (DEMO) {
         if (!localStorage.getItem(DEMO_SEEDED)) {
           localStorage.setItem(DEMO_SEEDED, '1')
@@ -221,8 +229,6 @@ export const useStore = create((set, get) => {
         const me = await api('/api/me')
         get().setUser(me.user)
         await get().pullState()
-        // Re-stamp the reminder's timezone on every load — keeps it correct if you're travelling,
-        // without needing to revisit Settings.
         const tz = localTZ()
         if (get().S.reminder?.on && get().S.reminder.tz !== tz) {
           get().update(s => { s.reminder = { ...s.reminder, tz } })

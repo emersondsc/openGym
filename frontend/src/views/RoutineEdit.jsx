@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
-import { useStore } from '../store/useStore.js'
+import { useStore, isValidRest } from '../store/useStore.js'
 import { exOr } from '../lib/exercises.js'
 import { uid } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
@@ -8,11 +8,52 @@ import { supersetUnits, cleanupSg, exLine } from '../lib/history.js'
 import { Thumb } from '../components/Media.jsx'
 import { glyphPicker, exercisePicker, exConfigSheet, confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
+import { useUI } from '../store/useUI.js'
 import { glyphOf } from '../lib/glyphs.js'
 import { Button, SelectRow } from '../components/ui.jsx'
 import { POLICIES_FOR, POLICY_NAME, POLICY_DESC } from '../lib/progression.js'
 import BodyMap from '../components/BodyMap.jsx'
 import { loadOfRoutine, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
+
+function RestChipForRoutine({ex, routineId}){
+  const S = useStore(s=>s.S)
+  const cfgRest = S.routines.find(r=>r.id===routineId)?.ex.find(x=>x.id===ex.id)?.restSec
+  const effective = cfgRest ?? S.globalRestSec ?? 90
+  const custom = cfgRest!=null
+  const openSheet = useUI(s=>s.openSheet)
+  return <button className={'tag tap nocap'+(custom?' acc':'')} onClick={ev=>{ ev.stopPropagation(); openSheet(close=>(
+      <>
+        <h3>{t('Rest time')}</h3>
+        <div className="sect-b">
+          {[60,90,120,150,180].map(v=>(
+            <button key={v} className="lrow tap" onClick={()=>{
+              if(!isValidRest(v)) return
+              close()
+              useStore.getState().update(s=>{
+                const cfg=s.routines.find(r=>r.id===routineId).ex.find(x=>x.id===ex.id)
+                cfg.restSec=v
+              })
+              useUI.getState().toast(t('Rest saved for {0} — {1}s', S.routines.find(r=>r.id===routineId).name, v))
+            }}>
+              <span className="lrow-t">{v}s</span>
+              {effective===v && <Icon name="check" className="lrow-k" />}
+            </button>
+          ))}
+          <button className="lrow tap" onClick={()=>{
+            close()
+            useStore.getState().update(s=>{
+              const cfg=s.routines.find(r=>r.id===routineId).ex.find(x=>x.id===ex.id)
+              delete cfg.restSec
+            })
+            useUI.getState().toast(t('Rest reset to default'))
+          }}>
+            <span className="lrow-m"><span className="lrow-t">{t('Default')} ({S.globalRestSec ?? 90}s)</span><span className="lrow-s">{t('Use the routine rest setting')}</span></span>
+            {cfgRest==null && <Icon name="check" className="lrow-k" />}
+          </button>
+        </div>
+      </>
+    ))}}><Icon name="timer" />{effective}s</button>
+}
 
 export default function RoutineEdit() {
   const nav = useNavigate()
@@ -67,7 +108,7 @@ export default function RoutineEdit() {
           exConfigSheet(ex, e, cfg => edit(x => { x[i] = { id: x[i].id, sg: x[i].sg, ...cfg } }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r)
         }}>
           <Thumb ex={ex} />
-          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, S.unit)}</div></div>
+          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, S.unit)}</div><div style={{marginTop:4}}><RestChipForRoutine ex={e} routineId={r.id} /></div></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 'none', alignItems: 'center' }}>
             {i > 0 && <button className={'iconbtn' + (linkedPrev ? ' on-ss' : '')} title={t('Superset with exercise above')} style={{ width: 32, height: 28, borderRadius: 8, fontSize: 15 }} onClick={ev => { ev.stopPropagation(); toggleLink(i) }}><Icon name="link" /></button>}
             <div style={{ display: 'flex', gap: 2 }}>
