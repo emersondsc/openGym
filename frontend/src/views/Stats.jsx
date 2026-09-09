@@ -137,30 +137,30 @@ function CoachAnalysisCard(){
   useEffect(()=>{ if(!user){ setCoach(null); setErr(null); return; } fetchAnalysis().then(d=>{ setCoach(d); setErr(null); }).catch(e=>setErr(e)); },[user]);
   if(!user) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}>
     <div style={{fontSize:28,marginBottom:8}}>📊</div>
-    <div style={{fontWeight:700}}>Seu progresso</div>
-    <div className="muted small" style={{marginTop:4}}>Faça login para ver sua evolução — volume, PRs e semanas</div>
+    <div style={{fontWeight:700}}>Your progress</div>
+    <div className="muted small" style={{marginTop:4}}>Log in to see your progress — volume, records and weeks</div>
   </div>;
-  if(err && err.status===401) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div className="muted small">Sessão expirada — faça login novamente</div></div>;
-  if(err) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div style={{fontSize:22}}>⚠️</div><div className="muted small" style={{marginTop:6}}>Não foi possível carregar seu progresso</div><button className="btn" style={{marginTop:10}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Tentar novamente</button></div>;
-  if(!coach) return <div className="card"><div className="muted small">Carregando seu progresso…</div></div>;
+  if(err && err.status===401) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div className="muted small">Session expired — please log in again</div></div>;
+  if(err) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div style={{fontSize:22}}>⚠️</div><div className="muted small" style={{marginTop:6}}>Unable to load your progress</div><button className="btn" style={{marginTop:10}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Try again</button></div>;
+  if(!coach) return <div className="card"><div className="muted small">Loading your progress…</div></div>;
   const a=coach.analysis;
   return <div className="card">
     <div className="row between" style={{marginBottom:12}}>
-      <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📈</span> Seu progresso</h2>
+      <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📈</span> Your progress</h2>
       <span className="dim small">{a.period.first ? `${a.period.first} → ${a.period.last}` : '—'}</span>
     </div>
     {a.weeks?.length>0 && <>
-      <h4 className="sec" style={{marginTop:8,marginBottom:6}}>Últimas semanas</h4>
+      <h4 className="sec" style={{marginTop:8,marginBottom:6}}>Recent weeks</h4>
       <div className="list small">
         {a.weeks.slice(-4).map(w=> <div key={w.week} className="row between" style={{padding:'8px 0',borderBottom:'var(--hair) solid var(--sep)'}}>
-          <span style={{fontWeight:600}}>{w.week.replace('S','Sem ')}</span>
-          <span className="dim">{w.sessions} treinos</span>
+          <span style={{fontWeight:600}}>{w.week.replace('S','Wk ')}</span>
+          <span className="dim">{w.sessions} workouts</span>
           <span style={{fontWeight:700}}>{(w.tonnage/1000).toFixed(1)} t</span>
         </div>)}
       </div>
     </>}
     {a.prs?.length>0 && <>
-      <h4 className="sec" style={{marginTop:14,marginBottom:6}}>Seus recordes</h4>
+      <h4 className="sec" style={{marginTop:14,marginBottom:6}}>Personal records</h4>
       <div className="list">
         {a.prs.slice(0,3).map(p=>{ const base = p.ex.replace(' (weighted)',''); const name = EXIDX[base]?.n || EXIDX[p.ex]?.n || p.ex; return <div key={p.ex} className="row between" style={{padding:'10px 0',borderBottom:'var(--hair) solid var(--sep)',gap:8}}>
           <span style={{fontWeight:600,flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={p.ex}>{name}</span>
