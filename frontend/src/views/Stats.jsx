@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
+import { fetchAnalysis } from '../lib/coach.js'
 import { EXIDX } from '../lib/exercises.js'
 import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
@@ -129,6 +130,26 @@ function EffortCard({ S }) {
   </div>
 }
 
+function CoachAnalysisCard(){
+  const user = useStore(s=>s.user);
+  const [coach,setCoach]=useState(null);
+  const [err,setErr]=useState(null);
+  useEffect(()=>{ if(!user){ setCoach(null); setErr(null); return; } fetchAnalysis().then(d=>{ setCoach(d); setErr(null); }).catch(e=>setErr(e)); },[user]);
+  if(!user) return <div className="card"><div className="row between"><strong>Análise — fonte única (API)</strong><span className="dim small">401 não autenticado</span></div><div className="muted small" style={{marginTop:8}}>Faça login para ver análise — 401</div></div>;
+  if(err && err.status===401) return <div className="card"><div className="muted small">Faça login para ver análise — 401</div></div>;
+  if(err) return <div className="card"><div className="muted small">Análise indisponível — {err.message||'erro'}</div><button className="btn" style={{marginTop:8}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Tentar novamente</button></div>;
+  if(!coach) return <div className="card"><div className="muted small">Carregando análise…</div></div>;
+  const a=coach.analysis, m=coach.meta;
+  return <div className="card">
+    <div className="row between"><h2 style={{margin:0}}>Análise — fonte única (API)</h2><span className="dim small">✓ fonte única · gerado às {new Date(m.generatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span></div>
+    <div className="small dim" style={{marginTop:6}}>{a.n_sessions} sessões · {a.n_exercises} exercícios · {a.period.first||'—'} → {a.period.last||'—'}</div>
+    <div className="small dim">Cache TTL 60s · invalidado após salvar treino</div>
+    {a.weeks?.length>0 && <><h4 className="sec" style={{marginTop:12}}>Semanas ISO</h4><div className="list small">{a.weeks.slice(-6).map(w=> <div key={w.week} className="row between" style={{padding:'4px 0',borderBottom:'var(--hair) solid var(--sep)'}}><span>{w.week}</span><span>{w.sessions} sessões</span><span>{(w.tonnage/1000).toFixed(1)} t</span></div>)}</div></>}
+    {a.prs?.length>0 && <><h4 className="sec" style={{marginTop:12}}>Top PRs</h4><div className="list small">{a.prs.slice(0,4).map(p=> <div key={p.ex} className="row between" style={{padding:'4px 0',borderBottom:'var(--hair) solid var(--sep)'}}><span>{p.ex}</span><span>{p.e1rm} kg</span><span className="dim">{p.wmax} kg {p.date}</span></div>)}</div></>}
+    <div className="chips" style={{marginTop:10,display:'flex',gap:6,flexWrap:'wrap'}}><span className="chip" style={{background:'rgba(48,209,88,.16)',color:'#30d158',padding:'4px 8px',borderRadius:999,fontSize:11}}>✓ sem Sheets</span><span className="chip" style={{background:'rgba(48,209,88,.16)',color:'#30d158',padding:'4px 8px',borderRadius:999,fontSize:11}}>✓ sem e-mail</span><span className="chip" style={{background:'rgba(48,209,88,.16)',color:'#30d158',padding:'4px 8px',borderRadius:999,fontSize:11}}>✓ sem CSV</span></div>
+  </div>;
+}
+
 // Stats = the analytics hub: all charts, progress and history live here.
 export default function Stats() {
   const nav = useNavigate()
@@ -212,6 +233,7 @@ export default function Stats() {
 
     {S.workouts.length > 0 && <MuscleBalance S={S} />}
     {anyEffort && <EffortCard S={S} />}
+    <CoachAnalysisCard />
 
     <div className="cols">
       <div className="card">

@@ -9,6 +9,7 @@ import {
   generateAuthenticationOptions, verifyAuthenticationResponse
 } from '@simplewebauthn/server';
 import webpush from 'web-push';
+import { buildAnalysis } from './coach.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -275,6 +276,33 @@ setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt 
 /* ---------- routes ---------- */
 const routes = {
   'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
+
+  'GET /api/coach/analysis': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in', code: 'UNAUTH' }, { 'Cache-Control': 'private, no-store, max-age=0' });
+    const rawUid = String(user.id || '');
+    const safeUid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!safeUid) return json(res, 400, { error: 'bad uid', code: 'BAD_UID' });
+    const p = path.resolve(DATA, 'state-' + safeUid + '.json');
+    const rel = path.relative(path.resolve(DATA), p);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return json(res, 400, { error: 'bad uid', code: 'BAD_UID' });
+    let state;
+    try {
+      const txt = fs.readFileSync(p, 'utf8');
+      if (!txt.trim()) throw new SyntaxError('empty');
+      state = JSON.parse(txt);
+    } catch (e) {
+      if (e.code === 'ENOENT') state = { workouts: [], routines: [], bodyweight: [], customEx: [], unit: 'kg' };
+      else if (e instanceof SyntaxError) { console.error('[coach] corrupt', safeUid, e.message); return json(res, 500, { error: 'state corrupt', code: 'STATE_CORRUPT', hint: 'restore backup' }); }
+      else { console.error('[coach] read error', safeUid, e); return json(res, 500, { error: 'server error' }); }
+    }
+    if (!state || typeof state !== 'object' || (state.workouts != null && !Array.isArray(state.workouts))) { console.error('[coach] corrupt schema', safeUid); return json(res, 500, { error: 'state corrupt', code: 'STATE_CORRUPT', hint: 'restore backup' }); }
+    try {
+      const { analysis, progress } = buildAnalysis(state);
+      if (analysis.n_sets > 20000) return json(res, 200, { analysis, progress, meta: { uid: user.id, generatedAt: Date.now(), n_sets: analysis.n_sets, n_sessions: analysis.n_sessions, period: analysis.period, truncated: true, limitedTo: 20000 } }, { 'Cache-Control': 'private, no-store, max-age=0', 'Vary': 'Cookie', 'Pragma': 'no-cache' });
+      json(res, 200, { analysis, progress, meta: { uid: user.id, generatedAt: Date.now(), n_sets: analysis.n_sets, n_sessions: analysis.n_sessions, period: analysis.period } }, { 'Cache-Control': 'private, no-store, max-age=0', 'Vary': 'Cookie', 'Pragma': 'no-cache' });
+    } catch (e) { console.error('[coach] build error', safeUid, e); json(res, 500, { error: 'server error' }); }
+  },
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),

@@ -128,7 +128,7 @@ export const useStore = create((set, get) => {
       if(sanitized.active?.entries) sanitized.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
       if(!isValidRest(sanitized.globalRestSec)) sanitized.globalRestSec = 90
       const send = () => api('/api/data', { method: 'PUT', body: JSON.stringify({ state: sanitized }) })
-      try { await send(); localStorage.removeItem('gym_dirty') }
+      try { await send(); localStorage.removeItem('gym_dirty'); try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{} }
       catch (e) {
         localStorage.setItem('gym_dirty', '1')
         if (e && e.status === 401) { get().setUser(null); return }
@@ -147,8 +147,10 @@ export const useStore = create((set, get) => {
               if (S.active) merged.active = S.active
               merged._ts = Math.max(Date.now(), srv._ts || 0) + 1
               persist(merged, false)
+              try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
               await send()
               localStorage.removeItem('gym_dirty')
+              try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
             }
           } catch { /* stays dirty, heals on next boot */ }
         }
@@ -169,6 +171,7 @@ export const useStore = create((set, get) => {
           const next = Object.assign(clone(DEF), state)
           if (active) next.active = active
           persist(next, false)
+          try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
         } else if (hasData(S)) {
           if (state && (state._ts || 0) > (S._ts || 0)) {
             const byId = new Map()
@@ -179,6 +182,7 @@ export const useStore = create((set, get) => {
             if (S.active) merged.active = S.active
             merged._ts = Date.now()
             persist(merged, false)
+            try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
           }
           await get().pushState()
         }
