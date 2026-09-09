@@ -1,5 +1,15 @@
 // api/coach.js — matemática portada de process_workout.py (200 linhas) + opengym_reader.py
 // Sem fs de Hermes, sem csv-parse, sem compsio. Puro, recebe state já lido.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+let catalogMap = {};
+try{
+  const cat = JSON.parse(fs.readFileSync(path.join(__dirname, 'exercise_catalog.json'), 'utf8'));
+  for(const e of cat) catalogMap[e.id]=e.name;
+}catch(e){ console.error('[coach] catalog load failed', e.message); }
 const LB_TO_KG = 0.45359237;
 
 function isoWeekKeyUTC(dateStr){
@@ -19,9 +29,18 @@ function e1rm(wKg, reps){
 
 export function rowsFromState(state){
   const exmap = {};
+  // catálogo base (1324 exercícios) — exId → nome, eq padrão; customEx sobrescreve
+  for(const [id,name] of Object.entries(catalogMap)) exmap[id]={n:name, eq:''};
+  // eq real vem do catálogo completo quando precisar, mas para lastro basta customEx; para nome, catálogo já basta
+  // sobrescreve com customEx (nome original preservado)
   for(const c of (state.customEx || [])){
     if(c.id) exmap[c.id] = { n: c.n || c.id, eq: c.eq || 'custom' };
   }
+  // completa eq para itens do catálogo (para isBw) — re-lê catálogo com eq se disponível
+  try{
+    const cat2 = JSON.parse(fs.readFileSync(path.join(__dirname, 'exercise_catalog.json'), 'utf8'));
+    for(const e of cat2){ if(exmap[e.id]) exmap[e.id].eq = e.eq || exmap[e.id].eq; }
+  }catch{}
   const unit = String(state.unit || 'kg').toLowerCase().startsWith('lb') ? 'lb' : 'kg';
   const toKg = unit === 'lb' ? LB_TO_KG : 1;
   const rows = [];
@@ -64,7 +83,7 @@ export function rowsFromState(state){
           end_time: end,
           _startMs: startMs,
           _endMs: endMs,
-          _date: new Date(startMs).toISOString().slice(0,10),
+          _date: new Date(startMs).toLocaleDateString('en-CA', {timeZone: 'America/Sao_Paulo'}),
           exercise_title: exName,
           set_index: String(i),
           set_type: setType,
@@ -225,7 +244,7 @@ export function buildAnalysis(state){
   const period = sessList.length ? { first:sessList[0].date, last:sessList[sessList.length-1].date } : { first:null, last:null };
 
   const analysis = {
-    n_sets: rows.filter(r=>r.set_type==='normal' && !isOutlier(r)).length,
+    n_sets: rows.length,
     n_sessions: sessList.length,
     n_exercises,
     period,
