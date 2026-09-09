@@ -135,18 +135,46 @@ function CoachAnalysisCard(){
   const [coach,setCoach]=useState(null);
   const [err,setErr]=useState(null);
   useEffect(()=>{ if(!user){ setCoach(null); setErr(null); return; } fetchAnalysis().then(d=>{ setCoach(d); setErr(null); }).catch(e=>setErr(e)); },[user]);
-  if(!user) return <div className="card"><div className="row between"><strong>Análise — fonte única (API)</strong><span className="dim small">401 não autenticado</span></div><div className="muted small" style={{marginTop:8}}>Faça login para ver análise — 401</div></div>;
-  if(err && err.status===401) return <div className="card"><div className="muted small">Faça login para ver análise — 401</div></div>;
-  if(err) return <div className="card"><div className="muted small">Análise indisponível — {err.message||'erro'}</div><button className="btn" style={{marginTop:8}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Tentar novamente</button></div>;
-  if(!coach) return <div className="card"><div className="muted small">Carregando análise…</div></div>;
-  const a=coach.analysis, m=coach.meta;
+  if(!user) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}>
+    <div style={{fontSize:28,marginBottom:8}}>📊</div>
+    <div style={{fontWeight:700}}>Seu progresso</div>
+    <div className="muted small" style={{marginTop:4}}>Faça login para ver sua evolução — volume, PRs e semanas</div>
+  </div>;
+  if(err && err.status===401) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div className="muted small">Sessão expirada — faça login novamente</div></div>;
+  if(err) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div style={{fontSize:22}}>⚠️</div><div className="muted small" style={{marginTop:6}}>Não foi possível carregar seu progresso</div><button className="btn" style={{marginTop:10}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Tentar novamente</button></div>;
+  if(!coach) return <div className="card"><div className="muted small">Carregando seu progresso…</div></div>;
+  const a=coach.analysis;
+  const totalTonnage = a.weeks.reduce((s,w)=>s+w.tonnage,0);
   return <div className="card">
-    <div className="row between"><h2 style={{margin:0}}>Análise — fonte única (API)</h2><span className="dim small">✓ fonte única · gerado às {new Date(m.generatedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span></div>
-    <div className="small dim" style={{marginTop:6}}>{a.n_sessions} sessões · {a.n_exercises} exercícios · {a.period.first||'—'} → {a.period.last||'—'}</div>
-    <div className="small dim">Cache TTL 60s · invalidado após salvar treino</div>
-    {a.weeks?.length>0 && <><h4 className="sec" style={{marginTop:12}}>Semanas ISO</h4><div className="list small">{a.weeks.slice(-6).map(w=> <div key={w.week} className="row between" style={{padding:'4px 0',borderBottom:'var(--hair) solid var(--sep)'}}><span>{w.week}</span><span>{w.sessions} sessões</span><span>{(w.tonnage/1000).toFixed(1)} t</span></div>)}</div></>}
-    {a.prs?.length>0 && <><h4 className="sec" style={{marginTop:12}}>Top PRs</h4><div className="list small">{a.prs.slice(0,4).map(p=> <div key={p.ex} className="row between" style={{padding:'4px 0',borderBottom:'var(--hair) solid var(--sep)'}}><span>{p.ex}</span><span>{p.e1rm} kg</span><span className="dim">{p.wmax} kg {p.date}</span></div>)}</div></>}
-    <div className="chips" style={{marginTop:10,display:'flex',gap:6,flexWrap:'wrap'}}><span className="chip" style={{background:'rgba(48,209,88,.16)',color:'#30d158',padding:'4px 8px',borderRadius:999,fontSize:11}}>✓ sem Sheets</span><span className="chip" style={{background:'rgba(48,209,88,.16)',color:'#30d158',padding:'4px 8px',borderRadius:999,fontSize:11}}>✓ sem e-mail</span><span className="chip" style={{background:'rgba(48,209,88,.16)',color:'#30d158',padding:'4px 8px',borderRadius:999,fontSize:11}}>✓ sem CSV</span></div>
+    <div className="row between" style={{marginBottom:12}}>
+      <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📈</span> Seu progresso</h2>
+      <span className="dim small">{a.period.first ? `${a.period.first} → ${a.period.last}` : '—'}</span>
+    </div>
+    <div className="tiles" style={{marginBottom:12}}>
+      <div className="tile"><div className="l" style={{fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--dim)'}}>Treinos</div><div className="v" style={{fontSize:22,fontWeight:800}}>{a.n_sessions}</div></div>
+      <div className="tile"><div className="l" style={{fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--dim)'}}>Exercícios</div><div className="v" style={{fontSize:22,fontWeight:800}}>{a.n_exercises}</div></div>
+      <div className="tile"><div className="l" style={{fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--dim)'}}>Volume</div><div className="v" style={{fontSize:22,fontWeight:800}}>{(totalTonnage/1000).toFixed(1)}<span style={{fontSize:12,fontWeight:600,color:'var(--dim)'}}> t</span></div></div>
+    </div>
+    {a.weeks?.length>0 && <>
+      <h4 className="sec" style={{marginTop:8,marginBottom:6}}>Últimas semanas</h4>
+      <div className="list small">
+        {a.weeks.slice(-4).map(w=> <div key={w.week} className="row between" style={{padding:'8px 0',borderBottom:'var(--hair) solid var(--sep)'}}>
+          <span style={{fontWeight:600}}>{w.week.replace('S','Sem ')}</span>
+          <span className="dim">{w.sessions} treinos</span>
+          <span style={{fontWeight:700}}>{(w.tonnage/1000).toFixed(1)} t</span>
+        </div>)}
+      </div>
+    </>}
+    {a.prs?.length>0 && <>
+      <h4 className="sec" style={{marginTop:14,marginBottom:6}}>Seus recordes</h4>
+      <div className="list">
+        {a.prs.slice(0,3).map(p=> <div key={p.ex} className="row between" style={{padding:'10px 0',borderBottom:'var(--hair) solid var(--sep)',gap:8}}>
+          <span style={{fontWeight:600,flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{p.ex}</span>
+          <span style={{background:'var(--acc)',color:'#000',padding:'2px 8px',borderRadius:999,fontWeight:800,fontSize:12}}>{p.e1rm} kg</span>
+          <span className="dim small">{p.wmax} kg · {p.date}</span>
+        </div>)}
+      </div>
+    </>}
   </div>;
 }
 
