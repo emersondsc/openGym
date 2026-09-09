@@ -783,11 +783,11 @@ h4.sec{
    outline path of its own, so without this the body reads as one flat blob. */
 .bm-v path{stroke:var(--surface);stroke-width:2.5;stroke-linejoin:round}
 
-.mrow{display:flex;align-items:center;gap:9px;padding:5px 0}
+.mrow{display:flex;align-items:center;gap:10px;padding:6px 0}
 .mrow .nm{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mrow .bar{width:74px;height:5px;border-radius:3px;background:var(--surface-2);flex:none;overflow:hidden}
-.mrow .bar i{display:block;height:100%;background:var(--acc);border-radius:3px}
-.mrow .v{font-size:12px;color:var(--label-2);min-width:52px;text-align:right;flex:none}
+.mrow .bar{width:84px;height:6px;border-radius:99px;background:var(--surface-2);flex:none;overflow:hidden}
+.mrow .bar i{display:block;height:100%;background:var(--acc);border-radius:99px;transition:width 220ms var(--ease)}
+.mrow .v{font-size:13px;color:var(--label-2);min-width:64px;text-align:right;flex:none;font-variant-numeric:tabular-nums}
 /* A headline number inside a card — tile weight without a tile around it, for the pair of
    readings at the top of the effort card. */
 .stat-v{font-size:26px;font-weight:600;letter-spacing:-.026em;line-height:1.1}

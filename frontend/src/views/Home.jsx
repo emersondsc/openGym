@@ -65,6 +65,12 @@ export default function Home() {
   const doneMax = doneWorked.length ? done[doneWorked[0]] : 0
   const fmtDone = m => Math.round((done[m] || 0) * 10) / 10
   const pctDone = m => (plan[m] > 0 ? Math.min(100, (done[m] || 0) / plan[m] * 100) : 0)
+  // Overall totals for header subtitle + pill
+  const totalPlan = planWorked.reduce((a,m)=>a+(plan[m]||0),0)
+  const totalDoneForPlan = planWorked.reduce((a,m)=>a+(done[m]||0),0)
+  const overallPct = totalPlan > 0 ? Math.min(100, Math.round(totalDoneForPlan/totalPlan*100)) : 0
+  const isFuture = weekOffset > 0
+  const isDoneOnlyExtra = doneWorked.filter(m=>!plan[m]).slice(0,2)
 
   // today's session shown right under the week strip
   const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
@@ -127,17 +133,56 @@ export default function Home() {
       <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
         onClick={() => nav('/plan')}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') nav('/plan') }}
-        aria-label={t('Weekly volume, {0} of {1} workouts done — open Plan', nDone, nPlan)}>
-        <div className="row between" style={{ marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>{t('Weekly volume')}</h2>
-          <span className="muted small">{t('{0} of {1} workouts', nDone, nPlan)}</span>
+        aria-label={isFuture
+          ? t('Weekly volume planned, {0} workouts planned — open Plan', nPlan)
+          : t('Weekly volume, {0} of {1} workouts done — open Plan', nDone, nPlan)}>
+        {/* Header: title + overall progress pill. Future weeks show planned-only */}
+        <div className="row between" style={{ marginBottom: isFuture ? 10 : 6 }}>
+          <h2 style={{ margin: 0 }}>{t('Weekly volume')}{isFuture ? ' · ' + t('planned') : ''}</h2>
+          {isFuture ? (
+            <span className="muted small">{t('{0} workouts', nPlan)}</span>
+          ) : (
+            <span className="tag" style={{ background: overallPct >= 100 ? 'var(--acc)' : 'var(--acc-soft)', color: overallPct >= 100 ? 'var(--on-acc)' : 'var(--acc)', fontWeight: 600, fontSize: 12, padding: '3px 8px', borderRadius: 99 }}>
+              {overallPct}% · {t('{0} of {1} workouts', nDone, nPlan)}
+            </span>
+          )}
         </div>
-        {planTop.map(m => <div key={m} className="mrow">
-          <span className="nm">{t(MUSCLE_NAME[m])}</span>
-          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(pctDone(m)) + '%' }} /></span>
-          <span className="v">{t('{0} of {1} sets', fmtDone(m), fmtPlan(m))}</span>
-        </div>)}
-        {planWorked.length > 4 && <div className="muted small" style={{ marginTop: 6 }}>{t('+{0} more', planWorked.length - 4)}</div>}
+        {!isFuture && totalPlan > 0 && (
+          <div className="muted small" style={{ marginBottom: 10, lineHeight: 1.35 }}>
+            {Math.round(totalDoneForPlan*10)/10} / {Math.round(totalPlan*10)/10} {t('sets')} · {nDone === nPlan && nPlan>0 && overallPct>=100 ? t('done') : t('planned')}
+          </div>
+        )}
+        {planTop.map(m => {
+          const pd = pctDone(m)
+          const isDone = pd >= 100
+          const hasExtra = (done[m]||0) > (plan[m]||0)
+          return (
+            <div key={m} className="mrow">
+              <span className="nm">{t(MUSCLE_NAME[m])}</span>
+              <span className="bar" aria-hidden="true" title={isFuture ? `${fmtPlan(m)} ${t('sets')}` : `${fmtDone(m)} / ${fmtPlan(m)}`}>
+                <i style={{ width: isFuture ? '100%' : Math.round(pd) + '%', background: isFuture ? 'var(--label-3)' : isDone ? 'var(--acc)' : 'var(--acc)', opacity: isFuture ? .45 : 1 }} />
+              </span>
+              <span className="v" style={{ minWidth: 64 }}>
+                {isFuture
+                  ? <span style={{ color: 'var(--label-2)' }}>{t('{0} sets', fmtPlan(m))}</span>
+                  : <>
+                      <span style={{ color: isDone ? 'var(--acc)' : 'var(--label)', fontWeight: isDone ? 600 : 500 }}>{fmtDone(m)}</span>
+                      <span style={{ color: 'var(--label-3)' }}> / {fmtPlan(m)}</span>
+                      {isDone && <Icon name="check" style={{ fontSize: 11, color: 'var(--acc)', marginLeft: 4, verticalAlign: 'middle' }} />}
+                      {hasExtra && !isDone && <span style={{ color: 'var(--orange)', fontSize: 10, marginLeft: 4 }}>+{Math.round(((done[m]||0)-(plan[m]||0))*10)/10}</span>}
+                    </>
+                }
+              </span>
+            </div>
+          )
+        })}
+        {planWorked.length > 4 && <div className="muted small" style={{ marginTop: 8 }}>{t('+{0} more', planWorked.length - 4)}</div>}
+        {/* Extra muscles trained but not in plan */}
+        {!isFuture && isDoneOnlyExtra.length > 0 && (
+          <div className="muted small" style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--sep)', lineHeight: 1.4 }}>
+            + extra: {isDoneOnlyExtra.map(m=> `${t(MUSCLE_NAME[m])} ${fmtDone(m)} ${t('sets')}`).join(' · ')}
+          </div>
+        )}
       </div>
     ) : doneWorked.length > 0 ? (
       <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
@@ -150,10 +195,11 @@ export default function Home() {
         </div>
         {doneTop.map(m => <div key={m} className="mrow">
           <span className="nm">{t(MUSCLE_NAME[m])}</span>
-          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(done[m] / doneMax * 100) + '%' }} /></span>
+          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(done[m] / doneMax * 100) + '%', background: 'var(--teal)' }} /></span>
           <span className="v">{t('{0} sets', fmtDone(m))}</span>
         </div>)}
         {doneWorked.length > 4 && <div className="muted small" style={{ marginTop: 6 }}>{t('+{0} more', doneWorked.length - 4)}</div>}
+        <div className="muted small" style={{ marginTop: 8 }}>{t('No plan this week yet.')}</div>
       </div>
     ) : (
       <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}

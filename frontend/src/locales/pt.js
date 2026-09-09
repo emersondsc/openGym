@@ -107,6 +107,7 @@ export default {
   'Rescheduled': 'Reagendado',
   'Tap a trained day for details · tap any other day to plan a session': 'Toca num dia treinado para detalhes · toca noutro dia para planear',
   '{0} sets': '{0} séries',
+  'sets': 'séries',
   'no sets': 'sem séries',
   'Delete workout?': 'Eliminar treino?',
   'This removes it from your history for good.': 'Isto remove-o do histórico para sempre.',
