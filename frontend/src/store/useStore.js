@@ -118,7 +118,22 @@ export const useStore = create((set, get) => {
           const next = Object.assign(clone(DEF), state)
           if (active) next.active = active
           persist(next, false)
-        } else if (hasData(S)) { await get().pushState() }
+        } else if (hasData(S)) {
+          // Dirty boot with a NEWER server copy: a blind full-state push would wipe
+          // server-side sessions and templates (2026-09-08 sync incident). Keep the
+          // server body, preserve local-only workouts + the local active session.
+          if (state && (state._ts || 0) > (S._ts || 0)) {
+            const byId = new Map()
+            ;(state.workouts || []).forEach(w => byId.set(w.id, w))
+            ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
+            const merged = Object.assign(clone(DEF), state)
+            merged.workouts = [...byId.values()]
+            if (S.active) merged.active = S.active
+            merged._ts = Date.now()
+            persist(merged, false)
+          }
+          await get().pushState()
+        }
       } catch (e) { /* offline — keep local */ }
     },
 
