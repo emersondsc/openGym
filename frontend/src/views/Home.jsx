@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { effectiveRoutine, effectiveRoutineId, streakWeeks, setsDoneActive } from '../lib/history.js'
-import { loadOfRoutine, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
+import { loadOfRoutine, loadOfWorkouts, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
 import { todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan } from '../sheets.jsx'
@@ -52,8 +52,19 @@ export default function Home() {
   }
   const planWorked = rankOf(plan).worked
   const planTop = planWorked.slice(0, 4)
-  const planMax = planWorked.length ? plan[planWorked[0]] : 0
   const fmtPlan = m => Math.round((plan[m] || 0) * 10) / 10
+
+  // Done in the displayed strip week (spec_home_weekly_volume_progress.md): same ISO
+  // week as `monday` (follows weekOffset), only sets actually ticked off count.
+  const dispWeek = weekKey(isoOf(monday))
+  const doneW = S.workouts.filter(w => w.d && weekKey(w.d) === dispWeek)
+  const done = loadOfWorkouts(doneW)
+  const nDone = doneW.filter(w => (w.entries || []).some(e => (e.sets || []).some(s => s.done))).length
+  const doneWorked = rankOf(done).worked
+  const doneTop = doneWorked.slice(0, 4)
+  const doneMax = doneWorked.length ? done[doneWorked[0]] : 0
+  const fmtDone = m => Math.round((done[m] || 0) * 10) / 10
+  const pctDone = m => (plan[m] > 0 ? Math.min(100, (done[m] || 0) / plan[m] * 100) : 0)
 
   // today's session shown right under the week strip
   const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
@@ -116,17 +127,33 @@ export default function Home() {
       <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
         onClick={() => nav('/plan')}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') nav('/plan') }}
-        aria-label={t('Weekly volume planned, {0} workouts planned — open Plan', nPlan)}>
+        aria-label={t('Weekly volume, {0} of {1} workouts done — open Plan', nDone, nPlan)}>
         <div className="row between" style={{ marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>{t('Weekly volume')} · {t('planned')}</h2>
-          <span className="muted small">{t('{0} workouts', nPlan)}</span>
+          <h2 style={{ margin: 0 }}>{t('Weekly volume')}</h2>
+          <span className="muted small">{t('{0} of {1} workouts', nDone, nPlan)}</span>
         </div>
         {planTop.map(m => <div key={m} className="mrow">
           <span className="nm">{t(MUSCLE_NAME[m])}</span>
-          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(plan[m] / planMax * 100) + '%' }} /></span>
-          <span className="v">{t('{0} sets', fmtPlan(m))}</span>
+          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(pctDone(m)) + '%' }} /></span>
+          <span className="v">{t('{0} of {1} sets', fmtDone(m), fmtPlan(m))}</span>
         </div>)}
         {planWorked.length > 4 && <div className="muted small" style={{ marginTop: 6 }}>{t('+{0} more', planWorked.length - 4)}</div>}
+      </div>
+    ) : doneWorked.length > 0 ? (
+      <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
+        onClick={() => nav('/plan')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') nav('/plan') }}
+        aria-label={t('Weekly volume done, {0} workouts — open Plan', nDone)}>
+        <div className="row between" style={{ marginBottom: 8 }}>
+          <h2 style={{ margin: 0 }}>{t('Weekly volume')} · {t('done')}</h2>
+          <span className="muted small">{t('{0} workouts', nDone)}</span>
+        </div>
+        {doneTop.map(m => <div key={m} className="mrow">
+          <span className="nm">{t(MUSCLE_NAME[m])}</span>
+          <span className="bar" aria-hidden="true"><i style={{ width: Math.round(done[m] / doneMax * 100) + '%' }} /></span>
+          <span className="v">{t('{0} sets', fmtDone(m))}</span>
+        </div>)}
+        {doneWorked.length > 4 && <div className="muted small" style={{ marginTop: 6 }}>{t('+{0} more', doneWorked.length - 4)}</div>}
       </div>
     ) : (
       <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
