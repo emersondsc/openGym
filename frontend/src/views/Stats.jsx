@@ -149,10 +149,6 @@ function CoachAnalysisCard(){
       <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📈</span> Seu progresso</h2>
       <span className="dim small">{a.period.first ? `${a.period.first} → ${a.period.last}` : '—'}</span>
     </div>
-    <div className="tiles" style={{marginBottom:12,gridTemplateColumns:'repeat(2,1fr)'}}>
-      <div className="tile"><div className="l" style={{fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--dim)'}}>Treinos</div><div className="v" style={{fontSize:22,fontWeight:800}}>{a.n_sessions}</div></div>
-      <div className="tile"><div className="l" style={{fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',color:'var(--dim)'}}>Exercícios</div><div className="v" style={{fontSize:22,fontWeight:800}}>{a.n_exercises}</div></div>
-    </div>
     {a.weeks?.length>0 && <>
       <h4 className="sec" style={{marginTop:8,marginBottom:6}}>Últimas semanas</h4>
       <div className="list small">
