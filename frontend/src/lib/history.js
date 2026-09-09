@@ -195,11 +195,15 @@ export function buildSets(S, cfg) {
     return sets
   }
   const conf = S.exWeights[cfg.id]
+  // Template reps may be a range string ('6-8'): seed a leading number so a set
+  // completed untouched never logs a non-numeric r (NaN volume, null e1RM).
+  const m = /^\d+/.exec(String(cfg.reps ?? ''))
+  const defR = m ? parseInt(m[0], 10) : cfg.reps
   for (let i = 0; i < n; i++) {
     const prev = prevAt(i)
     const usable = prev && prev.r > 0 ? prev : null
     const w = conf && conf.w > 0 ? conf.w : (usable ? usable.w : cfg.weight)
-    sets.push({ w, r: usable ? usable.r : cfg.reps, done: false })
+    sets.push({ w, r: usable ? usable.r : defR, done: false })
   }
   return sets
 }

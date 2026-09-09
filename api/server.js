@@ -48,6 +48,27 @@ function atomicWrite(file, content) {
   fs.renameSync(tmp, file);
 }
 const stateFile = uid => path.join(DATA, 'state-' + uid.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
+
+// Minimal shape guard for PUT /api/data (2026-09-08 sync incident: blind overwrite
+// accepted ghost ids that only surfaced as 'Unknown exercise' days later). Deliberately
+// loose — it rejects corruption, never legitimate client states.
+function checkState(s) {
+  if (Array.isArray(s)) return 'state must be an object';
+  if (s.routines !== undefined) {
+    if (!Array.isArray(s.routines)) return 'routines must be an array';
+    for (const r of s.routines) {
+      if (!r || typeof r !== 'object') return 'routine must be an object';
+      if (r.ex !== undefined) {
+        if (!Array.isArray(r.ex)) return 'routine.ex must be an array';
+        for (const e of r.ex) {
+          if (!e || typeof e.id !== 'string' || !e.id) return 'ex.id required';
+          if (e.sets !== undefined && (typeof e.sets !== 'number' || !(e.sets >= 1))) return 'ex.sets must be >= 1';
+        }
+      }
+    }
+  }
+  return null;
+}
 function readState(uid) {
   try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
 }
@@ -386,6 +407,17 @@ const routes = {
     if (!user) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
+    const bad = checkState(body.state);
+    if (bad) return json(res, 400, { error: bad });
+    // Last-writer-wins guard (2026-09-08 sync incident): reject a base older than
+    // what's on disk so a stale full-state push can never silently wipe sessions or
+    // templates. Clients merge + retry (web pushState handles 409). Retries of the
+    // same payload (equal _ts) pass — the write is idempotent.
+    let cur = null;
+    try { cur = readState(user.id); } catch { /* first write */ }
+    const incoming = body.state._ts || 0;
+    if (cur && incoming < (cur._ts || 0))
+      return json(res, 409, { error: 'stale base, re-pull and merge', serverTs: cur._ts || 0 });
     delete body.state.active;              // in-progress workouts stay device-local
     atomicWrite(stateFile(user.id), JSON.stringify(body.state));
     json(res, 200, { ok: true, ts: body.state._ts || null });

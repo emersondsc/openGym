@@ -67,7 +67,10 @@ export const useStore = create((set, get) => {
     if (pushTm) {
       clearTimeout(pushTm)
       pushTm = null
-      get().pushState()
+      // Belt before the flush: if this push never lands (killed tab, offline),
+      // the dirty flag survives and the next boot merges instead of losing data.
+      try { localStorage.setItem('gym_dirty', '1') } catch { /* */ }
+      get().pushState()   // clears gym_dirty on success
     }
   })
 
@@ -105,8 +108,34 @@ export const useStore = create((set, get) => {
     async pushState() {
       if (!get().user) return
       clearTimeout(pushTm)
-      try { await api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) }); localStorage.removeItem('gym_dirty') }
-      catch (e) { localStorage.setItem('gym_dirty', '1') }
+      const send = () => api('/api/data', { method: 'PUT', body: JSON.stringify({ state: get().S }) })
+      try { await send(); localStorage.removeItem('gym_dirty') }
+      catch (e) {
+        localStorage.setItem('gym_dirty', '1')
+        // Expired/revoked session: surface as logged-out (like boot does) instead of
+        // forking silently — local data stays, next login pulls + merges.
+        if (e && e.status === 401) { get().setUser(null); return }
+        // Stale base (server moved ahead): pull, merge local-only workouts, stamp past
+        // the server clock (also heals a device clock running behind), retry once.
+        if (e && e.status === 409) {
+          try {
+            const { state: srv } = await api('/api/data')
+            if (srv) {
+              const S = get().S
+              const byId = new Map()
+              ;(srv.workouts || []).forEach(w => byId.set(w.id, w))
+              ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
+              const merged = Object.assign(clone(DEF), srv)
+              merged.workouts = [...byId.values()]
+              if (S.active) merged.active = S.active
+              merged._ts = Math.max(Date.now(), srv._ts || 0) + 1
+              persist(merged, false)
+              await send()
+              localStorage.removeItem('gym_dirty')
+            }
+          } catch { /* stays dirty, heals on next boot */ }
+        }
+      }
     },
     async pullState() {
       try {
