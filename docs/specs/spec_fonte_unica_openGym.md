@@ -1,60 +1,104 @@
-# Spec: Fonte única openGym — remover Sheets/e-mail/CSV e consolidar análise na API — v1
+# Spec: Fonte única openGym — remover Sheets/e-mail/CSV e consolidar análise na API — v3
 
 ## Contexto e Objetivo
 
-Hoje o fluxo de treino do Emerson depende do **Hermes** para análise: o Planilheiro lê direto do disco `/mnt/drivebackup/apps/openGym/data/state-*.json` via `opengym_reader.py`, gera `workout_analysis.json`/`workout_progress.json` com `process_workout.py` (Epley e1RM, tonnage, semanas/meses, PRs), escreve Google Sheets `19cxe...` via Composio `ca_7tT9O...` e envia relatórios por e-mail via `send_workout_email.py`. CSV Hevy (`workout_data_YYYY-MM-DD.csv`) ainda é aceito como fallback histórico.
+Hoje o openGym já importa de vários apps (Hevy etc.) pela própria UI/API e persiste em `/data/state-<uid>.json` via `PUT /api/data`. Mesmo assim, a análise que o Emerson consome ainda depende do Hermes: `opengym_reader.py` abre o arquivo no disco (`/mnt/drivebackup/apps/openGym/data/state-*.json`), `process_workout.py` calcula `workout_analysis.json`/`workout_progress.json` (Epley, tonnage, semanas ISO, meses, PRs) e escreve Sheets `19cxe...`/e-mail. CSV `workout_data_*.csv` ainda é lido como fallback, mesmo o app já tendo tudo.
 
-O openGym já possui **fonte única pronta**: `api/server.js` persiste por usuário em `/data/state-<uid>.json` + `/data/db.json` (passkey), com sync `PUT /api/data` last-write-wins com `_ts` e guarda `409 stale base`; frontend `store/useStore.js` já configura rotinas (`S.routines`, `S.week`, `S.dayPlan`, `S.workouts`, `S.bodyweight`) e consome via `api('/api/data')`. Desde 2026-09-05 o leitor já é HD-only (`opengym_reader.py` lê continente primeiro, espelho na ilha só como degradação).
+Objetivo (1,2,3,4 garantidos):
+1. Sheets some do caminho crítico — nada em `api/`/`frontend/` exige `GOOGLESUPER`/`google_token.json`.
+2. E-mail some do caminho crítico — relatório via `GET /api/coach/analysis`, não via `send_workout_email.py`.
+3. CSV some como obrigação — análise lê só `state-*.json`; import Hevy já existente no openGym (UI → `PUT /api/data`) segue fora desta spec e já alimenta `state-*.json`.
+4. App passa a calcular sozinho — `api/coach.js` puro dentro do container `api` expõe `GET /api/coach/analysis` (autenticado por `gymsid`), lendo `stateFile(uid)` do usuário autenticado; `frontend/src/lib/coach.js` consome e `Stats.jsx` renderiza card "Análise — fonte única".
 
-Objetivo: **eliminar Sheets, e-mail e CSV como dependências obrigatórias** e tornar a análise independente do Hermes, portando a matemática validada para dentro da API do openGym. Após esta spec, `GET /api/coach/analysis` no próprio container `api` deve entregar a mesma análise que hoje sai de `workout_analysis.json`, e o frontend deve consumi-la — sem escrever em Sheets, sem enviar e-mail e sem exigir CSV.
-
-Onde vive: `/mnt/drivebackup/apps/openGym/openGym` (branch `emerson-custom`), stack Node `api/server.js` (sem framework) + React Vite `frontend/`, Docker Compose `api + web (nginx :9000) + media`.
+Onde vive: `/mnt/drivebackup/apps/openGym/openGym` (`emerson-custom`), Node `api/server.js` sem framework + React Vite `frontend/`, Docker `api:3000` + `web:nginx:9000` (proxy `/api`) + `media`. Decisões v3: sem `POST /api/coach/import` (já existe import no app), paridade validada ao vivo com Hermes (cópia congelada do `state-*.json` no momento do teste), limpezas no Pi são checklist separado, `unit` por exercício vai para `docs/backlog.md` (BACKLOG-01) — nesta v3 normalização pontual `lb`→`kg` para os 2 exercícios de perna é opcional e documentada como migração única com backup.
 
 ## Escopo
 
 - Inclui:
-  - 1) **Remover Google Sheets** como destino obrigatório: desativar `scripts/update_dashboard.py`, `scripts/composio_google.py`, dependência `COMPOSIO_HOME`/Sheets `19cxe...` e qualquer escrita em abas `Dashboard/Sessões/Progresso/PRs`.
-  - 2) **Remover e-mail** como entrega obrigatória: desativar `scripts/send_workout_email.py`, `scripts/send_train_email.py`, `scripts/generate_premium_pdf.py`-e-mail, e conexão Composio GOOGLESUPER. Relatórios passam a ser servidos via API e renderizados no app.
-  - 3) **Remover CSV como fonte primária**: `process_workout.py`/`opengym_reader.py` deixam de exigir `workout_data_*.csv` e `EXMAP`; CSV fica apenas como import opcional `POST /api/coach/import` (fora do fluxo normal). Nenhum cron/job pode depender de CSV.
-  - 4) **Consolidar fonte única no openGym**: portar matemática de `process_workout.py`+`opengym_reader.py` para Node em `api/coach.js` (ou módulo dentro de `server.js`), lendo direto de `/data/state-<uid>.json` (mesma semântica do volume Docker), expondo `GET /api/coach/analysis` autenticado por `gymsid` e consumido pelo frontend. Rotinas continuam configuráveis via `PUT /api/data` (contrato existente).
+  - 1) Remover Sheets do caminho crítico (nenhum `import` que quebre sem `COMPOSIO_HOME`; verificação via `rg`).
+  - 2) Remover e-mail do caminho crítico (nenhum `send_workout_email` no fluxo `GET /api/coach/analysis`).
+  - 3) Remover CSV do caminho crítico (nenhum `fs` de `*.csv`/`EXMAP` em `api/`; import Hevy existente permanece fora da spec).
+  - 4) App calcula: `api/coach.js` (LB_TO_KG, rowsFromState, buildAnalysis) + `GET /api/coach/analysis` + `frontend/src/lib/coach.js` (TTL 60s + invalidação) + card em `Stats.jsx` + verificação `web/nginx.conf` proxy.
 - Não inclui:
-  - Migração completa do treinador (persona Low Volume, 4 fases, `mesociclo_ativo.json`, perguntas Fase 2, planejamento de meso/micro). O `mesociclo_ativo.json` permanece em `/home/pi/.hermes/workout/plans` nesta spec — apenas a análise é espelhada.
-  - Mudança no modelo de auth (passkey `@simplewebauthn/server` permanece), no contrato `PUT /api/data` com `_ts`/`409`, ou no volume `/data`.
-  - Novo serviço Python no compose; tudo fica em Node na `api`.
-  - Reescrita do dataset `exercise_catalog.json` (1324 exercícios com `img/gif`) — permanece onde está, não é movido nesta spec.
+  - Treinador completo (persona Low Volume, `mesociclo_ativo.json`) — permanece no Hermes.
+  - `unit` por exercício (BACKLOG-01); nesta v3 apenas migração pontual opcional.
+  - `exercise_catalog.json` no repo (BACKLOG-03).
+  - Novo serviço Python.
 
 ## Requisitos Funcionais
 
-RF-1. **Sheets removido como dependência obrigatória** — Nenhum código em `api/` ou `frontend/` ou cron no Hermes pode exigir variável `GOOGLESUPER`, `google_token.json` ou Sheets ID `19cxe...` para que `GET /api/coach/analysis` funcione. "Removido" = nenhum `import`/`require` que quebre se o token não existir, nenhum job que falhe o boot do `api` por falta de Sheets.
+RF-1. **Sheets fora do caminho crítico** — `GET /api/coach/analysis` não importa `composio_google`, não lê `google_token.json`, sobe com `COMPOSIO_HOME=""`. Verificação: `rg -n "composio|google_token|GOOGLESUPER" api frontend` deve retornar 0 (exceto docs/backlog).
 
-RF-2. **E-mail removido como entrega obrigatória** — Nenhum fluxo de geração de relatório pode exigir `send_workout_email.py` ou SMTP/Composio para concluir. O plano/relatório deve ser acessível via `GET /api/coach/analysis` (e futuro `GET /api/coach/plan`) mesmo com e-mail desconfigurado. E-mail pode permanecer como script manual, mas não no caminho crítico.
+RF-2. **E-mail fora do caminho crítico** — com e-mail desconfigurado, `GET /api/coach/analysis` retorna `200`. Nenhum `await send_workout_email` no fluxo.
 
-RF-3. **CSV removido como fonte primária** — `GET /api/coach/analysis` deve funcionar com zero arquivos `workout_data_*.csv` no disco. CSV só é lido se explicitamente enviado via `POST /api/coach/import` (opcional). Se `OPENGYM_DATA` e CSV estiverem ausentes, a análise deve vir do `state-<uid>.json` do usuário autenticado, não falhar.
+RF-3. **CSV fora do caminho crítico** — `GET` nunca lê `*.csv` nem `OPENGYM_DATA`/`MIRROR`/`EXMAP` do Hermes. Import Hevy já existente via UI (`PUT /api/data`) segue fora da spec e já alimenta `state-*.json`.
 
-RF-4. **Fonte única openGym via API** — As rotinas e workouts são lidos e escritos exclusivamente via `GET /api/data` / `PUT /api/data` (contrato existente com `S._ts`, `401` sem `gymsid`, `409` stale). `GET /api/coach/analysis` deve: (a) exigir `gymsid` válido (mesmo `readSession(req)` de `server.js:readSession`), (b) ler `stateFile(uid)` do usuário autenticado via `fs.readFileSync` (mesmo `stateFile` de `server.js`), (c) computar e retornar JSON equivalente a `workout_analysis.json` + `workout_progress.json` sem tocar no Hermes.
+RF-4. **Fonte única + app calcula** — `GET /api/coach/analysis` (a) exige `gymsid` via `readSession(req)` → `401 {error:'not signed in',code:'UNAUTH'}` com `Cache-Control: no-store`; (b) lê apenas `stateFile(uid)` sanitizado (ver Detalhe 1.3) dentro de `DATA`; (c) computa via `buildAnalysis(state)` puro; (d) retorna `200 {analysis,progress,meta}` com `Cache-Control: private, no-store, max-age=0` + `Vary: Cookie` e `Pragma: no-cache`; nunca escreve em `/home/pi/...`.
 
-RF-5. **Paridade matemática com `process_workout.py`** — `GET /api/coach/analysis` deve replicar exatamente: (i) conversão `unit` (`lb` → kg via `0.45359237`, `kg` = 1.0), (ii) mapeamento `customEx` (`exmap[id] = {n, eq}`) e fallback `exmap[id] || id`, (iii) regra de lastro com sufixo weighted quando `eq==body weight && w>0`, (iv) `set_type` (`warmup` se `phase==warmup` ou warmup true, senão `cardio` se `min/speed` presente e sem `r`, senão `normal`), (v) outlier: peso >2.5x 2º maior do mesmo exercício é excluído do volume/e1RM, (vi) `e1rm = w*(1+reps/30)` apenas se `w>0 && 1<=reps<=30`, (vii) sessões agrupadas por `w.start` (epoch ms via `_fmt_legacy` em `opengym_reader.py`), (viii) semanas ISO `YYYY-Sww` e meses `YYYY-MM`, (ix) PRs ordenados por e1RM desc. Diferença numérica >0.01 nos testes de snapshot deve falhar.
+RF-5. **Paridade matemática** — ordem canônica: (i) `unit = String(state.unit||'kg').toLowerCase().startsWith('lb')?'lb':'kg'`; `toKg = unit==='lb'?0.45359237:1`; (ii) `exmap` = `state.customEx` (`id→{n,eq}`) + fallback `id` cru (sem catalog nesta v3); (iii) lastro ` (weighted)` se `eq==='body weight' && wKg>0`; (iv) `set_type` = `warmup` se `phase==='warmup'||warmup===true`, senão `cardio` se `(min!=null||speed!=null) && !hasReps` onde `hasReps = s.r!=null && String(s.r).trim()!==''`, senão `normal`; (v) outlier por `exercise_title` (com ` (weighted)`), lista só `set_type==='normal' && wKg>0`; se `n>=2 && wKgList[0] > 2.5*wKgList[1]` então `w0 = wKgList[0]` cru; `isOutlier(r)` = existe `w0` e `Math.abs(Number(r._wKg)-w0) < 0.001` (tolerância cru, não arredondado); excluir **todos** sets com `wKg===w0` apenas de `tonnage/e1RM/prs/weeks/months`, manter `n_sets` bruto; (vi) `e1rm = wKg*(1+reps/30)` com `wKg` cru não arredondado, apenas se `1<=reps<=30 && wKg>0`; `weight_kg` string display = `Math.round(wKg*100)/100` só para UI; `tonnage = sum(wKg*reps)` com `wKg` cru; (vii) sessões agrupadas por `w.start` epoch ms UTC (`Number(w.start)`), não por `fmtLegacy` string; `period.first/last` = `YYYY-MM-DD` de `sessions[].date`; (viii) semanas ISO 8601 UTC (`YYYY-Sww`, segunda, semana 1 contém 4 jan, regra Thu, `ww` zero-pad); (ix) meses `YYYY-MM`; (x) PRs `e1rm` desc. Paridade alvo `±0.01` absoluto em `e1rm/tonnage/wmax` vs Hermes ao vivo sobre **mesma cópia congelada** do `state-*.json` (ver Critérios).
 
-RF-6. **Sem escrita no Hermes** — `GET /api/coach/analysis` não deve escrever em `/home/pi/.hermes/workout/data/`, não deve exigir `MIRROR` (`/home/pi/.hermes/workout/opengym-mirror`) nem `EXMAP` do Hermes. Degradação "continente → espelho" é removida; a única degradação é "sem workouts" → retorna `{n_sessions:0, ...}` com `200`.
+RF-6. **Sem escrita no Hermes em runtime** — `GET` não escreve em `/home/pi/...`, não lê `MIRROR`/`EXMAP`. Degradação: `ENOENT` → `200` vazio (`n_sessions:0, period:{first:null,last:null}`); `SyntaxError` ou `state.workouts` não-array ou `state==null` → `500 {error:'state corrupt',code:'STATE_CORRUPT',hint:'restore backup'}` + `console.error('[coach] corrupt',safeUid)`; `EACCES`/`EPERM` → `500`; leitura truncada impossível com `atomicWrite` (rename) mas coberta por `SyntaxError`.
 
-RF-7. **Contrato de API testável** — `GET /api/coach/analysis` retorna `200 { analysis: {...}, progress: {...}, meta: {uid, generatedAt, n_sets, n_sessions, period}}` quando autenticado e `401 {error:'not signed in'}` sem cookie. `analysis` deve conter chaves `n_sets, n_sessions, n_exercises, period{first,last}, sessions[], prs[], weeks[], months[], top_ex[], titles[]` com mesmos tipos do JSON atual. `progress` é mapa `ex -> [{date,e1rm,wmax,tonnage}]`.
+RF-7. **Contrato testável** — Sem cookie → `401 {error:'not signed in',code:'UNAUTH'}`. Com cookie → `200 {analysis:{n_sets:number,n_sessions:number,n_exercises:number,period:{first:string|null,last:string|null},sessions:Array<{date:string,start:string,end:string,title:string,n_sets:number,n_exercises:number,tonnage:number,avg_rpe:number|null}>,prs:Array<{ex:string,e1rm:number,wmax:number,reps:number,date:string,sets:number}>,weeks:Array<{week:string,sessions:number,tonnage:number,sets:number}>,months:Array<{month:string,sessions:number,tonnage:number,sets:number}>,top_ex:Array<[string,number]>,titles:Array<[string,number]>},progress:Record<string,Array<{date:string,e1rm:number|null,wmax:number|null,tonnage:number}>>,meta:{uid:string,generatedAt:number,n_sets:number,n_sessions:number,period:{first:string|null,last:string|null}}}`. `progress` por data `YYYY-MM-DD` UTC, `e1rm` max do dia, `wmax` max `wKg` do dia, `tonnage` soma do dia (só `normal` não-outlier). Se `n_sets>20000` → ainda `200` com `meta.truncated:true` + `meta.limitedTo:20000` (não `206`).
 
-RF-8. **Frontend consome fonte única** — `frontend/src/lib/coach.js` (novo) deve expor `fetchAnalysis()` que chama `api('/api/coach/analysis')` e armazena em cache em memória (TTL 60s). Nenhum componente pode importar `workout_analysis.json` do Hermes ou fazer fetch para Sheets.
+RF-8. **Frontend consome com invalidação** — `frontend/src/lib/coach.js` `fetchAnalysis(force?)` com cache memória TTL 60s e `clearCoachCache()`. `store/useStore.js` após `PUT /api/data` `200` (em `persist`/`pushState` sucesso) chama `clearCoachCache()` (import dinâmico). `Stats.jsx` usa `const user=useStore(s=>s.user)` e `useEffect([user])`, não `getState()`; `visibilitychange` não é necessário.
 
 ## Detalhe de Implementação (nível código)
 
-> Arquivo a arquivo, função a função, com código ANTES→DEPOIS copiável. Linhas referem-se ao estado atual em `emerson-custom` (2026-09-09).
+### 1. `api/coach.js` (novo, 230-270 linhas)
 
-### 1. `api/server.js` (linhas ~1-20 imports e ~275 routes)
+```js
+// api/coach.js — sem fs de Hermes, sem csv-parse, sem compsio
+const LB_TO_KG = 0.45359237;
+function isoWeekKeyUTC(dateStr){ // dateStr YYYY-MM-DD UTC → YYYY-Sww
+  const d=new Date(dateStr+'T12:00:00Z'); const day=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-day+3);
+  const firstThu=new Date(Date.UTC(d.getUTCFullYear(),0,4)); const week=Math.round((d-firstThu)/604800000)+1;
+  return `${d.getUTCFullYear()}-S${String(week).padStart(2,'0')}`;
+}
+function e1rm(wKg,reps){ if(!wKg||!reps||wKg<=0||reps<=0||reps>30) return null; return wKg*(1+reps/30); }
+export function rowsFromState(state){
+  const exmap={}; for(const c of state.customEx||[]) if(c.id) exmap[c.id]={n:c.n||c.id, eq:c.eq||'custom'};
+  const unit=String(state.unit||'kg').toLowerCase().startsWith('lb')?'lb':'kg'; const toKg=unit==='lb'?LB_TO_KG:1;
+  const rows=[];
+  for(const w of state.workouts||[]){
+    const startMs=Number(w.start); const endMs=Number(w.end)||startMs;
+    // fmtLegacy só para display de rows.start_time (não para agrupar)
+    const fmt=(ms)=>{ const d=new Date(Number(ms)); const MESES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${d.getDate()} ${MESES[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+    const start=fmt(startMs), end=fmt(endMs)||start; const title=(w.name||'Imported').trim();
+    for(const e of w.entries||[]){
+      const exId=e.id||''; const meta=exmap[exId]||{n:exId, eq:''}; const baseName=meta.n||exId; const isBw=meta.eq==='body weight';
+      for(let i=0;i<(e.sets||[]).length;i++){
+        const s=e.sets[i]; const isWarm=String(s.phase||'').toLowerCase()==='warmup'||s.warmup===true;
+        const hasReps=s.r!=null && String(s.r).trim()!==''; const isCardio=(s.min!=null||s.speed!=null)&&!hasReps;
+        const setType=isWarm?'warmup':(isCardio?'cardio':'normal');
+        let rpe=s.rpe; if(s.rir!=null && Number.isFinite(Number(s.rir)) && Number(s.rir)>=0 && Number(s.rir)<=10){ const v=10-Number(s.rir); if(Number.isFinite(v)) rpe=v; }
+        if(rpe!=null && !Number.isFinite(Number(rpe))) rpe=null;
+        let wKg=0; try{ wKg=s.w==null||String(s.w).trim()===''?0: Number(s.w)*toKg; }catch{ wKg=0; }
+        const exName=(isBw && wKg>0)? `${baseName} (weighted)`: baseName;
+        rows.push({ title, start_time:start, end_time:end, _startMs:startMs, _endMs:endMs, exercise_title:exName, set_index:String(i), set_type:setType, weight_kg: s.w==null||String(s.w).trim()===''? '': String(Math.round(wKg*100)/100), reps: hasReps?String(s.r):'', rpe: rpe==null||String(rpe).trim()===''? '': String(rpe), _wKg:wKg, _reps: hasReps?Number(s.r):null });
+      }
+    }
+  }
+  return rows;
+}
+export function buildAnalysis(state){
+  const rows=rowsFromState(state);
+  // outlier, sessions por _startMs, weeks UTC via isoWeekKeyUTC, months, prs, top_ex, titles, progress por date
+  // tonnage e e1rm usam _wKg cru
+  return { analysis, progress };
+}
+```
 
-**1.1 Imports (linha 1-10) — ANTES:**
+### 2. `api/server.js` — imports e rota
+
+**ANTES:**
 ```js
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 ```
-**1.1 — DEPOIS:**
+**DEPOIS:**
 ```js
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -63,81 +107,35 @@ import path from 'node:path';
 import { buildAnalysis } from './coach.js';
 ```
 
-**1.2 Novo módulo `api/coach.js` (novo arquivo, 180-220 linhas):**
+**Rota `GET /api/coach/analysis` — ANTES:** não existe.
+**DEPOIS:**
 ```js
-// api/coach.js — matemática portada de process_workout.py + opengym_reader.py (sem Sheets/CSV)
-const LB_TO_KG = 0.45359237;
-const MESES_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function fmtLegacy(ms){
-  if(!ms) return '';
-  const dt = new Date(Number(ms));
-  return `${dt.getDate()} ${MESES_EN[dt.getMonth()]} ${dt.getFullYear()}, ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-}
-function toFloat(v){ const n=Number(String(v).replace(',','.').trim()); return Number.isFinite(n)?n:null; }
-function e1rm(w,reps){ if(!w||!reps||w<=0||reps<=0||reps>30) return null; return w*(1+reps/30); }
-export function rowsFromState(state){
-  const exmap = {};
-  for(const c of state.customEx||[]) if(c.id) exmap[c.id]={n:c.n||c.id, eq:c.eq||'custom'};
-  const toKg = state.unit==='lb'?LB_TO_KG:1.0;
-  const rows=[];
-  for(const w of state.workouts||[]){
-    const start=fmtLegacy(w.start), end=fmtLegacy(w.end)||start;
-    const title=(w.name||'Imported').trim();
-    for(const e of w.entries||[]){
-      const exId=e.id||''; const meta=exmap[exId]||{n:exId, eq:''};
-      const baseName=meta.n||exId; const isBw=meta.eq==='body weight';
-      for(let i=0;i<(e.sets||[]).length;i++){
-        const s=e.sets[i]; const isWarm=(String(s.phase||'').toLowerCase()==='warmup')||s.warmup===true;
-        const isCardio=(s.min!=null||s.speed!=null)&& s.r==null;
-        const setType=isWarm?'warmup':(isCardio?'cardio':'normal');
-        let rpe=s.rpe; if(s.rir!=null){ try{ rpe=10-Number(s.rir);}catch{} }
-        let wtf=0; try{ wtf= s.w==null||s.w===''?0: Number(s.w);}catch{ wtf=0;}
-        const exName=(isBw && wtf>0)? `${baseName} (weighted)`: baseName;
-        rows.push({ title, start_time:start, end_time:end, exercise_title:exName, set_index:String(i), set_type:setType, weight_kg: s.w==null||s.w===''? '': String(Math.round(wtf*toKg*100)/100), reps: s.r==null||s.r===''? '': String(s.r), rpe: rpe==null||rpe===''? '': String(rpe)});
-      }
-    }
-  }
-  return rows;
-}
-export function buildAnalysis(state){
-  const rows=rowsFromState(state);
-  // outliers, sessões, e1RM, weekly, monthly, prs, top_ex, titles — portado linha-a-linha de process_workout.py
-  // ... (implementação completa no arquivo, ver seção 6. Testes manuais para validação)
-  return { analysis, progress };
-}
-```
-Regras: sem `fs` para Sheets/CSV, sem `process.env.OPENGYM_DATA` do Hermes, apenas recebe `state` já lido do `stateFile(uid)`.
-
-**1.3 Rota `GET /api/coach/analysis` (novo, após `GET /api/health`, linha ~277):**
-```js
-// ANTES: não existe
-// DEPOIS:
   'GET /api/coach/analysis': async (req, res) => {
     const user = readSession(req);
-    if (!user) return json(res, 401, { error: 'not signed in' });
-    let state=null; try{ state=JSON.parse(fs.readFileSync(stateFile(user.id),'utf8')); }catch{ state={ workouts:[], routines:[], bodyweight:[], customEx:[], unit:'kg' } }
-    const { analysis, progress } = buildAnalysis(state);
-    json(res, 200, { analysis, progress, meta:{ uid:user.id, generatedAt: Date.now(), n_sets: analysis.n_sets, n_sessions: analysis.n_sessions, period: analysis.period }});
+    if (!user) return json(res, 401, { error:'not signed in', code:'UNAUTH' }, {'Cache-Control':'private, no-store, max-age=0'});
+    const rawUid=String(user.id||'');
+    const safeUid=rawUid.replace(/[^a-zA-Z0-9_-]/g,'');
+    if(!safeUid) return json(res,400,{error:'bad uid',code:'BAD_UID'});
+    const p=path.resolve(DATA, 'state-'+safeUid+'.json');
+    const rel=path.relative(path.resolve(DATA), p);
+    if(rel.startsWith('..') || path.isAbsolute(rel)) return json(res,400,{error:'bad uid',code:'BAD_UID'});
+    let state; try{ const txt=fs.readFileSync(p,'utf8'); if(!txt.trim()) throw new SyntaxError('empty'); state=JSON.parse(txt); }catch(e){
+      if(e.code==='ENOENT') state={ workouts:[], routines:[], bodyweight:[], customEx:[], unit:'kg' };
+      else if(e instanceof SyntaxError){ console.error('[coach] corrupt',safeUid,e.message); return json(res,500,{error:'state corrupt',code:'STATE_CORRUPT',hint:'restore backup'}); }
+      else { console.error('[coach] read error',safeUid,e); return json(res,500,{error:'server error'}); }
+    }
+    // validação schema mínima
+    if(!state || typeof state!=='object' || (state.workouts!=null && !Array.isArray(state.workouts))){ console.error('[coach] corrupt schema',safeUid); return json(res,500,{error:'state corrupt',code:'STATE_CORRUPT',hint:'restore backup'}); }
+    try{
+      const { analysis, progress } = buildAnalysis(state);
+      // SLO p95 <150ms para 5k sets; se >20000 sets, não 206, apenas flag
+      if(analysis.n_sets>20000) return json(res,200,{analysis, progress, meta:{uid:user.id, generatedAt:Date.now(), n_sets:analysis.n_sets, n_sessions:analysis.n_sessions, period:analysis.period, truncated:true, limitedTo:20000}}, {'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie','Pragma':'no-cache'});
+      json(res,200,{analysis, progress, meta:{uid:user.id, generatedAt:Date.now(), n_sets:analysis.n_sets, n_sessions:analysis.n_sessions, period:analysis.period}}, {'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie','Pragma':'no-cache'});
+    }catch(e){ console.error('[coach] build error',safeUid,e); json(res,500,{error:'server error'}); }
   },
 ```
 
-**1.4 Rota opcional `POST /api/coach/import` (CSV legado, fora do caminho crítico):**
-```js
-  'POST /api/coach/import': async (req, res) => {
-    const user = readSession(req); if(!user) return json(res,401,{error:'not signed in'});
-    const body=await readBody(req);
-    if(!body.csvText) return json(res,400,{error:'csvText required'});
-    // parse CSV mínimo, converte para workouts e faz merge via mesma lógica de PUT /api/data
-  },
-```
-Se não houver tempo, esta rota pode ser stub `501 not implemented` nesta v1 — RF-3 continua atendido porque CSV não é exigido.
-
-### 2. `api/package.json` (linha 13 dependencies)
-
-**ANTES:** `"dependencies": {"@simplewebauthn/server":..., "web-push":...}`
-**DEPOIS:** sem nova dependência (matemática é JS puro). Não adicionar `csv-parse` nesta v1; se necessário, usar split manual.
-
-### 3. `frontend/src/lib/coach.js` (novo, 30 linhas)
+### 3. `frontend/src/lib/coach.js` (novo)
 
 ```js
 import { api } from './api.js';
@@ -147,95 +145,98 @@ export async function fetchAnalysis(force=false){
   const data=await api('/api/coach/analysis');
   cache=data; cacheAt=Date.now(); return data;
 }
-export function clearCoachCache(){ cache=null; }
+export function clearCoachCache(){ cache=null; cacheAt=0; }
 ```
 
-### 4. `frontend/src/views/Stats.jsx` ou `frontend/src/views/Home.jsx` (consumo)
-
-**ANTES:** nenhum consumo de análise (dados vêm só de `S.workouts`).
-**DEPOIS (exemplo em Stats):**
+**3.1 `frontend/src/store/useStore.js` — invalidação**
+Após `await api('/api/data',{method:'PUT',body:JSON.stringify({state:sanitized})})` com `200` em `pushState` e após `persist(next,false)` em `pullState`, chamar:
 ```js
-import { fetchAnalysis } from '../lib/coach.js';
-const [coach,setCoach]=useState(null);
-useEffect(()=>{ if(user) fetchAnalysis().then(setCoach).catch(()=>{}); },[user]);
- // render: coach.analysis.weeks, coach.progress['lever leg extension'], etc.
- // fallback: se 401 ou coach==null, renderiza "faça login para ver análise"
+try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
 ```
-Não remover render atual baseado em `S.workouts` nesta v1; apenas adicionar seção "Análise (API)" com badge `✓ fonte única`.
 
-### 5. Remoções no Hermes (fora do repo openGym, mas parte do aceite 1,2,3)
+### 4. `frontend/src/views/Stats.jsx` — card (completo, copiável)
 
-**5.1 Desativar escrita em Sheets:**
-- `crontab -l | grep -v update_dashboard | crontab -` — remover cron que chama `update_dashboard.py`.
-- Renomear `/home/pi/.hermes/workout/scripts/update_dashboard.py` → `.../deprecated/update_dashboard.py` e remover imports de `composio_google.py` em `sync_treino.sh`.
-- Não apagar `google_token.json` nesta v1 (apenas não é mais exigido; RF-1 valida que `GET /api/coach/analysis` não quebra sem ele).
+```jsx
+import { useState,useEffect } from 'react';
+import { useStore } from '../store/useStore.js';
+import { fetchAnalysis } from '../lib/coach.js';
+import { fmtDate } from '../lib/format.js';
+export default function StatsExtra(){
+  const user=useStore(s=>s.user);
+  const [coach,setCoach]=useState(null); const [err,setErr]=useState(null);
+  useEffect(()=>{ if(!user){ setCoach(null); setErr(null); return;} fetchAnalysis().then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e)); },[user]);
+  if(!user) return <div className="card"><div className="muted small">Faça login para ver análise — 401</div><button className="btn" onClick={()=>location.href='/login'}>Entrar com passkey</button></div>;
+  if(err && err.status===401) return <div className="card muted small">Faça login para ver análise — 401</div>;
+  if(err) return <div className="card"><div className="muted small">Análise indisponível — {err.message||'erro'}</div><button className="btn" onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Tentar novamente</button></div>;
+  if(!coach) return <div className="card muted small">Carregando análise…</div>;
+  return <div className="card"><div className="row between"><h2>Análise — fonte única (API)</h2><span className="dim small">✓ fonte única · gerado às {fmtDate(coach.meta.generatedAt)} (TTL 60s)</span></div><div className="small dim">{coach.analysis.n_sessions} sessões · {coach.analysis.n_exercises} exercícios · {coach.analysis.period.first||'—'} → {coach.analysis.period.last||'—'}</div></div>;
+}
+```
+Integrar como `<StatsExtra/>` abaixo de `<MuscleBalance/>` em `Stats.jsx`.
 
-**5.2 Desativar e-mail como dependência:**
-- Em `sync_treino.sh` e `plans/*.md` generation, remover chamada a `send_workout_email.py` do caminho crítico; manter script mas sem ser chamado por `GET /api/coach/analysis`.
+### 5. `web/nginx.conf` — verificação
 
-**5.3 CSV como opcional:**
-- Em `process_workout.py` adicionar guard no topo: se `SRC==None` e `state-*.json` existe, não exigir CSV (já é o comportamento atual via `opengym_reader`; apenas garantir que nenhum cron falhe se `workout_data_*.csv` sumir).
+Garantir `location /api/ { proxy_pass http://api:3000; proxy_no_cache 1; proxy_cache_bypass 1; }` e `add_header Cache-Control "private, no-store" always;` para `/api/coach/analysis` (ou via `api` header `Vary: Cookie`).
 
-### 6. Testes manuais (todos devem passar sem Hermes)
+### 6. Migração pontual `lb`→`kg` (opcional, antes da validação)
 
-1. `curl -s http://localhost:3000/api/coach/analysis` sem cookie → `401`.
-2. Login via passkey (UI), depois `curl -b cookies.txt http://localhost:3000/api/coach/analysis | jq .analysis.n_sessions` → `>280` (mesmo número que `workout_analysis.json` no Hermes).
-3. Comparar snapshot: `ssh hermes "cat /home/pi/.hermes/workout/data/workout_analysis.json" | jq .period` vs `curl .../api/coach/analysis | jq .analysis.period` → idênticos.
-4. Remover `workout_data_*.csv` do Hermes (`ssh hermes "ls /home/pi/.hermes/workout/data/*.csv"` → vazio) e repetir passo 2 → ainda `200` (RF-3).
-5. Renomear `google_token.json` temporariamente (`ssh hermes "mv google_token.json google_token.json.bak"`) e repetir passo 2 → ainda `200` (RF-1/2).
-6. No frontend, abrir `Stats` logado → seção "Análise (API)" mostra `weeks` e `prs` sem spinner infinito; deslogado mostra "faça login".
+Script dry-run que lista candidatos `wKg > 2.5*mediana` por `exercise_title` e só reescreve se IDs confirmados por Emerson, com `cp state-<uid>.json state-<uid>.json.bak` antes. Se não houver IDs, pular — BACKLOG-01 cobre `unit` por exercício futuro.
+
+### 7. Testes manuais (todos sem exigir Sheets/e-mail/CSV)
+
+1. `curl -s http://localhost:3000/api/coach/analysis` → `401 {code:'UNAUTH'}`.
+2. Login passkey, `curl -b cookies.txt http://localhost:3000/api/coach/analysis | jq .analysis.n_sessions` → `>0`; comparar com `ssh hermes "cat /home/pi/.hermes/workout/data/workout_analysis.json" | jq .n_sessions` sobre **mesma cópia congelada** (`cp /mnt/drivebackup/apps/openGym/data/state-<uid>.json /tmp/frozen.json` e rodar ambos sobre ele) → `period.first/last` idênticos, `e1rm/tonnage` `±0.01`.
+3. `rg -n "composio|google_token|GOOGLESUPER" api frontend` → 0 (fora docs).
+4. `COMPOSIO_HOME="" docker compose up api` → `GET` ainda `200`.
+5. `Stats` logado → card com `weeks`/`prs` e badge `✓ fonte única`; deslogado → CTA; `500` → botão "Tentar novamente".
+6. `curl http://localhost:9000/api/coach/analysis -b cookies.txt -I` → `200` via `web` proxy + `Cache-Control: private, no-store`.
 
 ## Comportamento Visual/UX
 
-Esta spec é majoritariamente backend, mas o aceite exige visibilidade no app de que a fonte única está ativa.
-
-### Mock ASCII — Stats (nova seção)
-
+**Com dados (200):**
 ```
 ┌─ Análise — fonte única (API) ─────────────────────┐
 │ 280 sessões · 12 exercícios · 2024-11-22 → 2026-09-08 │
-│  [✓ fonte única]  gerado em 09 set 13:44 (60s cache)  │
+│  [✓ fonte única]  gerado às 13:44 (TTL 60s)           │
 ├───────────────────────────────────────────────────┤
-│  Weeks (ISO)        │ Sessions │ Tonnage           │
-│  2026-S36           │ 3        │ 32.420 kg         │
-│  2026-S35           │ 4        │ 41.110 kg         │
+│  Semanas ISO         │ Sessões │ Carga total        │
+│  2026-S36            │ 3       │ 32.420 kg          │
+│  2026-S35            │ 4       │ 41.110 kg          │
 ├───────────────────────────────────────────────────┤
-│  Top exercícios     │ PR e1RM  │ wmax              │
-│  lever leg extension│ 253 kg   │ 200 kg (2026-09-02)│
+│  Top exercícios      │ PR e1RM │ wmax               │
+│  lever leg extension │ 253 kg  │ 200 kg (2026-09-02)│
 └───────────────────────────────────────────────────┘
-Sem login: [Faça login para ver análise — 401]
 ```
+**Sem login (401):** card com "Faça login — 401" + botão Entrar.
+**Carregando:** "Carregando análise…".
+**Erro 500:** "Análise indisponível — tentar novamente" + botão.
 
-### Fluxo
-
-`Login passkey → GET /api/me 200 → GET /api/coach/analysis 200 → render Stats/Home`. Sem login, o card mostra estado vazio com mensagem, nunca quebra.
+Fluxo: `Login → GET /api/me 200 → GET /api/coach/analysis 200 → render`. Após `PUT /api/data` (salvar treino), `clearCoachCache()` garante recomputo.
 
 ## Persistência e Dados
 
-- Fonte: `/data/state-<uid>.json` lido via `stateFile(uid)` de `server.js` (mesmo path do `PUT /api/data`). Nenhum novo arquivo em `/data` nesta v1.
-- Cache: apenas em memória no frontend (`coach.js` TTL 60s) e sem cache no backend (sempre recomputa; custo <50ms para 300 sessões).
-- Compat: `S._ts` e guarda `409` permanecem inalterados; `buildAnalysis` é puro e não escreve.
+- Fonte: `/data/state-<uid>.json` sanitizado, sem novo arquivo em `/data` nesta v3.
+- Sem escrita: `buildAnalysis` puro; `GET` nunca escreve; `PUT` único escritor com `atomicWrite`.
+- Cache: frontend TTL 60s + `Cache-Control: private, no-store, max-age=0, Vary: Cookie`.
 
 ## Integração
 
-- `api/server.js` ↔ `api/coach.js` (import puro), `frontend/src/lib/coach.js` ↔ `api('/api/coach/analysis')`, `frontend/src/views/Stats.jsx` (ou Home) consome.
-- Desacopla: nenhum import de `~/.hermes`, nenhum env `OPENGYM_DATA`/`MIRROR`/`EXMAP` do Hermes, nenhum Sheets/e-mail.
+- `api/server.js` ↔ `api/coach.js` ↔ `frontend/src/lib/coach.js` ↔ `Stats.jsx` ↔ `web/nginx.conf` proxy.
 
 ## Casos de Borda
 
-- Usuário sem workouts: retorna `{n_sessions:0, period:{first:null,last:null}, sessions:[], prs:[]}` com `200`.
-- `state-<uid>.json` ausente/corrompido: trata como `{workouts:[], customEx:[], unit:'kg'}`, não `500`.
-- `unit=='lb'` → converte todos os pesos com `0.45359237` antes de outlier/e1RM (paridade com leitor).
-- Outlier: se maior peso >2.5x segundo maior do mesmo exercício, exclui só do volume/e1RM, mas mantém série no `n_sets` (mesma regra do Python).
-- Múltiplos perfis em `/data`: nunca lista diretório; usa `uid` do cookie (não `OPENGYM_UID`).
-- CSV importado via `POST /api/coach/import` com formato inválido → `400 {error:'bad csv'}`, sem efeito colateral.
+- Sem workouts → `200` vazio; `ENOENT` → `200` vazio; `SyntaxError`/schema inválido → `500 STATE_CORRUPT`.
+- `unit` variações (`LB`, `lbs`) → normalizado.
+- Outlier `n<2` desabilita; `weight_kg` vazio ignora.
+- `n_sets>20000` → `200` com `truncated:true` (não `206`).
+- Traversal `uid` → `400 BAD_UID`.
+- `s.r=''` → `hasReps` false.
 
 ## Critérios de Aceite
 
-- [ ] `GET /api/coach/analysis` sem `gymsid` → `401`, com `gymsid` válido → `200` com chaves `analysis{...}, progress{...}, meta{...}`.
-- [ ] Snapshot paridade: `n_sessions`, `n_sets`, `period`, `weeks[0].tonnage`, `prs[0].e1rm` idênticos ao `workout_analysis.json` do Hermes (±0.01) para o mesmo usuário.
-- [ ] Com `*.csv` removidos e `google_token.json` renomeado no Hermes, o endpoint ainda retorna `200` (prova de 1,2,3).
-- [ ] Frontend logado exibe seção "Análise — fonte única" com dados; deslogado exibe mensagem sem erro.
-- [ ] Nenhum job/cron exige Sheets/e-mail/CSV para o app subir: `docker compose up api` sobe sem env `COMPOSIO_HOME`.
-- [ ] `npm run build` no frontend e `node --check api/coach.js` passam; `docker compose build api` passa.
+- [ ] `GET` sem cookie `401`, com cookie `200` com `analysis/progress/meta` e `Cache-Control: private, no-store`.
+- [ ] Paridade ao vivo sobre cópia congelada: `n_sets/n_sessions/period` exatos, `e1rm/tonnage/wmax` `±0.01`.
+- [ ] `rg` Sheets/e-mail retorna 0; `COMPOSIO_HOME=""` ainda `200`; `*.csv` removidos ainda `200`.
+- [ ] `Stats` logado com card, deslogado CTA, `500` com retry, `PUT` invalida cache.
+- [ ] `docker compose up api` e `curl :9000/api/coach/analysis` via `web` funcionam; `node --check api/coach.js` e `npm run build` passam.
 
