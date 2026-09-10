@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, isBw, isPerSide, sideReps, repStep } from './history.js'
+import { modeOf, isTimed, fmtSec, setLabel, defaultConfig, buildSets, exLine, workoutVolume, effortOf, stepEffort, capEffort, isBw, isPerSide, sideReps, repStep, repFloor } from './history.js'
 import { EXDB } from './exercises.js'
 
 // Real ids out of the shipped catalogue, so the body-part fallback is exercised for real.
@@ -370,9 +370,74 @@ describe('buildSets', () => {
       .toEqual([{ w: 40, r: 8, done: false }])
   })
 
-  it('still prefers the confirmed working weight for reps sets', () => {
+  it('lets the plan win over the notebook and last time', () => {
     const S = { exWeights: { [LIFT]: { w: 75 } }, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 10, done: true }] }] }] }
-    expect(buildSets(S, { id: LIFT, sets: 1, reps: 8, weight: 50 })).toEqual([{ w: 75, r: 10, done: false }])
+    expect(buildSets(S, { id: LIFT, sets: 1, reps: 8, weight: 50 })).toEqual([{ w: 50, r: 8, done: false }])
+  })
+
+  it('keeps two routines on their own planned weight for the same exercise', () => {
+    const cfg = weight => ({ id: LIFT, sets: 1, reps: 8, weight })
+    expect(buildSets(emptyS, cfg(40))).toEqual([{ w: 40, r: 8, done: false }])
+    expect(buildSets(emptyS, cfg(30))).toEqual([{ w: 30, r: 8, done: false }])
+  })
+
+  it('falls back to the notebook when the plan prescribes no weight', () => {
+    const S = { exWeights: { [LIFT]: { w: 75 } }, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 10, done: true }] }] }] }
+    expect(buildSets(S, { id: LIFT, sets: 1, reps: 8, weight: 0 })).toEqual([{ w: 75, r: 8, done: false }])
+  })
+
+  it('falls back to last time when neither the plan nor the notebook has a weight', () => {
+    const S = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 10, done: true }] }] }] }
+    expect(buildSets(S, { id: LIFT, sets: 1, reps: 8, weight: 0 })).toEqual([{ w: 60, r: 8, done: false }])
+  })
+
+  it('leaves the weight at zero when nothing at all is known', () => {
+    expect(buildSets(emptyS, { id: LIFT, sets: 1, reps: 8, weight: 0 }))
+      .toEqual([{ w: 0, r: 8, done: false }])
+  })
+
+  it('takes the bottom of a rep range from the plan', () => {
+    expect(buildSets(emptyS, { id: LIFT, sets: 2, reps: '6-8', weight: 45 }))
+      .toEqual([{ w: 45, r: 6, done: false }, { w: 45, r: 6, done: false }])
+  })
+
+  it('never puts a non-numeric rep target into a set', () => {
+    // Defensive: a state like this only comes from a hand-written or externally written plan
+    // file, never from the app's own config sheet (which always stores a number).
+    expect(buildSets(emptyS, { id: LIFT, sets: 1, reps: 'AMRAP', weight: 0 }))
+      .toEqual([{ w: 0, r: 0, done: false }])
+  })
+
+  it('still takes last time reps when the plan target is not a number', () => {
+    const S = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 12, done: true }] }] }] }
+    expect(buildSets(S, { id: LIFT, sets: 1, reps: 'AMRAP', weight: 0 })).toEqual([{ w: 60, r: 12, done: false }])
+  })
+
+  it('keeps last time reps when the plan states none', () => {
+    const S = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 12, done: true }] }] }] }
+    expect(buildSets(S, { id: LIFT, sets: 1, weight: 0 })).toEqual([{ w: 60, r: 12, done: false }])
+  })
+
+  it('lets a timed set take its load from the plan but its duration from last time', () => {
+    const S = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, target: { mode: 'time' }, sets: [{ sec: 70, w: 15, done: true }] }] }] }
+    expect(buildSets(S, { id: LIFT, mode: 'time', sets: 1, sec: 45, weight: 20 }))
+      .toEqual([{ sec: 70, w: 20, done: false }])
+  })
+
+  it('keeps last time load for a timed set whose plan states no load', () => {
+    const S = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, target: { mode: 'time' }, sets: [{ sec: 70, w: 15, done: true }] }] }] }
+    expect(buildSets(S, { id: LIFT, mode: 'time', sets: 1, sec: 45 }))
+      .toEqual([{ sec: 70, w: 15, done: false }])
+  })
+})
+
+describe('repFloor', () => {
+  it('reads the bottom of a range, a plain number and anything unusable', () => {
+    expect(repFloor('6-8')).toBe(6)
+    expect(repFloor(8)).toBe(8)
+    expect(repFloor('AMRAP')).toBe(0)
+    expect(repFloor(undefined)).toBe(0)
+    expect(repFloor(-5)).toBe(0)
   })
 })
 

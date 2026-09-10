@@ -25,6 +25,12 @@ const hist = (id, rows, target) => ({
 
 describe('readSession', () => {
   const T = { sets: 3, reps: 5 }
+
+  it('judges a rep-range plan against the bottom of the range', () => {
+    const RANGE = { sets: 2, reps: '6-8' }
+    expect(readSession({ id: LIFT, target: RANGE, sets: [{ w: 45, r: 6, done: true }, { w: 45, r: 6, done: true }] }).ok).toBe(true)
+    expect(readSession({ id: LIFT, target: RANGE, sets: [{ w: 45, r: 6, done: true }, { w: 45, r: 5, done: true }] }).ok).toBe(false)
+  })
   it('counts a session where every set made its reps as a hit', () => {
     const s = readSession({ id: LIFT, target: T, sets: [{ w: 60, r: 5, done: true }, { w: 60, r: 5, done: true }, { w: 60, r: 6, done: true }] })
     expect(s.ok).toBe(true)
@@ -71,8 +77,8 @@ describe('stallCount', () => {
 })
 
 describe('policyFor', () => {
-  it('keeps the app\'s long-standing behaviour as the default for reps work', () => {
-    expect(policyFor({ id: LIFT }, null, 'reps')).toBe('linear')
+  it('defaults to no progression, so a plan keeps the weight it states', () => {
+    expect(policyFor({ id: LIFT }, null, 'reps')).toBe('off')
   })
   it('leaves timed and cardio work alone unless asked', () => {
     expect(policyFor({ id: LIFT, mode: 'time' }, null, 'time')).toBe('off')

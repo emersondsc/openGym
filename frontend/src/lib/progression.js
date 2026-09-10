@@ -16,7 +16,7 @@
 //   · fewer sets than prescribed                       → miss
 // So a session that fell apart can never advance the load as though it had succeeded.
 
-import { modeOf, repStep } from './history.js'
+import { modeOf, repStep, repFloor } from './history.js'
 import { EXIDX } from './exercises.js'
 
 export const POLICIES = ['off', 'linear', 'greyskull', 'double', 'time']
@@ -65,11 +65,15 @@ export const DEFAULT_SEC_INCREMENT = 5
 export const MAX_BW_SETS = 6
 
 // The policy in force for one exercise: its own override, else the routine's default, else
-// the mode's default. Reps keeps behaving the way the app always did (all reps → add a step).
+// nothing — an exercise with no rule keeps the weight its plan states. Until 2026-09-10 reps
+// inherited 'linear' instead, so a routine that had just been created, imported or written by the
+// coach was silently re-prescribed from history (last weight + a step, or a deload) and the planned
+// weight never reached the screen. Opting in is now explicit: cfg.prog on the exercise, or `prog`
+// on the routine.
 export function policyFor(cfg, routine, mode) {
   const m = mode || modeOf(cfg || {})
   const allowed = POLICIES_FOR[m] || ['off']
-  const pick = (cfg && cfg.prog) || (routine && routine.prog) || (m === 'reps' ? 'linear' : 'off')
+  const pick = (cfg && cfg.prog) || (routine && routine.prog) || 'off'
   return allowed.includes(pick) ? pick : 'off'
 }
 
@@ -115,7 +119,11 @@ export function readSession(entry, fallback) {
       ok: goal > 0 && enough && held.length > 0 && held.every(h => h >= goal)
     }
   }
-  const goal = target.reps || 0
+  // A plan may keep its reps as a range ('6-8'). Judging the session against the raw string scored
+  // every session as a miss ("6-8" > 0 is false in JS), so a plan in a range was deloaded after
+  // DELOAD_AFTER sessions (1 on Greyskull, 3 on Linear) despite being followed to the letter.
+  // repFloor reads the bottom of the range — the same number buildSets seeds and shows.
+  const goal = repFloor(target.reps)
   const reps = sets.map(s => (s.done ? (s.r || 0) : 0))
   return {
     mode, goal, reps,

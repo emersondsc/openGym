@@ -40,6 +40,16 @@ export const sideReps = reps => (reps || 0) / 2
 // that stayed odd would put a rep on one side and not the other.
 export const repStep = cfg => (isPerSide(cfg) ? 2 : 1)
 
+// How many reps a plan entry targets, as a number. A plan may state a range ('6-8', the format the
+// coach writes) and the app works from its bottom: that is the number a set is seeded with and the
+// number a session is judged against, so both readings must agree. Anything that is not a positive
+// number of reps reads as 0 — a target the session has to fill in — and never as text, which would
+// put NaN into volume and e1RM. Used by buildSets and by readSession (progression.js).
+export function repFloor(reps) {
+  const m = /^\d+/.exec(String(reps ?? ''))
+  return m ? parseInt(m[0], 10) : 0
+}
+
 // mm:ss for a work duration — seconds alone read badly past a minute ("90 s" vs "1:30").
 export function fmtSec(sec) {
   const n = Math.max(0, Math.round(Number(sec) || 0))
@@ -185,25 +195,41 @@ export function buildSets(S, cfg) {
     return sets
   }
   if (mode === 'time') {
+    // The planned load is a prescription like any other: the routine wins, and last time's load
+    // is only a suggestion for a routine that prescribes none. The *duration* is deliberately
+    // left alone — it is not a load, and carrying it is what "Add time" lives on (when a time
+    // policy is on, applyPrescription rewrites `sec` from the plan afterwards).
+    const tplW = Number(cfg.weight) > 0 ? Number(cfg.weight) : null
     for (let i = 0; i < n; i++) {
       // Only carry a previous value over when it came from a timed set — switching an
       // exercise from reps to time must not seed the duration from a rep count.
       const prev = prevAt(i)
       const carried = prev && prev.sec > 0 ? prev : null
-      sets.push({ sec: carried ? carried.sec : (cfg.sec || 45), w: carried ? (carried.w || 0) : (cfg.weight || 0), done: false })
+      sets.push({
+        sec: carried ? carried.sec : (cfg.sec || 45),
+        w: tplW != null ? tplW : (carried ? (carried.w || 0) : 0),
+        done: false
+      })
     }
     return sets
   }
   const conf = S.exWeights[cfg.id]
-  // Template reps may be a range string ('6-8'): seed a leading number so a set
-  // completed untouched never logs a non-numeric r (NaN volume, null e1RM).
-  const m = /^\d+/.exec(String(cfg.reps ?? ''))
-  const defR = m ? parseInt(m[0], 10) : cfg.reps
+  // The routine is the prescription: what it states wins for both the load and the reps, and the
+  // notebook / last session are only suggestions for what it leaves blank. This is the opposite of
+  // the order this function used until 2026-09-10, where the notebook (one monotonically rising
+  // entry per exercise, shared by every routine) was consulted first and flattened every routine
+  // onto the heaviest weight ever lifted.
+  const tplW = Number(cfg.weight) > 0 ? Number(cfg.weight) : null
+  const defR = repFloor(cfg.reps)
+  const tplR = defR > 0 ? defR : null
   for (let i = 0; i < n; i++) {
     const prev = prevAt(i)
+    // `usable` needs reps > 0 on purpose: a timed set from last time must not seed reps work
+    // with its load (see history.test.js, "does not seed reps from a timed set...").
     const usable = prev && prev.r > 0 ? prev : null
-    const w = conf && conf.w > 0 ? conf.w : (usable ? usable.w : cfg.weight)
-    sets.push({ w, r: usable ? usable.r : defR, done: false })
+    const w = tplW != null ? tplW : (conf && conf.w > 0 ? conf.w : (usable ? usable.w : cfg.weight))
+    const r = tplR != null ? tplR : (usable ? usable.r : defR)
+    sets.push({ w, r, done: false })
   }
   return sets
 }
