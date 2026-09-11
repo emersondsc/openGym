@@ -230,6 +230,7 @@
 
 ---
 
+*Atualizado 11/09/2026 (6): **push dos commits do BACKLOG-07 feito** — `origin/emerson-custom` = `1df7224`, confirmado por `git ls-remote` (que lê o GitHub, não o cache local). Achado operacional no caminho: o clone do repo **no Pi é shallow** (`.git/shallow` com 1 linha, `main` = 1 commit), então um `git fetch`/`clone` NOVO a partir dele falha com *"did not send all necessary objects"* — não é corrupção e não afeta o deploy (o container builda do diretório de trabalho). O push saiu por um bundle `5a7f3fd..1df7224` + a credencial do Windows (o Pi não tem credencial de GitHub). Candidato a manutenção: `git fetch --unshallow` no Pi, ou remote por SSH.
 *Criado em 2026-09-09 a partir da Etapa 4 — fonte única. Dono: Emerson. Branch: `emerson-custom`.*
 *Atualizado 10/09/2026: criado o BACKLOG-05 (caderno de pesos global por exercício) a partir da spec do BACKLOG-02. Nota de leitura: as entradas BACKLOG-02/03 acima descrevem o desenho **anterior** (rotinas novas `r_*_S(n)_<hash>`, `S.dayPlan` com as datas da semana, `gymsid` em hex); a spec `docs/specs/spec_micro_via_app_v5.md` substitui aquele desenho, e o rodapé anterior (2026-09-23) está à frente do relógio da máquina (10/09/2026).*
 *Atualizado 2026-09-23: BACKLOG-02/03 com especificação completa pronta para implementar (app como interface, Hermes como motor) — ponto crítico `meso → micros` com `S.dayPlan` manda, `S1` preservado, e `reports/*.html` só no Hermes como prova de reflexão.*
