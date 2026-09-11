@@ -1,0 +1,8 @@
+# Segredos e certificados (nunca versionar)
+.env
+og.crt
+og.key
+# Gerados
+frontend/dist/
+frontend/node_modules/
+api/node_modules/
