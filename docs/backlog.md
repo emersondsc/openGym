@@ -15,7 +15,7 @@
 
 ## BACKLOG-02 — Micro: Gerar microciclo da semana via app (app como interface, Hermes como motor) — BLOQUEADO POR BACKLOG-07
 
-- **Bloqueadores (atualizado 11/09/2026):** resta **BACKLOG-07** (API para criar/apagar rotinas) — a **BACKLOG-05/06** foi resolvida em 10/09 (ver **Concluídos** no fim deste arquivo). Com ela caiu a **proibição de alvos divergentes entre rotinas** que a spec v5 impunha: o microciclo já pode prescrever cargas diferentes para o mesmo exercício em rotinas diferentes (está em uso no meso atual).
+- **Bloqueadores (atualizado 11/09/2026):** resta **BACKLOG-07** (API de rotinas: operações por rotina, validação e identidade do agente) — e, para a segurança da escrita, ver os satélites **BACKLOG-08** (versionar o corpus do Hermes) e **BACKLOG-09** (concorrência real no sync) — a **BACKLOG-05/06** foi resolvida em 10/09 (ver **Concluídos** no fim deste arquivo). Com ela caiu a **proibição de alvos divergentes entre rotinas** que a spec v5 impunha: o microciclo já pode prescrever cargas diferentes para o mesmo exercício em rotinas diferentes (está em uso no meso atual).
 
 - **Status:** Spec v4 detalhada em `docs/specs/spec_micro_meso_via_app.md` (131 linhas, 2026-09-23) + `micro_meso_ux_preview.html` + `spec_micro_meso_via_app.html` em `C:\Users\emerson` na porta 8765. Decisões do usuário incorporadas: `S.dayPlan manda`, `Hermes gera tudo com datas`, `Hermes Pi 8091 atrás do web proxy`, `Idempotency-Key: hex(sha256(uid:meso_id:semana:canonical_hash(answers)))`, `jobs em disco`, `Hermes busca analysis fresco`, `IDs determinísticos`.
 
@@ -71,17 +71,64 @@
 
 ---
 
-## BACKLOG-07 — API para criar e apagar rotinas — BLOQUEADOR do BACKLOG-02
+## BACKLOG-07 — API de rotinas: operações por rotina, validação e identidade do agente — BLOQUEADOR do BACKLOG-02
 
-- **Status:** Registrado — **fora do escopo imediato** (decisão do usuário em 10/09/2026: hoje o Hermes escreve direto no armazenamento de rotinas e isso atende; "não vejo necessidade de criar uma API para isso agora"). **Bloqueia a BACKLOG-02** até ser implementado ou reescopado.
+- **Status:** Registrado — **fora do escopo imediato** (decisão do usuário em 10/09/2026: hoje o Hermes escreve direto no estado e isso atende). **Bloqueia a BACKLOG-02.** Texto reescrito em 11/09/2026 com a análise fresca do que existe hoje.
 
-- **O que é:** endpoints em `api/server.js` para criar e apagar rotina **sem reescrever o estado inteiro**: `POST /api/routines` (body `{name, emoji?, prog?, ex[]}` → `201 {routine}` com `id` gerado no servidor) e `DELETE /api/routines/:id` (`204`), autenticados por `gymsid`, com validação equivalente à do `checkState` (`api/server.js:56-72`, que hoje só confere `ex[].id` e `ex[].sets`) e com a limpeza que a UI já faz em `RoutineEdit.jsx:143-147` (tirar a rotina de `S.week` e `S.dayPlan` **sem** tocar em `workouts[]`).
+- **Como funciona hoje (verificado em 11/09/2026, no código e no protocolo do Hermes):**
+  - **Não existe operação de rotina.** Para criar, editar ou apagar rotina, o escritor monta o **estado inteiro** e manda num único `PUT /api/data` (`api/server.js:433-452`). Quem escreve é o papel **Treinador** (decisão #7a da skill `treino-coach`); o papel Planilheiro nunca escreve — só consome `GET /api/coach/analysis`.
+  - **Autenticação por sessão forjada:** o Hermes lê o `SECRET` (64 hex, root, em `/data/secret`) e minta um `gymsid` válido por HMAC-SHA256 (`api/server.js:171-180`, `timingSafeEqual`). Receita em `~/.hermes/skills/fitness/opengym-workout-pipeline/references/og_state_mutation.md`.
+  - **Guard de concorrência por relógio:** `incoming < cur._ts` → `409 stale base, re-pull and merge`. O cliente carimba `S._ts = Date.now()` em toda edição local (`frontend/src/store/useStore.js:68`), então um PWA aberto com estado velho **vence** o guard — ver BACKLOG-09.
+  - **Validação rasa:** `checkState` (`api/server.js:53-72`) confere apenas `routines[]` é array, `ex[].id` string não-vazia e `ex[].sets` número ≥ 1. Peso, reps, `prog`, `mode`, `week`, `dayPlan`, `workouts` e ids contra o catálogo **não** são validados — origem do incidente de 08/09/2026 (id fantasma virando "Unknown exercise" dias depois).
+  - **Sem identidade de agente:** a escrita sai como o próprio usuário; o servidor não distingue agente de pessoa, e a única auditoria é o `reports/sync_log.md` do Hermes.
+  - **Sem limpeza server-side:** apagar rotina não remove o id de `S.week`/`S.dayPlan`; quem chama tem que lembrar (a UI faz em `RoutineEdit.jsx:143-147`, o Hermes reimplementa no payload).
+  - **O escritor é montado à mão a cada sessão.** Os scripts reutilizáveis só leem (`opengym_reader.py`, `process_workout.py`); o PUT sai de um script temporário por execução, e a segurança vem do protocolo em prosa — snapshot, handshake de "PWA fechado", re-GET como base, `workouts[]` = união por id, portão `verificar_prescricao.py`, verificação campo a campo (API≠disco = falha), recibo em `sync_log.md`, rollback = 1 PUT do snapshot.
+  - **O protocolo vive em dois lugares** que precisam concordar: o passo 6 da `treino-coach/SKILL.md` e o `og_state_mutation.md` — ver BACKLOG-08.
 
-- **Por que importa:** hoje o Hermes grava o **arquivo de estado inteiro** (`data/state-<uid>.json`) — sem lock, sem `If-Match`, sem validação de campo. Um write concorrente com o app pode perder dados (o incidente de 2026-09-08 que motivou o `checkState` é da mesma família). Uma API com `If-Match-State` e validação server-side fecha esse buraco e é o caminho "correto" para o Hermes entregar rotinas novas (micro/meso).
+- **O que a API deve entregar:** `POST /api/routines` (criar, com `id` gerado no servidor), `PATCH /api/routines/:id` (editar o template de **uma** rotina), `DELETE /api/routines/:id` (apagar limpando `week`/`dayPlan` e preservando `workouts[]`), autenticadas por **credencial de máquina** (não a sessão do usuário), com validação de campo (peso numérico ≥ 0, reps número ou faixa, `prog` no conjunto permitido, `ex[].id` no catálogo ou em `customEx`, `sets` ≥ 1) e token de concorrência real (base lida, não relógio — BACKLOG-09).
 
-- **Aceite (quando for feito):** `POST` cria a rotina e um `PUT /api/data` posterior não a perde; `DELETE` limpa `S.week`/`S.dayPlan` e mantém `workouts[]` intactos; sem `gymsid` → `401`; `ex[].id` desconhecido → `400`; corrida com o app → `409` em vez de overwrite silencioso.
+- **Meio-caminho barato, antes da API:** transformar o escritor num **script reutilizável com `--dry-run`**, que já embuta snapshot + re-GET + união de `workouts[]` + portão P1 + verificação API==disco + recibo. Hoje isso é uma receita repetida à mão a cada semana — e foi assim que uma escrita saiu **sem o handshake exigido** (recibo de 10/09/2026: "PWA fechado NAO confirmado pelo usuario antes do PUT").
 
-- **Refs:** `api/server.js` (`checkState`, `PUT /api/data`) · `frontend/src/views/RoutineEdit.jsx` · BACKLOG-02 (grava rotinas via `PUT /api/data` hoje)
+- **Aceite:** criar rotina por `POST` e um `PUT /api/data` posterior do app não a perde; `DELETE` limpa `week`/`dayPlan` e mantém `workouts[]` intactos; `weight: "45 kg"` ou negativo → `400`; `ex[].id` fora do catálogo → `400`; escrita concorrente com o app → `409` em vez de overwrite; o log do servidor mostra **qual agente** escreveu o quê.
+
+- **Refs:** `api/server.js:53-72` e `:433-452` · `frontend/src/store/useStore.js:68` · `~/.hermes/skills/fitness/opengym-workout-pipeline/references/og_state_mutation.md` · passo 6 da `~/.hermes/skills/fitness/treino-coach/SKILL.md` · `~/.hermes/workout/scripts/verificar_prescricao.py` · BACKLOG-02 (bloqueado) · BACKLOG-08 e BACKLOG-09 (satélites desta análise)
+
+---
+
+## BACKLOG-08 — Fechar as lacunas do backup do Hermes (`hermes-snapshot`) — satélite da análise de 11/09/2026
+
+- **Status:** Registrado — **investigar e corrigir**. Não bloqueia nada por si; é risco de perda e de restauração incompleta.
+- **Correção de premissa (11/09/2026):** a primeira versão deste item afirmava que o corpus operacional do Hermes não era versionado. **É versionado** — o que faltava era eu conhecer o backup que já existe (apontado pelo usuário).
+
+- **O que já existe (verificado em 11/09/2026):** repositório **privado** `emersondsc/hermes-snapshot` — "Backup automático do Hermes Agent (config, skills, sessions)", ~1,0 GB, clone em `/home/pi/hermes-snapshot` em sincronia com `origin/main`, com `README.md` e `RESTORE.md` (9 KB de procedimento de restauração). Um commit `📸 Snapshot <data>` por dia às 06:00 (o mais recente é de 11/09). Cobre `config/`, `memories/`, `plugins/`, `scripts/` (`~/.hermes/scripts`), `sessions/`, `skills/` — inclusive `skills/fitness/opengym-workout-pipeline/**`, onde vive o `og_state_mutation.md` — e **`opengym-data/`**, o diretório de dados do openGym (`db.json` + os `state-*.json`, incluindo os backups datados).
+
+- **Lacunas encontradas (corrigidas na 2ª verificação, 11/09/2026):**
+  1. **`~/.hermes/workout/` não entra — e não é exclusão documentada.** A lista do `snapshot.sh` é explícita: `config/` (com `.env` redigido), `skills/`, `sessions/` (`state.db` gzipado), `system/info.txt`, `memories/`, `scripts/` (**só** `~/.hermes/scripts/*.py|*.sh`, maxdepth 1), `plugins/model-providers/{opencode-zen,opencode-go}` (patches que o `hermes update` sobrescreve) e `opengym-data/`. `workout/` não aparece em nenhum lugar — nem no script, nem em `.gitignore`, nem no `hermes_local_backup.sh` (que é o backup do **HD**, não do GitHub). Consequência no restore: as skills **apontam** para `scripts/verificar_prescricao.py` e `MECANICA_PESOS.md`, que não voltam junto; tampouco os recibos (`reports/sync_log.md`), o `mesociclo_ativo.json` ou os leitores (`opengym_reader.py`, `process_workout.py`). Achado bônus: `sync_treino.sh` existe em **dois lugares com conteúdos diferentes** (947 B em `workout/scripts/`, 1115 B em `.hermes/scripts/`) — armadilha de deriva já instalada.
+  2. **O agendamento é do cron do próprio agente.** Não está no cron do sistema: `crontab -l` do `pi` e do root estão vazios e o `/etc/cron.d/island-ops` só roda healthcheck (15 min) e `island_backup.sh` (6 h). O job vive em `~/.hermes/cron/jobs.json` com `script: snapshot.sh`. Foi daí que veio a lacuna: **10 dias sem snapshot (30/08 → 08/09)** — enquanto os outros jobs (23:00 diário) seguiram rodando normalmente, ou seja, o agente estava vivo e **só esse job parou**. O padrão de correção já existe no próprio sistema: o `/etc/cron.d/island-ops` se declara independente "para sobreviver a quedas do gateway Hermes — verdadeiro sensor".
+  3. **O que está certo e deve ser preservado:** o `config/.env` vai **redigido** (`sed -i 's/=.*/=***/'` — conferido no arquivo commitado: 214 linhas com `=***`, zero valores), o `opengym-data/` copia só `state-*.json` + `db.json` e o próprio script registra "O secret/vapid.json são sensíveis -> NÃO versiona". Nenhuma chave viva vaza para o repo.
+  4. **Protocolo em dois lugares** (passo 6 da `treino-coach/SKILL.md` × `og_state_mutation.md`): os dois são versionados, mas precisam concordar — e já foram atualizados em separado em 10/09.
+
+- **Investigar/propor:** incluir `~/.hermes/workout/` (ou parte dele) na lista do `snapshot.sh` — decidindo se os `reports/` volumosos entram ou ficam só no HD; resolver a duplicata `sync_treino.sh` (uma fonte); mover o agendamento para `/etc/cron.d` como o `island-ops` e/ou fazer o watchdog reclamar quando o snapshot não sair há mais de 24h; escolher **uma** fonte para o protocolo de mutação e transformar a outra em ponteiro; teste mínimo para o `verificar_prescricao.py` (faixa de reps, id fora do catálogo, alta >10%).
+
+- **Aceite (da investigação):** o snapshot cobre o que o restore precisa (ou documenta por que não); agendamento independente do agente com alarme de ausência; protocolo com fonte única; `sync_treino.sh` sem duplicata divergente; e o `RESTORE.md` validado num cenário de Pi limpo — conferindo se o portão P1 e o `MECANICA_PESOS.md` voltam junto.
+
+- **Refs:** `github.com/emersondsc/hermes-snapshot` (privado) · `/home/pi/hermes-snapshot/{RESTORE.md,opengym-data/,skills/fitness/}` · `~/.hermes/scripts/{snapshot.sh,nightly_backup.sh,hermes_local_backup.sh}` · `/etc/cron.d/island-ops` · `~/.hermes/workout/**`
+
+---
+
+## BACKLOG-09 — Concorrência real no sync do app: `_ts` é relógio, não token — satélite da análise de 11/09/2026
+
+- **Status:** Registrado — **investigar**. Afeta **toda** escrita de estado (treino, peso, ajustes), não só rotina.
+
+- **Problema:** o guard do servidor é `if (cur && incoming < cur._ts) → 409 stale base, re-pull and merge` (`api/server.js:446-448`) — comparação por **ordem de relógio**. E o cliente carimba `S._ts = Date.now()` a cada edição local (`frontend/src/store/useStore.js:68`). Consequência: um PWA **aberto**, com o estado carregado antes de uma escrita externa (agente), que depois sofra qualquer edição, envia um `_ts` **mais novo** que o do servidor — passa no guard e sobrescreve a escrita do agente com o estado velho. É exatamente o cenário que o protocolo do Hermes tenta evitar pedindo confirmação manual de "PWA fechado": proteção processual, dependente de alguém presente — e que foi **furada** no recibo de 10/09/2026 ("PWA fechado NAO confirmado pelo usuario antes do PUT").
+
+- **Achado secundário:** a spec v4 (`docs/specs/spec_micro_meso_via_app.md`) e o desenho da BACKLOG-02 documentam um header `If-Match-State` que **não existe**: o cliente nunca o envia (zero ocorrências em `frontend/`) e o servidor nunca o lê. Quem implementar a 02 confiando nele constrói sobre premissa falsa.
+
+- **Investigar/propor:** token de concorrência real (o cliente envia o `_ts` **lido** como base e o servidor compara **igualdade** → `409` em qualquer divergência; o cliente já sabe mesclar no 409 via `retryWithMerge`, `useStore.js:137-148`); decidir se o app deve re-buscar a base ao ganhar foco quando o `_ts` do servidor for maior (hoje existe caminho em `:169`/`:176`/`:183` — confirmar se cobre "aberto e sujo"); decidir o destino do `If-Match-State` da spec (implementar ou remover do desenho).
+
+- **Aceite (da investigação):** fluxo de sync atual descrito com os pontos exatos de carimbo de `_ts`; cenário reproduzido (PWA aberto + escrita externa + edição local) com o resultado medido; proposta de token com o custo no cliente e no servidor; decisão registrada sobre o `If-Match-State`.
+
+- **Refs:** `api/server.js:433-452` · `frontend/src/store/useStore.js:68,130,137,148,169,176,183,213` · `docs/specs/spec_micro_meso_via_app.md` · BACKLOG-02 e BACKLOG-07
 
 ---
 
@@ -177,3 +224,5 @@
 *Atualizado 10/09/2026: criados **BACKLOG-06** (peso e reps por rotina — o template da rotina vence o caderno global; `progression.js:72` passa a nascer `off`) e **BACKLOG-07** (API para criar/apagar rotinas). **BACKLOG-02** passa a **BLOQUEADO** por BACKLOG-05/06/07.*
 *Atualizado 10/09/2026 (2): BACKLOG-06 especificada em `docs/specs/spec_peso_e_reps_por_rotina.md` (v3 final) — escopo ajustado: no modo cronometrado só a carga segue o template, helper `repFloor` para ler reps, e a leitura do piso da faixa em `readSession` entrou no escopo (evita deload indevido).*
 *Atualizado 11/09/2026: **BACKLOG-05** e **BACKLOG-06** encerradas e movidas para **Concluídos** (commit `49fa3c1` publicado no container + verificação do Hermes: 35/35 combinações rotina×exercício mostram o peso do template). **BACKLOG-02** passa a ter um único bloqueador (**BACKLOG-07**) e a restrição de alvos divergentes entre rotinas está liberada.*
+*Atualizado 11/09/2026 (2): análise fresca de como o Hermes manipula rotinas hoje — PUT do estado inteiro com sessão forjada por HMAC do `SECRET`, guard de `_ts` por relógio, `checkState` raso, sem identidade de agente e escritor montado à mão por sessão. **BACKLOG-07** reescrita com o mecanismo real; criadas **BACKLOG-08** (versionar o corpus operacional do `~/.hermes`) e **BACKLOG-09** (`_ts` é relógio, não token) como satélites.*
+*Atualizado 11/09/2026 (3): **BACKLOG-08** corrigida — o corpus operacional do Hermes **já é versionado** (`emersondsc/hermes-snapshot`, privado, snapshot diário às 06:00, com `RESTORE.md`; o `.env` vai redigido e `secret`/`vapid.json` ficam de fora). As lacunas reais: `~/.hermes/workout/` **não entra** na lista do `snapshot.sh` (e as skills apontam para arquivos de lá); o agendamento é do cron do próprio agente — 10 dias sem snapshot entre 30/08 e 08/09, enquanto os outros jobs rodaram; e `sync_treino.sh` existe duplicado com conteúdos diferentes.*
