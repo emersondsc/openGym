@@ -10,9 +10,14 @@ import {
 } from '@simplewebauthn/server';
 import webpush from 'web-push';
 import { buildAnalysis } from './coach.js';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import * as routines from './routines.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
+// O catálogo vive ao lado do server.js (é o COPY do Dockerfile), NÃO em DATA_DIR (/data, que só
+// tem estado/segredo). `OG_CATALOG` permite apontar para outro arquivo sem rebuild.
+const CATALOG_PATH = process.env.OG_CATALOG || path.join(path.dirname(fileURLToPath(import.meta.url)), 'exercise_catalog.json');
 const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.ORIGIN || 'http://localhost:8080';
 const RP_NAME = process.env.RP_NAME || 'openGym';
@@ -73,6 +78,10 @@ function checkState(s) {
 function readState(uid) {
   try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
 }
+
+// Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
+export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
+         readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server };
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -210,6 +219,72 @@ function readSession(req) {
   if (!Number.isInteger(claimed) || claimed !== sessionVersion(user)) return null;
   return user;
 }
+// Chave do agente: derivada do SECRET e guardada em /data/agent.key (0600). Arquivo ausente,
+// vazio, corrompido ou ilegível é regenerado — nunca derruba a requisição com 500.
+function agentKey() {
+  const f = path.join(DATA, 'agent.key');
+  const valid = s => /^[0-9a-f]{64}$/.test(s || '');
+  let cur = null;
+  try { cur = fs.readFileSync(f, 'utf8').trim(); } catch { /* ausente ou ilegivel */ }
+  if (valid(cur)) return cur;
+  const k = crypto.createHmac('sha256', SECRET).update('opengym-agent-v1').digest('hex');
+  try { fs.writeFileSync(f, k, { mode: 0o600 }); }
+  catch (e) { console.error('agent.key write failed', e.message); }
+  return k;
+}
+
+// Atribuição (spec_api_rotinas §4.4): sem assinatura o ator é uma ALEGAÇÃO
+// (`verified: 'claimed'`), não uma identidade provada. O log diz isso em vez de fingir.
+function readActor(req, uid, rawBody, method, pathname) {
+  const raw = (req.headers['x-og-actor'] || '').toString().trim();
+  const sig = (req.headers['x-og-actor-sig'] || '').toString().trim();
+  if (!raw) return { actor: null, verified: 'none' };
+  const m = /(?:^|;\s*)agent=([^;]{1,40})/.exec(raw);
+  const actor = m && m[1].trim() ? m[1].trim() : 'unknown';
+  if (!sig) return { actor, verified: 'claimed', header: raw };
+  const s = /(?:^|;\s*)t=(\d{1,15});\s*v1=([0-9a-f]{64})/.exec(sig);
+  if (!s) return { err: 'BAD_ACTOR_SIG', actor, verified: 'none' };
+  const t = +s[1];
+  if (Math.abs(Date.now() / 1000 - t) > 300) return { err: 'BAD_ACTOR_SIG', actor, verified: 'none' };
+  let expect;
+  try {
+    const bodyHash = crypto.createHash('sha256').update(rawBody || '').digest('hex');
+    expect = crypto.createHmac('sha256', agentKey())
+      .update(`${t}\n${method}\n${pathname}\n${uid}\n${bodyHash}`).digest('hex');
+  } catch (e) {
+    console.error('agent key unavailable', e.message);
+    return { err: 'BAD_ACTOR_SIG', actor, verified: 'none' };
+  }
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(s[2], 'hex'), Buffer.from(expect, 'hex'))) {
+      return { err: 'BAD_ACTOR_SIG', actor, verified: 'none' };
+    }
+  } catch { return { err: 'BAD_ACTOR_SIG', actor, verified: 'none' } }
+  return { actor, verified: 'signature', header: raw };
+}
+
+// Endurecimento do PUT: as MESMAS regras do PATCH, com o "antes" vindo do disco, para um cliente
+// publicado (que manda mode:"normal" e sg:0) continuar passando. Sem catálogo, a checagem é
+// pulada e a resposta marca `X-OG-Catalog: unavailable` — o app não pode parar de aceitar o
+// próprio estado por causa de um arquivo de dados que falta.
+function checkRoutineFields(state, cur) {
+  const catalog = routines.loadCatalog(CATALOG_PATH);
+  const custom = new Set([...(cur?.customEx || []), ...(state.customEx || [])].map(c => c.id));
+  for (const r of state.routines || []) {
+    const before = (cur?.routines || []).find(x => x.id === r.id) || {};
+    for (const e of r.ex || []) {
+      const b = (before.ex || []).find(x => x.id === e.id) || {};
+      const bad = routines.validateExEntry(e, {
+        catalog, custom, where: `ex.${e.id}`,
+        legacy: { mode: b.mode, sg: b.sg },
+        modeChanged: (e.mode ?? b.mode) !== b.mode
+      });
+      if (bad) return bad;
+    }
+  }
+  return null;
+}
+
 // Guard for /api/admin/* — resolves the caller and 401/403s if they aren't an admin.
 function requireAdmin(req, res) {
   const user = readSession(req);
@@ -238,12 +313,16 @@ function takeChallenge(cid) {
 setInterval(() => { for (const [k, v] of challenges) if (v.exp < Date.now()) challenges.delete(k); }, 60000).unref();
 
 /* ---------- helpers ---------- */
+// `_ts` (carimbo do cliente) e `rev` (contador do servidor) mudam a cada escrita: não entram na
+// comparação API x disco nem na prova de invariante (spec_escritor_rotinas §RF-11).
+const VOLATILE = new Set(['_ts', 'rev']);
 function json(res, code, obj, extraHeaders) {
   const body = JSON.stringify(obj);
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(extraHeaders || {}) });
   res.end(body);
 }
-function readBody(req) {
+// Os BYTES crus: o hash da assinatura do ator tem de ser calculado sobre o que chegou.
+function readRawBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
     req.on('data', d => {
@@ -251,12 +330,17 @@ function readBody(req) {
       if (size > MAX_BODY) { reject(new Error('body too large')); req.destroy(); return; }
       chunks.push(d);
     });
-    req.on('end', () => {
-      try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); }
-      catch { reject(new Error('bad json')); }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
+}
+// Comportamento de antes (objeto; `{}` para corpo vazio). Um corpo inválido resolve `{}` em vez de
+// rejeitar: as rotas que usam readBody leem campos com defaults, então o resultado é a mesma
+// mensagem 400 que o try/catch antigo produzia em quem chamava.
+async function readBody(req) {
+  const raw = await readRawBody(req);
+  try { return raw.length ? JSON.parse(raw) : {}; }
+  catch { return {}; }
 }
 const b64uToBuf = s => Buffer.from(s, 'base64url');
 
@@ -274,6 +358,26 @@ function livePresence(uid) {
 setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt > PRESENCE_TTL) presence.delete(k); }, 30000).unref();
 
 /* ---------- routes ---------- */
+// Path patterns (carregam :params, o que a tabela exata não consegue). A tabela exata continua
+// sendo o caminho de todas as rotas que já existiam. url.pathname não traz querystring, que é
+// como as rotas com ?id= já funcionam hoje.
+const PATTERNS = [
+  { method: 'PATCH',  re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'patchRoutine' },
+  { method: 'DELETE', re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'deleteRoutine' }
+];
+// Preenchido depois de `R()`, porque os handlers de rotina precisam do roteador pronto.
+const ROUTINE_HANDLERS = {};
+
+function matchRoute(method, pathname) {
+  for (const p of PATTERNS) {
+    if (p.method !== method) continue;
+    const m = p.re.exec(pathname);
+    if (m && ROUTINE_HANDLERS[p.handler]) return { handler: ROUTINE_HANDLERS[p.handler], params: m.slice(1) };
+  }
+  const h = routes[method + ' ' + pathname];
+  return h ? { handler: h, params: [] } : null;
+}
+
 const routes = {
   'GET /api/health': async (req, res) => json(res, 200, { ok: true, users: db.users.length }),
 
@@ -303,6 +407,13 @@ const routes = {
       json(res, 200, { analysis, progress, meta: { uid: user.id, generatedAt: Date.now(), n_sets: analysis.n_sets, n_sessions: analysis.n_sessions, period: analysis.period } }, { 'Cache-Control': 'private, no-store, max-age=0', 'Vary': 'Cookie', 'Pragma': 'no-cache' });
     } catch (e) { console.error('[coach] build error', safeUid, e); json(res, 500, { error: 'server error' }); }
   },
+
+  // Lista leve de rotinas + metadado de concorrência (rev/_ts). 404 quando não há estado: o
+  // agente liga o canal novo ao receber 200 daqui (spec_api_rotinas RF-9).
+  'GET /api/routines': (req, res) => ROUTINE_HANDLERS.list(req, res),
+
+  // Trilha de auditoria: quem escreveu o quê. Dono vê o dele; admin vê qualquer uid.
+  'GET /api/audit': (req, res) => ROUTINE_HANDLERS.audit(req, res),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -426,6 +537,9 @@ const routes = {
     if (!user) return json(res, 401, { error: 'not signed in' });
     try {
       const state = JSON.parse(fs.readFileSync(stateFile(user.id), 'utf8'));
+      // `rev` injetado (0 para um estado nunca escrito pela versão nova): sem isto o cliente não
+      // teria base para mandar If-Match no primeiro sync.
+      if (state && typeof state === 'object') state.rev = Number.isInteger(state.rev) ? state.rev : 0;
       json(res, 200, { state });
     } catch { json(res, 200, { state: null }); }
   },
@@ -433,22 +547,56 @@ const routes = {
   'PUT /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    const body = await readBody(req);
+    let raw;
+    try { raw = await readRawBody(req); }
+    catch (e) { return json(res, 400, { error: e.message === 'body too large' ? 'body too large' : 'bad json' }); }
+    let body;
+    try { body = raw.length ? JSON.parse(raw) : {}; } catch { return json(res, 400, { error: 'bad json' }); }
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     const bad = checkState(body.state);
     if (bad) return json(res, 400, { error: bad });
-    // Last-writer-wins guard (2026-09-08 sync incident): reject a base older than
-    // what's on disk so a stale full-state push can never silently wipe sessions or
-    // templates. Clients merge + retry (web pushState handles 409). Retries of the
-    // same payload (equal _ts) pass — the write is idempotent.
     let cur = null;
     try { cur = readState(user.id); } catch { /* first write */ }
-    const incoming = body.state._ts || 0;
-    if (cur && incoming < (cur._ts || 0))
-      return json(res, 409, { error: 'stale base, re-pull and merge', serverTs: cur._ts || 0 });
+    const badEx = checkRoutineFields(body.state, cur);
+    if (badEx) {
+      return json(res, 400, { error: badEx.message, code: badEx.code, field: badEx.field,
+                              allowed: badEx.allowed || null });
+    }
+    const actor = readActor(req, user.id, raw, req.method, '/api/data');
+    if (actor.err) return json(res, 400, { error: 'actor signature invalid', code: actor.err });
+    // Token forte (igualdade) quando o cliente manda um; senão o guard por `_ts` de sempre, para
+    // o PWA publicado seguir funcionando (spec_api_rotinas RF-5/RF-10).
+    const curRev = (cur && Number.isInteger(cur.rev)) ? cur.rev : 0;
+    const ifMatch = routines.parseIfMatch(req.headers['if-match']);
+    if (ifMatch === 'BAD') {
+      return json(res, 400, { error: 'malformed If-Match', code: 'IF_MATCH_MALFORMED' });
+    }
+    if (ifMatch !== null && ifMatch !== '*') {
+      if (ifMatch !== String(curRev)) {
+        return json(res, 409, { error: 'stale base, re-pull and merge', code: 'STALE_STATE',
+                                rev: curRev, serverTs: cur?._ts || 0 });
+      }
+    } else {
+      const incoming = body.state._ts || 0;
+      if (cur && incoming < (cur._ts || 0)) {
+        return json(res, 409, { error: 'stale base, re-pull and merge', serverTs: cur._ts || 0, rev: curRev });
+      }
+    }
+    body.state.rev = curRev + 1;           // o contador é do servidor
+    body.state._ts = body.state._ts || Date.now();
     delete body.state.active;              // in-progress workouts stay device-local
     atomicWrite(stateFile(user.id), JSON.stringify(body.state));
-    json(res, 200, { ok: true, ts: body.state._ts || null });
+    const meta = {
+      rev: body.state.rev, revBefore: curRev, revAfter: body.state.rev, etag: crypto.randomUUID(),
+      actor: actor.actor || 'pwa-legacy', verified: actor.actor ? actor.verified : 'none',
+      stateHash: routines.sha256(routines.canon(body.state)),
+      beforeHash: cur ? routines.sha256(routines.canon(cur)) : null,
+      action: 'put-state', at: new Date().toISOString()
+    };
+    routines.appendAudit(DATA, { otp: meta.etag, uid: user.id, ...meta });
+    console.log(`[og-state] op=put uid=${user.id} actor=${meta.actor} verified=${meta.verified} `
+      + `rev=${curRev}->${meta.rev}`);
+    json(res, 200, { ok: true, ts: body.state._ts, rev: meta.rev, meta });
   },
 
   'GET /api/push/public-key': async (req, res) => json(res, 200, { key: vapid.publicKey }),
@@ -601,14 +749,33 @@ const routes = {
   }
 };
 
-http.createServer(async (req, res) => {
+// Handlers de rotina: recebem o roteador pronto (readSession/readState/atomicWrite) por injeção,
+// para não haver import circular entre server.js e routines.js.
+Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH
+}));
+
+// Carrega o catálogo já no boot: se o arquivo não estiver onde devia, o erro aparece no log na
+// hora (em vez de virar um 503 misterioso na primeira escrita de rotina).
+{
+  const cat = routines.loadCatalog(CATALOG_PATH);
+  if (!cat) console.error('[og-routine] ATENCAO: catalogo ausente — escrita de rotina respondera 503');
+}
+
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
-  const key = req.method + ' ' + url.pathname;
-  const handler = routes[key];
-  if (!handler) return json(res, 404, { error: 'not found' });
-  try { await handler(req, res); }
+  const key = req.method + ' ' + url.pathname;     // usado só pelo catch abaixo
+  const hit = matchRoute(req.method, url.pathname);
+  if (!hit) return json(res, 404, { error: 'not found' });
+  try { await hit.handler(req, res, hit.params); }
   catch (e) {
     console.error(key, e);
     if (!res.headersSent) json(res, 500, { error: 'server error' });
   }
-}).listen(PORT, () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})`));
+});
+
+// Só escuta quando é o processo principal (`node server.js`, o que o CMD do Dockerfile faz).
+// Importado por um teste, o módulo não abre porta nenhuma.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  server.listen(PORT, () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})`));
+}

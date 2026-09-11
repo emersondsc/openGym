@@ -1,0 +1,33 @@
+{
+  "_comment": "Contrato de forma compartilhado (spec_api_rotinas §4.13). Usado por api/routines.test.js contra o validador REAL — o cliente não duplica a validação.",
+  "accepted": [
+    { "label": "reps com modo explícito", "entry": { "id": "0326", "sets": 3, "reps": "6-8", "weight": 45, "mode": "reps" } },
+    { "label": "modo cronometrado", "entry": { "id": "0584", "sets": 3, "mode": "time", "sec": 45, "weight": 0 } },
+    { "label": "cardio", "entry": { "id": "0584", "sets": 1, "mode": "cardio", "min": 20, "speed": 8 } },
+    { "label": "legado normal/sg0 onde já está", "legacy": { "mode": "normal", "sg": 0 }, "entry": { "id": "0326", "sets": 2, "reps": "6-8", "weight": 8, "mode": "normal", "sg": 0 } },
+    { "label": "exercício próprio do perfil", "entry": { "id": "immt_custom", "sets": 3, "reps": "6-8", "weight": 10 } }
+  ],
+  "rejected": [
+    { "label": "peso como texto", "code": "BAD_WEIGHT", "entry": { "id": "0326", "sets": 3, "reps": "6-8", "weight": "45 kg" } },
+    { "label": "peso negativo", "code": "BAD_WEIGHT", "entry": { "id": "0326", "sets": 3, "reps": "6-8", "weight": -10 } },
+    { "label": "séries zero", "code": "BAD_SETS", "entry": { "id": "0326", "sets": 0, "reps": "6-8", "weight": 10 } },
+    { "label": "faixa invertida", "code": "BAD_REPS", "entry": { "id": "0326", "sets": 3, "reps": "8-6", "weight": 10 } },
+    { "label": "reps não numérico", "code": "BAD_REPS", "entry": { "id": "0326", "sets": 3, "reps": "AMRAP", "weight": 10 } },
+    { "label": "id fora do catálogo", "code": "CATALOG_UNKNOWN_EX", "entry": { "id": "zzz_ghost", "sets": 3, "reps": "6-8", "weight": 10 } },
+    { "label": "modo inválido novo", "code": "BAD_MODE", "entry": { "id": "0326", "sets": 3, "reps": "6-8", "weight": 10, "mode": "xyz" } },
+    { "label": "progressão desconhecida", "code": "BAD_PROG", "entry": { "id": "0326", "sets": 3, "reps": "6-8", "weight": 10, "prog": "turbo" } },
+    { "label": "descanso fora de 30..300", "code": "BAD_REST", "entry": { "id": "0326", "sets": 3, "reps": "6-8", "weight": 10, "restSec": 5 } }
+  ],
+  "states": [
+    {
+      "label": "estado publicado (mode normal, sg 0) com um peso novo",
+      "current": { "routines": [{ "id": "r_upper", "prog": "off", "ex": [{ "id": "0326", "sets": 2, "reps": "6-8", "weight": 8, "mode": "normal", "sg": 0 }] }], "customEx": [] },
+      "incoming": { "routines": [{ "id": "r_upper", "prog": "off", "ex": [{ "id": "0326", "sets": 2, "reps": "6-8", "weight": 9, "mode": "normal", "sg": 0 }] }], "customEx": [] }
+    },
+    {
+      "label": "cliente manda customEx reduzido (união com o disco)",
+      "current": { "routines": [{ "id": "r_upper", "prog": "off", "ex": [{ "id": "immt_custom", "sets": 3, "reps": "6-8", "weight": 10 }] }], "customEx": [{ "id": "immt_custom", "n": "custom fly" }] },
+      "incoming": { "routines": [{ "id": "r_upper", "prog": "off", "ex": [{ "id": "immt_custom", "sets": 3, "reps": "6-8", "weight": 12 }] }], "customEx": [] }
+    }
+  ]
+}
