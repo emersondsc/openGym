@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { api } from '../lib/api.js'
 import { localTZ } from '../lib/format.js'
+import { t } from '../lib/i18n.js'
+import { adoptServerRoutines, rememberBase, readBase, ifMatchFor } from '../lib/plan-merge.js'
 import { registerCustom } from '../lib/exercises.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
 import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
@@ -15,6 +17,8 @@ export const DEF = {
   reminder: { on: false, time: '08:00', tz: null }, effort: null
 }
 const clone = o => JSON.parse(JSON.stringify(o))
+// Um aviso de "o plano foi atualizado" por sessão de sync (evita repetir a cada 409).
+const NO_TOAST_KEY = 'gym_coach_notice_shown'
 
 export const isValidRest = n => typeof n === 'number' && Number.isInteger(n) && n>=30 && n<=300
 
@@ -54,6 +58,15 @@ function loadState() {
 }
 
 const hasData = st => !!((st.workouts || []).length || (st.routines || []).length || (st.bodyweight || []).length)
+
+// Envio do estado com o token de concorrência: o servidor compara a base por IGUALDADE
+// (spec_api_rotinas RF-5). Sem `rev` (primeiro sync de um perfil nunca escrito pela versão
+// nova) não se manda header — o servidor usa o guard por relógio de sempre.
+const sendState = (state, base) => api('/api/data', {
+  method: 'PUT',
+  headers: base == null ? undefined : { 'If-Match': String(base) },
+  body: JSON.stringify({ state })
+})
 
 export const useStore = create((set, get) => {
   let pushTm = null
@@ -127,7 +140,7 @@ export const useStore = create((set, get) => {
       sanitized.routines?.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
       if(sanitized.active?.entries) sanitized.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
       if(!isValidRest(sanitized.globalRestSec)) sanitized.globalRestSec = 90
-      const send = () => api('/api/data', { method: 'PUT', body: JSON.stringify({ state: sanitized }) })
+      const send = (base = ifMatchFor(sanitized)) => sendState(sanitized, base)
       try { await send(); localStorage.removeItem('gym_dirty'); try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{} }
       catch (e) {
         localStorage.setItem('gym_dirty', '1')
@@ -142,14 +155,26 @@ export const useStore = create((set, get) => {
               const byId = new Map()
               ;(srv.workouts || []).forEach(w => byId.set(w.id, w))
               ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
-              const merged = Object.assign(clone(DEF), srv)
+              const merged = Object.assign(clone(DEF), srv)      // routines/week/dayPlan do SERVIDOR
               merged.workouts = [...byId.values()]
               if (S.active) merged.active = S.active
+              const adopted = adoptServerRoutines(srv.routines || [], S.routines || [], readBase())
+              merged.routines = adopted.routines
               merged._ts = Math.max(Date.now(), srv._ts || 0) + 1
+              merged.rev = Number.isInteger(srv.rev) ? srv.rev : merged.rev
               persist(merged, false)
+              rememberBase(adopted.routines)
               try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
-              await send()
+              // Reenvia o MERGED (não o `sanitized` do topo, que é o estado velho) com a base
+              // que acabou de ser lida.
+              await sendState(merged, merged.rev)
               localStorage.removeItem('gym_dirty')
+              if (adopted.changed && !localStorage.getItem(NO_TOAST_KEY)) {
+                try { const { useUI } = await import('./useUI.js')
+                  useUI.getState().toast(t('Plan updated by the coach — your own edits were kept.'))
+                } catch { /* */ }
+                localStorage.setItem(NO_TOAST_KEY, '1')      // um aviso por sessão de sync
+              }
               try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
             }
           } catch { /* stays dirty, heals on next boot */ }
@@ -171,6 +196,7 @@ export const useStore = create((set, get) => {
           const next = Object.assign(clone(DEF), state)
           if (active) next.active = active
           persist(next, false)
+          rememberBase(next.routines)
           try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
         } else if (hasData(S)) {
           if (state && (state._ts || 0) > (S._ts || 0)) {
@@ -182,9 +208,12 @@ export const useStore = create((set, get) => {
             if (S.active) merged.active = S.active
             merged._ts = Date.now()
             persist(merged, false)
+            rememberBase(merged.routines)
             try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
           }
-          await get().pushState()
+          // Sem push aqui de propósito: abrir o app NÃO é uma edição. Empurrar o estado inteiro
+          // só porque o app abriu é o que deixava uma cópia velha vencer a corrida do relógio
+          // (BACKLOG-09). Se o servidor estiver atrás, a próxima edição real empurra (com If-Match).
         }
       } catch (e) { /* offline — keep local */ }
     },
@@ -246,3 +275,6 @@ export const useStore = create((set, get) => {
 })
 
 export { hasData }
+// Reexportados para quem já importava do store (e para o teste): a implementação vive em
+// ../lib/plan-merge.js, que não depende de DOM.
+export { adoptServerRoutines, rememberBase, readBase, ifMatchFor }
