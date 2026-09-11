@@ -12,6 +12,7 @@ import { EXIDX, isBodyweightEq } from './exercises.js'
 import { modeOf, fmtSec, isBw, isPerSide, sideReps } from './history.js'
 import { uid, todayISO, DAYN, fmtNum, exCount } from './format.js'
 import { t } from './i18n.js'
+import { unitOfCfg } from './units.js'
 
 const PLAN_FMT = 1
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]   // Mon-first, matching the Plan screen
@@ -29,9 +30,11 @@ function cleanEx(e) {
     o.mode = 'time'
     if (e.sec != null) o.sec = e.sec
     if (e.weight) o.weight = e.weight
+    if (e.weight && e.unit) o.unit = e.unit          // BACKLOG-01: a unidade viaja com o peso
   } else {
     if (e.reps != null) o.reps = e.reps
     if (e.weight) o.weight = e.weight
+    if (e.weight && e.unit) o.unit = e.unit          // BACKLOG-01
   }
   // How the exercise is logged travels too (issues #31/#32) — the bodyweight flag only when
   // it disagrees with the catalogue, since agreeing is what the other end already assumes.
@@ -168,13 +171,15 @@ function units(ex) {
   return out
 }
 
-function routineHTML(r, unit) {
+// A unidade é resolvida por exercício (BACKLOG-01) — é por isso que recebe `S` e não um
+// `unit` já pronto: `0585`/`0599` são máquinas em libras dentro de um plano em kg.
+function routineHTML(r, S) {
   const rows = units(r.ex).map(u => {
     const items = u.map(e => {
       const ex = EXIDX[e.id]
       const name = ex ? ex.n : t('Unknown exercise')
       const part = ex && ex.bp && ex.bp !== 'cardio' ? `<span class="part">${esc(ex.bp)}</span>` : ''
-      return `<div class="ex"><div class="ex-n">${esc(name)}${part}</div><div class="ex-s">${esc(scheme(e, unit))}</div></div>`
+      return `<div class="ex"><div class="ex-n">${esc(name)}${part}</div><div class="ex-s">${esc(scheme(e, unitOfCfg(e, S)))}</div></div>`
     }).join('')
     return u.length > 1
       ? `<div class="ss"><div class="ss-tag">${esc(t('Superset'))}</div><div class="ss-items">${items}</div></div>`
@@ -198,10 +203,9 @@ function weekHTML(S) {
 
 /** Full self-contained HTML for the print/PDF view. */
 export function planPrintHTML(S, owner) {
-  const unit = S.unit || 'kg'
   const routines = (S.routines || []).filter(r => r.ex && r.ex.length)
   const body = routines.length
-    ? routines.map(r => routineHTML(r, unit)).join('')
+    ? routines.map(r => routineHTML(r, S)).join('')
     : `<p class="none">${esc(t('No routines yet.'))}</p>`
   const sub = [owner, todayISO()].filter(Boolean).map(esc).join(' · ')
   return `<!doctype html><html><head><meta charset="utf-8">

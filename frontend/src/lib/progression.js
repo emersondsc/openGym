@@ -18,6 +18,7 @@
 
 import { modeOf, repStep, repFloor } from './history.js'
 import { EXIDX } from './exercises.js'
+import { unitOfCfg } from './units.js'
 
 export const POLICIES = ['off', 'linear', 'greyskull', 'double', 'time']
 
@@ -166,7 +167,9 @@ export function stallCount(sessions) {
 export function nextPrescription(S, cfg, routine) {
   const mode = modeOf(cfg)
   const policy = policyFor(cfg, routine, mode)
-  const unit = S.unit || 'kg'
+  // A unidade é do exercício (BACKLOG-01): o passo exibido no sheet e o passo aplicado aqui
+  // têm de sair da mesma conta, ou o usuário lê 2,5 e recebe 5.
+  const unit = unitOfCfg(cfg, S)
   const inc = cfg.inc > 0 ? cfg.inc : (mode === 'time' ? DEFAULT_SEC_INCREMENT : defaultIncrement(cfg.id, unit))
   if (policy === 'off') return { policy, kind: 'off' }
 

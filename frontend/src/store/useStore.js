@@ -4,6 +4,7 @@ import { localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { adoptServerRoutines, rememberBase, readBase, ifMatchFor } from '../lib/plan-merge.js'
 import { registerCustom } from '../lib/exercises.js'
+import { pinUnits } from '../lib/unit-migration.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
 import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
 
@@ -51,6 +52,9 @@ function loadState() {
           if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec
         })
       }
+      // BACKLOG-01 (U1): marca em libras os dois aparelhos de perna que estão em libras.
+      // Só a prescrição; `workouts[]` nunca. Ver lib/unit-migration.js (testado à parte).
+      pinUnits(state, localStorage, KEY)
       return state
     }
   } catch (e) { /* ignore */ }

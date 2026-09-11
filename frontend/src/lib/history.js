@@ -2,6 +2,7 @@
 import { todayISO, isoOf, weekKey, fmtNum } from './format.js'
 import { isCardio, isBodyweightEq } from './exercises.js'
 import { t } from './i18n.js'
+import { normUnit, unitOfSet, toKg, fromKg } from './units.js'
 
 // How an exercise is logged (issue #16). This used to be derived from the body part alone,
 // which meant a plank or a farmer's carry could only be timed by filing it under cardio.
@@ -101,21 +102,29 @@ const effortTail = s => {
 
 // One-line summary of a logged set. `cfg` carries the mode when the caller has it (a routine
 // entry or a workout entry); passing an id alone keeps the old body-part behaviour.
-export function setLabel(id, s, cfg) {
+// `S` é opcional e serve só para decidir se o sufixo de unidade aparece: ele é mostrado quando
+// a unidade da SÉRIE difere da unidade do PERFIL ("200 lb×12" num perfil kg) e omitido quando
+// coincidem — sem isso todo rótulo do app ganharia um "kg" redundante. A comparação é com
+// `S.unit`, nunca com o `cfg` que chegou: o `cfg` de uma sessão antiga (`last.target`) é
+// justamente de quem se quer saber a unidade, e compará-lo consigo mesmo daria sempre "não
+// diverge". Sem `S`, o rótulo sai exatamente como saía antes do BACKLOG-01.
+export function setLabel(id, s, cfg, S) {
   const c = cfg || { id }
   const mode = modeOf(c)
   if (mode === 'cardio') return `${s.min || 0} min @ ${fmtNum(s.speed || 0)} km/h`
-  if (mode === 'time') return fmtSec(s.sec) + (s.w > 0 ? ` · ${fmtNum(s.w)}` : '')
+  const u = unitOfSet(s, { target: c }, S)
+  const tail = S && u !== normUnit(S.unit) ? ' ' + u : ''
+  if (mode === 'time') return fmtSec(s.sec) + (s.w > 0 ? ` · ${fmtNum(s.w)}${tail}` : '')
   // Bodyweight reads as what you did — "12", or "+10 × 12" once there is a belt involved —
   // rather than "0×12", which says a set was performed with no weight and means nothing.
   // A per-side set needs no mark here: the number logged is the total, the same as every
   // other set in the app.
   const reps = s.r || 0
   if (isBw({ ...c, id: c.id ?? id })) {
-    const load = s.w > 0 ? `+${fmtNum(s.w)} × ` : ''
+    const load = s.w > 0 ? `+${fmtNum(s.w)}${tail} × ` : ''
     return `${load}${reps}` + effortTail(s)
   }
-  return `${fmtNum(s.w || 0)}×${reps}` + effortTail(s)
+  return `${fmtNum(s.w || 0)}${tail}${tail ? ' × ' : '×'}${reps}` + effortTail(s)
 }
 // Default config for a freshly added exercise.
 export function defaultConfig(id, mode) {
@@ -233,12 +242,23 @@ export function buildSets(S, cfg) {
   }
   return sets
 }
-export function workoutVolume(w) {
-  let v = 0
+// Um treino pode ter um exercício em kg e outro em lb (BACKLOG-01). Somar os números crus
+// somaria unidades diferentes — então cada série vira kg pelo fator dela e o TOTAL volta para
+// a unidade do perfil, que é a unidade em que o app exibe volume em todo lugar. Converter o
+// total UMA vez (e não série a série) evita acumular o arredondamento de 1 casa: 100 kg + 100 lb
+// dá 1453,6 num perfil kg (somar já arredondado daria 1454). Com uma unidade só (todo o dado
+// anterior a esta spec) o resultado é o mesmo de antes, byte a byte.
+// `S` é obrigatório na prática: sem ele um perfil em lb receberia um total ~2,2× maior em
+// silêncio. Os dois chamadores de produção passam o estado (sheets.jsx, Admin.jsx).
+export function workoutVolume(w, S) {
+  const profile = normUnit((S || {}).unit)
+  let kg = 0
   // No special case for unilateral work: a per-side set logs its total, so both sides are
   // already in the rep count that arrives here.
-  w.entries.forEach(e => e.sets.forEach(s => { if (s.done) v += (s.w || 0) * (s.r || 0) }))
-  return v
+  w.entries.forEach(e => e.sets.forEach(s => {
+    if (s.done) kg += toKg(s.w, unitOfSet(s, e, S)) * (s.r || 0)
+  }))
+  return fromKg(kg, profile)
 }
 export function setsDone(w) {
   let n = 0

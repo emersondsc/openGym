@@ -13,7 +13,9 @@ import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeigh
 import Icon from '../components/Icon.jsx'
 import { Button, Check, NumberField } from '../components/ui.jsx'
 import { nextPrescription, applyPrescription } from '../lib/progression.js'
+import { unitOfEntry } from '../lib/units.js'
 import { glyphOf } from '../lib/glyphs.js'
+import UnitChip from '../components/UnitChip.jsx'
 
 /* ---------- start chooser (no active workout) ---------- */
 function StartChooser() {
@@ -116,9 +118,12 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
   // stepper instead of two, which is the whole point of the flag. Adding a belt weight in the
   // config brings it back, now labelled as the addition it is.
   const cfg = { ...(entry.target || {}), id: entry.id }
+  // `exUnit`, e não `wUnit`: `wUnit` é o nome do campo POR SÉRIE do modelo. E `unit` já é o
+  // array de superset logo abaixo (`unitOf(units, cur)`), então a unidade precisa de outro nome.
+  const exUnit = unitOfEntry(entry, S)         // BACKLOG-01
   const bw = !cardio && isBw(cfg)
   const added = bw && entry.sets.some(s => s.w > 0)
-  const loadCol = { f: 'w', step: 2.5, dec: true, hd: bw ? t('Added ({0})', S.unit) : t('Weight ({0})', S.unit) }
+  const loadCol = { f: 'w', step: 2.5, dec: true, hd: bw ? t('Added ({0})', exUnit) : t('Weight ({0})', exUnit) }
   // The reps column is the total in every mode, unilateral included — the stepper walks in
   // twos there so the number you land on is one you can actually split evenly.
   const repCol = { f: 'r', step: repStep(cfg), dec: false, hd: t('Reps') }
@@ -164,7 +169,35 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       {!cardio && !timed && isPerSide(cfg) && <span className="tag acc nocap"><Icon name="shuffle" />{t('{0} per side', fmtNum(sideReps(entry.sets.find(s => !s.done)?.r ?? entry.sets[0]?.r)))}</span>}
       {(ex.tg || ex.bp) && <span className="tag">{t(ex.tg || ex.bp)}</span>}
       {ex.eq && <span className="tag">{t(ex.eq)}</span>}
-      {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {S.unit}</span>}
+      {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {exUnit}</span>}
+      <UnitChip value={entry.target?.unit ?? null} base={S.unit} onChange={v => {
+        // Mesma semântica do RestChip: a descoberta "essa máquina é em libras" vale para a
+        // próxima vez também, então grava na sessão e na rotina DE ORIGEM da sessão
+        // (`S.active.routineId`) — não em todas as rotinas que usam o exercício. É o que
+        // resolve o caso de `0585` estar em Legs 1 e Legs 2 com unidades diferentes: quem
+        // manda é a rotina que você está treinando.
+        const routineId = useStore.getState().S.active?.routineId
+        const routineName = useStore.getState().S.routines.find(r => r.id === routineId)?.name || ''
+        useStore.getState().update(s => {
+          const e = s.active.entries[entryIdx]
+          // Revalida a identidade: o sheet de unidade fica aberto enquanto a sessão pode
+          // avançar de exercício, e escrever pelo índice sem conferir acertaria o vizinho.
+          // `e.target` pode ser null numa sessão restaurada de versão anterior — `exUnit` lê
+          // com `?.` justamente por isso, e aqui a guarda impede a escrita de quebrar.
+          if (!e || e.id !== entry.id || !e.target) return
+          if (v == null) delete e.target.unit; else e.target.unit = v
+          if (routineId) {
+            const cfg2 = s.routines.find(r => r.id === routineId)?.ex.find(x => x.id === entry.id)
+            if (cfg2) { if (v == null) delete cfg2.unit; else cfg2.unit = v }
+          }
+        })
+        // Treino avulso não tem nome de rotina: a mensagem não pode sair "Unit saved for  — lb".
+        useUI.getState().toast(v == null
+          ? t('Unit reset to the profile default')
+          : routineName
+            ? t('Unit saved for {0} — {1}', routineName, v)
+            : t('Unit saved for this session — {0}', v))
+      }} />
       <RestChip entry={entry} onChange={v=>{
   if(v!=null && !isValidRest(v)){
     useUI.getState().toast(t('Rest must be between 30 and 300s')); return
@@ -189,7 +222,7 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
   }
 }} />
     </div>
-    {last && <div className="small dim" style={{ marginBottom: 4 }}>{t('Last time')} ({fmtDate(last.d)}): {last.sets.map(s => setLabel(entry.id, s, last.target)).join(', ')}</div>}
+    {last && <div className="small dim" style={{ marginBottom: 4 }}>{t('Last time')} ({fmtDate(last.d)}): {last.sets.map(s => setLabel(entry.id, s, last.target, S)).join(', ')}</div>}
     {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
       <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
       <span>{t(...plan.why)}</span>

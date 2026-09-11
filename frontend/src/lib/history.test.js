@@ -461,3 +461,49 @@ describe('workoutVolume', () => {
     expect(workoutVolume(w)).toBe(0)
   })
 })
+
+// BACKLOG-01 — a unidade é do exercício, não do perfil. `0585`/`0599` são máquinas em libras
+// dentro de um perfil em kg, e a análise tem de ler 200 lb como 90,72 kg sem que nenhum dado
+// antigo precise ser reescrito.
+describe('unidade por exercício (BACKLOG-01)', () => {
+  const S = { unit: 'kg', exWeights: {}, routines: [], workouts: [] }
+
+  it('setLabel só mostra o sufixo quando a série não está na unidade do perfil', () => {
+    expect(setLabel(LIFT, { w: 200, r: 5 }, { id: LIFT, unit: 'lb' }, S)).toBe('200 lb × 5')
+    expect(setLabel(LIFT, { w: 100, r: 5 }, { id: LIFT }, S)).toBe('100×5')
+    // O alvo explícito igual ao perfil não ganha sufixo redundante.
+    expect(setLabel(LIFT, { w: 100, r: 5 }, { id: LIFT, unit: 'kg' }, S)).toBe('100×5')
+  })
+
+  it('setLabel sem o estado mantém o rótulo de antes desta spec', () => {
+    expect(setLabel(LIFT, { w: 200, r: 5 }, { id: LIFT, unit: 'lb' })).toBe('200×5')
+    expect(setLabel(LIFT, { w: 100, r: 5 })).toBe('100×5')
+  })
+
+  it('wUnit da série vence o target da sessão', () => {
+    const cfg = { id: LIFT, unit: 'lb' }
+    expect(setLabel(LIFT, { w: 100, r: 5, wUnit: 'kg' }, cfg, S)).toBe('100×5')
+    expect(setLabel(LIFT, { w: 100, r: 5, wUnit: 'lb' }, { id: LIFT }, S)).toBe('100 lb × 5')
+  })
+
+  it('workoutVolume soma em kg e devolve o total na unidade do perfil', () => {
+    const w = { entries: [
+      { id: LIFT, sets: [{ w: 100, r: 10, done: true }] },                        // kg
+      { id: LIFT, target: { unit: 'lb' }, sets: [{ w: 100, r: 10, done: true }] } // 45,36 kg
+    ] }
+    // 1000 + 453,59237 = 1453,59237 → 1453,6. Converter o total uma vez (e não série a série)
+    // é o que evita o arredondamento de 1 casa virar 1454.
+    expect(workoutVolume(w, S)).toBe(1453.6)
+  })
+
+  it('perfil lb: 100 kg viram 220,5 lb por série', () => {
+    const w = { entries: [{ id: LIFT, target: { unit: 'kg' }, sets: [{ w: 100, r: 10, done: true }] }] }
+    expect(workoutVolume(w, { unit: 'lb' })).toBe(2204.6)
+  })
+
+  it('sem unidade em lugar nenhum, o volume é o mesmo de antes', () => {
+    const w = { entries: [{ id: LIFT, sets: [{ w: 60, r: 10, done: true }, { w: 60, r: 10, done: false }] }] }
+    expect(workoutVolume(w, S)).toBe(600)
+    expect(workoutVolume(w)).toBe(600)
+  })
+})

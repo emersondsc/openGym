@@ -2,7 +2,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev && npm cache clean --force
-COPY server.js coach.js routines.js exercise_catalog.json ./
+COPY server.js coach.js routines.js units.js exercise_catalog.json ./
 ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["node", "server.js"]

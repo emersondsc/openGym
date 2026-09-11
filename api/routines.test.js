@@ -86,7 +86,14 @@ describe('validateExEntry', () => {
     // proíbe é INTRODUZI-LO num exercício novo — o caso tem teste próprio abaixo (isNewEntry).
     ['BAD_PROG', { ...entry('0326'), prog: 'turbo' }],
     ['BAD_REST', { ...entry('0326'), restSec: 10 }],
-    ['SIDE_ON_TIME', { id: '0584', sets: 3, mode: 'time', sec: 30, side: true }]
+    ['SIDE_ON_TIME', { id: '0584', sets: 3, mode: 'time', sec: 30, side: true }],
+    // BACKLOG-01: a unidade é 'kg' ou 'lb', exatamente. 'lbs'/'LB'/'lb ' cairiam em silêncio
+    // na herança do perfil se a validação fosse tolerante, e o exercício voltaria a ser lido
+    // em kg sem ninguém perceber.
+    ['BAD_UNIT', { ...entry('0326'), unit: 'lbs' }],
+    ['BAD_UNIT', { ...entry('0326'), unit: 'LB' }],
+    ['BAD_UNIT', { ...entry('0326'), unit: 'lb ' }],
+    ['BAD_UNIT', { ...entry('0326'), unit: 'pounds' }]
   ];
   for (const [code, e] of wrong) {
     test(`recusa com ${code}`, () => {
@@ -96,6 +103,23 @@ describe('validateExEntry', () => {
       assert.ok(r.message);
     });
   }
+
+  // BACKLOG-01 / RF-7: o campo do erro carrega o id do exercício, como os outros.
+  test('BAD_UNIT aponta o campo com o id do exercício', () => {
+    const r = R.validateExEntry({ ...entry('0585'), unit: 'lbs' },
+      { catalog: CATALOG_MAP, custom, where: 'ex.0585' });
+    assert.equal(r.code, 'BAD_UNIT');
+    assert.equal(r.field, 'ex.0585.unit');
+    assert.deepEqual(r.allowed, ['kg', 'lb']);
+  });
+
+  // BACKLOG-01 / RF-4: ausente herda o perfil, e as duas unidades são aceitas.
+  test('unit aceita kg, lb e ausente; recusa o resto', () => {
+    const w = { catalog: CATALOG_MAP, custom, where: 'ex.0585' };
+    assert.equal(R.validateExEntry(entry('0585', { weight: 200, unit: 'lb' }), w), null);
+    assert.equal(R.validateExEntry(entry('0585', { weight: 200, unit: 'kg' }), w), null);
+    assert.equal(R.validateExEntry(entry('0585', { weight: 200 }), w), null);
+  });
 
   test('tolerância: mode "normal" e sg 0 onde JÁ ESTÃO (o estado real)', () => {
     assert.equal(R.validateExEntry(entry('0326', { mode: 'normal', sg: 0 }),
@@ -126,6 +150,23 @@ describe('validateExEntry', () => {
     assert.equal(e.mode, 'time');
     assert.equal(e.sec, 40);
     assert.equal(e.reps, undefined, 'reps do modo antigo não pode sobrar');
+  });
+
+  // BACKLOG-01 / RF-8: o merge parte de `{ ...target }`, então um `unit` que a intenção não
+  // cita sobrevive. O escritor do Hermes depende exatamente disto para não apagar o campo.
+  test('PATCH preserva o unit que a intenção não cita', () => {
+    const cur = routine({ ex: [entry('0585', { weight: 200, unit: 'lb' })] });
+    const err = R.mergeRoutine(cur, { ex: { '0585': { weight: 210 } } }, CATALOG_MAP, custom);
+    assert.equal(err, null);
+    assert.equal(cur.ex[0].unit, 'lb', 'a unidade não pode ser perdida no merge');
+    assert.equal(cur.ex[0].weight, 210);
+  });
+  test('PATCH pode definir e limpar o unit', () => {
+    const cur = routine({ ex: [entry('0585', { weight: 200 })] });
+    assert.equal(R.mergeRoutine(cur, { ex: { '0585': { unit: 'lb' } } }, CATALOG_MAP, custom), null);
+    assert.equal(cur.ex[0].unit, 'lb');
+    assert.equal(R.mergeRoutine(cur, { ex: { '0585': { unit: 'kg' } } }, CATALOG_MAP, custom), null);
+    assert.equal(cur.ex[0].unit, 'kg');
   });
 });
 

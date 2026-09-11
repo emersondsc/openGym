@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normUnit, kgFactor, unitOfSet } from './units.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 let catalogMap = {};
@@ -10,7 +11,6 @@ try{
   const cat = JSON.parse(fs.readFileSync(path.join(__dirname, 'exercise_catalog.json'), 'utf8'));
   for(const e of cat) catalogMap[e.id]=e.name;
 }catch(e){ console.error('[coach] catalog load failed', e.message); }
-const LB_TO_KG = 0.45359237;
 
 function isoWeekKeyUTC(dateStr){
   // dateStr YYYY-MM-DD UTC → YYYY-Sww ISO 8601 (segunda, semana 1 contém 4 jan, regra Thu)
@@ -41,8 +41,10 @@ export function rowsFromState(state){
     const cat2 = JSON.parse(fs.readFileSync(path.join(__dirname, 'exercise_catalog.json'), 'utf8'));
     for(const e of cat2){ if(exmap[e.id]) exmap[e.id].eq = e.eq || exmap[e.id].eq; }
   }catch{}
-  const unit = String(state.unit || 'kg').toLowerCase().startsWith('lb') ? 'lb' : 'kg';
-  const toKg = unit === 'lb' ? LB_TO_KG : 1;
+  // A unidade é do exercício, não do perfil (BACKLOG-01): `0585`/`0599` são máquinas em
+  // libras num perfil em kg. Cada série é convertida pela unidade dela — `wUnit` da série,
+  // senão a prescrição que a sessão copiou (`entry.target.unit`), senão o perfil.
+  const profileUnit = normUnit(state.unit);
   const rows = [];
   for(const w of (state.workouts || [])){
     const startMs = Number(w.start);
@@ -73,9 +75,11 @@ export function rowsFromState(state){
         }
         if(rpe != null && !Number.isFinite(Number(rpe))) rpe = null;
         let wKg = 0;
+        let setUnit = profileUnit;
         try{
-          wKg = s.w == null || String(s.w).trim() === '' ? 0 : Number(s.w) * toKg;
-        }catch{ wKg = 0; }
+          setUnit = unitOfSet(s, e, profileUnit);
+          wKg = s.w == null || String(s.w).trim() === '' ? 0 : Number(s.w) * kgFactor(setUnit);
+        }catch{ setUnit = profileUnit; wKg = 0; }
         const exName = (isBw && wKg > 0) ? `${baseName} (weighted)` : baseName;
         rows.push({
           title,
@@ -91,6 +95,7 @@ export function rowsFromState(state){
           reps: hasReps ? String(s.r) : '',
           rpe: rpe == null || String(rpe).trim() === '' ? '' : String(rpe),
           _wKg: wKg,
+          _unit: setUnit,
           _reps: hasReps ? Number(s.r) : null,
           _rpe: rpe == null || String(rpe).trim() === '' ? null : Number(rpe),
         });

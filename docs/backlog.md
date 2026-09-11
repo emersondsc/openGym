@@ -4,12 +4,18 @@
 
 ## BACKLOG-01 — Guardar `unit` por exercício (kg/lb por exercício)
 
-- **Status:** Futuro, fora da Etapa 4. Normalização pontual `lb→kg` já feita em `api/coach.js` (200 lbs → 90,7 kg para `0585/0599` via `LB_TO_KG`).
+- **Status:** **ESPECIFICADO em 11/09/2026** — `docs/specs/spec_unit_por_exercicio.md` (v2, duas rodadas de revisão por subagente).
+
+  **Correção de um fato errado que estava aqui:** a "normalização pontual `lb→kg` já feita em `api/coach.js`" **não existe**. `0585` nunca apareceu no código do `api/` (`git log -S0585 -- api/` devolve só o fixture de `routines.test.js`, commit `73cfae1`) e o container em produção roda o `coach.js` de 09/09/2026, que converte pela unidade do **perfil** (`state.unit`, linha 44-45), não por exercício. O que existia era só a declaração em prosa de que `api/coach.js` *deveria* converter (`docs/specs/spec_escritor_rotinas.md:240-245`, RF-13).
+
+  **O histórico real desses dois aparelhos tem duas partes** (medido em 11/09/2026, `state-ZPJbmYUfHlfbAYzi.json`, 300 treinos, `sha256 6bfa0e10…`): até 23/08/2026 os pesos registrados são **conversões exatas de libras redondas já em kg** (`63,5 = 140 lb`, `90,72 = 200 lb`, `108,86 = 240 lb`, `45,36 = 100 lb`); a partir de **02/09/2026** está gravado o **número cru do mostrador** (`200`). O template das quatro entradas de Legs 1/Legs 2 é `weight: 200`, `reps: "6-8"`, `sets: 3`.
+
+  **Decisões do usuário:** o histórico **não** é reescrito — inclusive as duas sessões de 02 e 06/09, que continuam lidas como 200 kg; a unidade se escolhe no editor da rotina **e** no meio do treino; e trocar a unidade **não** converte o número (200 continua 200).
 - **O que é:** `S.unit = kg|lb` único → `S.routines[].ex[].unit?: 'kg'|'lb'` e `workouts[].entries[].sets[].wUnit?: 'kg'|'lb'` (herda `S.unit` se ausente), como `mode: reps/time/cardio`.
 - **Arquivos:** `api/coach.js:buildAnalysis` passa a `wKg = w * (unit==='lb'?0.45359237:1)` **por série**; `frontend/src/lib/history.js:setLabel` e `Workout.jsx` mostram sufixo `kg/lb` quando diverge; `~/.hermes/skills/fitness/treino-coach/references/config_unidades.json` + `api/exercise_catalog.json` como fonte.
 - **Migração:** script único que escreve `ex.unit` para os 2 exercícios de perna já identificados (`0585 lever leg extension`, `0599 lever seated leg curl`), sem tocar nos demais.
 - **Aceite:** `100 lb` em um exercício + `100 kg` em outro no mesmo perfil `kg` → `GET /api/coach/analysis` mostra `45 kg` e `100 kg` corretos, `e1rm`/`tonnage` separados; trocar `S.unit` não afeta os com `unit` explícito.
-- **Refs:** `docs/specs/spec_fonte_unica_openGym.md` v3 + `api/coach.js` + `docs/backlog.md` v3
+- **Refs:** `docs/specs/spec_unit_por_exercicio.md` (v2, a spec desta entrega) + `docs/specs/spec_fonte_unica_openGym.md` v3 + `api/coach.js` + `docs/backlog.md` v3
 
 ---
 
@@ -231,6 +237,7 @@
 ---
 
 *Atualizado 11/09/2026 (6): **push dos commits do BACKLOG-07 feito** — `origin/emerson-custom` = `1df7224`, confirmado por `git ls-remote` (que lê o GitHub, não o cache local). Achado operacional no caminho: o clone do repo **no Pi é shallow** (`.git/shallow` com 1 linha, `main` = 1 commit), então um `git fetch`/`clone` NOVO a partir dele falha com *"did not send all necessary objects"* — não é corrupção e não afeta o deploy (o container builda do diretório de trabalho). O push saiu por um bundle `5a7f3fd..1df7224` + a credencial do Windows (o Pi não tem credencial de GitHub). Candidato a manutenção: `git fetch --unshallow` no Pi, ou remote por SSH.
+*Atualizado 11/09/2026: **BACKLOG-01 especificado** em `docs/specs/spec_unit_por_exercicio.md` (v2). A afirmação de que a normalização `lb→kg` já existia em `api/coach.js` foi corrigida — ela nunca existiu no código. O histórico de `0585`/`0599` foi medido e tem duas partes (kg convertido até 23/08, número cru do mostrador a partir de 02/09); o usuário decidiu não reescrever nada dele.*
 *Criado em 2026-09-09 a partir da Etapa 4 — fonte única. Dono: Emerson. Branch: `emerson-custom`.*
 *Atualizado 10/09/2026: criado o BACKLOG-05 (caderno de pesos global por exercício) a partir da spec do BACKLOG-02. Nota de leitura: as entradas BACKLOG-02/03 acima descrevem o desenho **anterior** (rotinas novas `r_*_S(n)_<hash>`, `S.dayPlan` com as datas da semana, `gymsid` em hex); a spec `docs/specs/spec_micro_via_app_v5.md` substitui aquele desenho, e o rodapé anterior (2026-09-23) está à frente do relógio da máquina (10/09/2026).*
 *Atualizado 2026-09-23: BACKLOG-02/03 com especificação completa pronta para implementar (app como interface, Hermes como motor) — ponto crítico `meso → micros` com `S.dayPlan` manda, `S1` preservado, e `reports/*.html` só no Hermes como prova de reflexão.*

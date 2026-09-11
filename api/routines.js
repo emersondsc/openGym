@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 
 export const PROG_ALLOWED = ['off', 'linear', 'greyskull', 'double', 'time'];
 export const MODE_ALLOWED = ['reps', 'time', 'cardio'];
+export const UNIT_ALLOWED = ['kg', 'lb'];   // BACKLOG-01: unidade do exercício
 const MODE_LEGACY = ['normal'];   // escrito por uma versão anterior do agente; modeOf lê como reps
 const REP_RANGE = /^\s*(\d{1,3})\s*-\s*(\d{1,3})\s*$/;
 const MAX_SETS = 20, MAX_WEIGHT = 1000, MAX_REPS = 100, MAX_SEC = 3600;
@@ -152,6 +153,11 @@ export function validateExEntry(e, opt = {}) {
   }
   for (const f of ['bodyweight', 'side']) {
     if (e[f] !== undefined && typeof e[f] !== 'boolean') return bad('BAD_FLAG', f, `${f} must be a boolean`);
+  }
+  // Ausente = herda S.unit (RF-1). Presente tem que ser uma das duas — o agente escrevendo
+  // "lbs" cairia em silêncio na herança e o exercício voltaria a ser lido em kg.
+  if (e.unit !== undefined && !UNIT_ALLOWED.includes(e.unit)) {
+    return bad('BAD_UNIT', 'unit', `unit must be one of ${UNIT_ALLOWED.join('|')}`, UNIT_ALLOWED);
   }
   if (e.inc !== undefined && !(num(e.inc) && e.inc >= 0)) {
     return bad('BAD_FIELD', 'inc', 'inc must be a number >= 0');

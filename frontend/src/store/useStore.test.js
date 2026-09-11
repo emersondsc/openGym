@@ -123,4 +123,11 @@ describe('invariantes do caminho de sync (no texto do store)', () => {
     expect(SRC).toMatch(/adopted\.changed && !localStorage\.getItem\(NO_TOAST_KEY\)/)
     expect(SRC).toMatch(/Plan updated by the coach/)
   })
+
+  // BACKLOG-01: a migração em si é testada por comportamento em lib/unit-migration.test.js;
+  // aqui só se prende o fio — o boot tem de chamá-la, e com a chave do estado.
+  it('o boot chama a migração da unidade passando a chave do estado', () => {
+    expect(SRC).toMatch(/import \{ pinUnits \} from '\.\.\/lib\/unit-migration\.js'/)
+    expect(SRC).toMatch(/pinUnits\(state, localStorage, KEY\)/)
+  })
 })
