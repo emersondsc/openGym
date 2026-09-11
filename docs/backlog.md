@@ -13,9 +13,9 @@
 
 ---
 
-## BACKLOG-02 — Micro: Gerar microciclo da semana via app (app como interface, Hermes como motor) — BLOQUEADO POR BACKLOG-05, BACKLOG-06 E BACKLOG-07
+## BACKLOG-02 — Micro: Gerar microciclo da semana via app (app como interface, Hermes como motor) — BLOQUEADO POR BACKLOG-07
 
-- **Bloqueadores (10/09/2026):** **BACKLOG-06** (peso e reps por rotina — o template da rotina é a prescrição, e progressão `off` por padrão) e **BACKLOG-07** (API para criar/apagar rotinas). O diagnóstico está na **BACKLOG-05**. Implementar 06 e 07 antes desta.
+- **Bloqueadores (atualizado 11/09/2026):** resta **BACKLOG-07** (API para criar/apagar rotinas) — a **BACKLOG-05/06** foi resolvida em 10/09 (ver **Concluídos** no fim deste arquivo). Com ela caiu a **proibição de alvos divergentes entre rotinas** que a spec v5 impunha: o microciclo já pode prescrever cargas diferentes para o mesmo exercício em rotinas diferentes (está em uso no meso atual).
 
 - **Status:** Spec v4 detalhada em `docs/specs/spec_micro_meso_via_app.md` (131 linhas, 2026-09-23) + `micro_meso_ux_preview.html` + `spec_micro_meso_via_app.html` em `C:\Users\emerson` na porta 8765. Decisões do usuário incorporadas: `S.dayPlan manda`, `Hermes gera tudo com datas`, `Hermes Pi 8091 atrás do web proxy`, `Idempotency-Key: hex(sha256(uid:meso_id:semana:canonical_hash(answers)))`, `jobs em disco`, `Hermes busca analysis fresco`, `IDs determinísticos`.
 
@@ -71,10 +71,30 @@
 
 ---
 
-## BACKLOG-05 — O caderno de pesos é global por exercício: não dá para prescrever carga diferente por rotina
+## BACKLOG-07 — API para criar e apagar rotinas — BLOQUEADOR do BACKLOG-02
+
+- **Status:** Registrado — **fora do escopo imediato** (decisão do usuário em 10/09/2026: hoje o Hermes escreve direto no armazenamento de rotinas e isso atende; "não vejo necessidade de criar uma API para isso agora"). **Bloqueia a BACKLOG-02** até ser implementado ou reescopado.
+
+- **O que é:** endpoints em `api/server.js` para criar e apagar rotina **sem reescrever o estado inteiro**: `POST /api/routines` (body `{name, emoji?, prog?, ex[]}` → `201 {routine}` com `id` gerado no servidor) e `DELETE /api/routines/:id` (`204`), autenticados por `gymsid`, com validação equivalente à do `checkState` (`api/server.js:56-72`, que hoje só confere `ex[].id` e `ex[].sets`) e com a limpeza que a UI já faz em `RoutineEdit.jsx:143-147` (tirar a rotina de `S.week` e `S.dayPlan` **sem** tocar em `workouts[]`).
+
+- **Por que importa:** hoje o Hermes grava o **arquivo de estado inteiro** (`data/state-<uid>.json`) — sem lock, sem `If-Match`, sem validação de campo. Um write concorrente com o app pode perder dados (o incidente de 2026-09-08 que motivou o `checkState` é da mesma família). Uma API com `If-Match-State` e validação server-side fecha esse buraco e é o caminho "correto" para o Hermes entregar rotinas novas (micro/meso).
+
+- **Aceite (quando for feito):** `POST` cria a rotina e um `PUT /api/data` posterior não a perde; `DELETE` limpa `S.week`/`S.dayPlan` e mantém `workouts[]` intactos; sem `gymsid` → `401`; `ex[].id` desconhecido → `400`; corrida com o app → `409` em vez de overwrite silencioso.
+
+- **Refs:** `api/server.js` (`checkState`, `PUT /api/data`) · `frontend/src/views/RoutineEdit.jsx` · BACKLOG-02 (grava rotinas via `PUT /api/data` hoje)
+
+---
+
+## Concluídos
+
+> Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
+
+### BACKLOG-05 — O caderno de pesos é global por exercício: não dá para prescrever carga diferente por rotina — **RESOLVIDO em 10/09/2026**
+
+- **Resolução (10/09/2026):** implementada pela **opção A estendida** (detalhada na BACKLOG-06) no commit `49fa3c1`, publicado no container no mesmo dia. **Verificação na tela, no dado real:** `~/.hermes/workout/reports/verificacao_p1_20260910.txt` — 35/35 combinações rotina×exercício mostram o peso do template, e as divergências por rotina estão em uso (`0598` 80 no Legs 1 / 75 no Legs 2, `0762` 20 no Pull / 25 no Upper, `0326` 8 / 9, desenv 114 no Push / 110 no Upper). O critério de aceite original nº 3 ("depois de um treino, a próxima sessão daquela rotina começa pelo peso usado nela") foi **superado** pela decisão de prescrição fixa — o template manda, e para mudar o peso edita-se a rotina.
 
 - **Status:** Descoberto em 10/09/2026 durante a spec do BACKLOG-02. **Resolver antes do BACKLOG-02**: hoje o microciclo só consegue prescrever **uma** carga por exercício, e a spec teve de proibir alvos divergentes entre rotinas justamente por causa disto.
-- **Decisão (10/09/2026):** **opção A estendida** — o template da rotina vence o caderno (para **peso e reps**) e a progressão nasce `off` por padrão. Escopo de implementação, arquivos e aceite na **BACKLOG-06**; é ela que **bloqueia a BACKLOG-02**.
+- **Decisão (10/09/2026):** **opção A estendida** — o template da rotina vence o caderno (para **peso e reps**) e a progressão nasce `off` por padrão. Escopo de implementação, arquivos e aceite na **BACKLOG-06** (era ela que bloqueava a BACKLOG-02, encerrada em 10/09/2026).
 
 - **O que é:** `S.exWeights[id] = {w, d}` tem **uma entrada por exercício**, sem noção de rotina. Como `buildSets` (`frontend/src/lib/history.js:201-207`) resolve a carga com
 
@@ -124,9 +144,11 @@
 
 ---
 
-## BACKLOG-06 — Peso e reps por rotina (o template vence) + progressão `off` por padrão — BLOQUEADOR do BACKLOG-02
+### BACKLOG-06 — Peso e reps por rotina (o template vence) + progressão `off` por padrão — **RESOLVIDO em 10/09/2026**
 
-- **Status:** **DECIDIDO** (10/09/2026) e **ESPECIFICADO**: `docs/specs/spec_peso_e_reps_por_rotina.md` (v3 final, 630 linhas, 2 revisões por subagente com 15 + 18 achados; as 26 expectativas de teste da spec foram conferidas por execução). Diagnóstico na BACKLOG-05. **Bloqueia a BACKLOG-02**.
+- **Resolução (10/09/2026):** commit `49fa3c1` (6 arquivos, +124/−19), suíte com **204 testes verdes**, build e deploy no Pi (bundle `index-DkdGLST6.js`). Efeitos colaterais registrados: a **proibição de alvos divergentes** da `spec_micro_via_app_v5.md` está **liberada** e em uso; faixa de reps vale o **piso** (`6-8` → a tela pré-preenche 6); no modo cronometrado só a carga segue o template (a duração continua vindo do último treino). Do lado Hermes: novos `scripts/verificar_prescricao.py` (portões P1/P4/P2 antes de todo PUT) e `MECANICA_PESOS.md` (precedência + convenção de reps + commit verificado), e o passo 6 da skill `treino-coach` passou a prescrever **só no template**. Ressalva: fica liberado para implementação — não foi removido nada de `nextPrescription` (política `double` com template em faixa segue fora de escopo, ver Fora de escopo da BACKLOG-06).
+
+- **Status:** **DECIDIDO** (10/09/2026) e **ESPECIFICADO**: `docs/specs/spec_peso_e_reps_por_rotina.md` (v3 final, 630 linhas, 2 revisões por subagente com 15 + 18 achados; as 26 expectativas de teste da spec foram conferidas por execução). Diagnóstico na BACKLOG-05. Bloqueava a BACKLOG-02 até ser encerrada em 10/09/2026.
 
 - **Decisão do usuário (produto):** o **template da rotina é a prescrição** — vale para **peso e reps**. O caderno (`S.exWeights`, global e monotônico) deixa de mandar na tela e vira sugestão só para quem não tem prescrição (peso 0). O rótulo "Last time" continua sendo do **exercício**. O usuário aceita perder a sugestão automática do caderno em template velho — a rotina da semana seguinte vem do treinador e será usada como prescrita. Treino **avulso** também fica sem aumento automático de peso. O "Best: N kg" continua sendo o recorde de qualquer rotina. Faixa `6-8` vale **6**.
 
@@ -149,22 +171,9 @@
 
 ---
 
-## BACKLOG-07 — API para criar e apagar rotinas — BLOQUEADOR do BACKLOG-02
-
-- **Status:** Registrado — **fora do escopo imediato** (decisão do usuário em 10/09/2026: hoje o Hermes escreve direto no armazenamento de rotinas e isso atende; "não vejo necessidade de criar uma API para isso agora"). **Bloqueia a BACKLOG-02** até ser implementado ou reescopado.
-
-- **O que é:** endpoints em `api/server.js` para criar e apagar rotina **sem reescrever o estado inteiro**: `POST /api/routines` (body `{name, emoji?, prog?, ex[]}` → `201 {routine}` com `id` gerado no servidor) e `DELETE /api/routines/:id` (`204`), autenticados por `gymsid`, com validação equivalente à do `checkState` (`api/server.js:56-72`, que hoje só confere `ex[].id` e `ex[].sets`) e com a limpeza que a UI já faz em `RoutineEdit.jsx:143-147` (tirar a rotina de `S.week` e `S.dayPlan` **sem** tocar em `workouts[]`).
-
-- **Por que importa:** hoje o Hermes grava o **arquivo de estado inteiro** (`data/state-<uid>.json`) — sem lock, sem `If-Match`, sem validação de campo. Um write concorrente com o app pode perder dados (o incidente de 2026-09-08 que motivou o `checkState` é da mesma família). Uma API com `If-Match-State` e validação server-side fecha esse buraco e é o caminho "correto" para o Hermes entregar rotinas novas (micro/meso).
-
-- **Aceite (quando for feito):** `POST` cria a rotina e um `PUT /api/data` posterior não a perde; `DELETE` limpa `S.week`/`S.dayPlan` e mantém `workouts[]` intactos; sem `gymsid` → `401`; `ex[].id` desconhecido → `400`; corrida com o app → `409` em vez de overwrite silencioso.
-
-- **Refs:** `api/server.js` (`checkState`, `PUT /api/data`) · `frontend/src/views/RoutineEdit.jsx` · BACKLOG-02 (grava rotinas via `PUT /api/data` hoje)
-
----
-
 *Criado em 2026-09-09 a partir da Etapa 4 — fonte única. Dono: Emerson. Branch: `emerson-custom`.*
 *Atualizado 10/09/2026: criado o BACKLOG-05 (caderno de pesos global por exercício) a partir da spec do BACKLOG-02. Nota de leitura: as entradas BACKLOG-02/03 acima descrevem o desenho **anterior** (rotinas novas `r_*_S(n)_<hash>`, `S.dayPlan` com as datas da semana, `gymsid` em hex); a spec `docs/specs/spec_micro_via_app_v5.md` substitui aquele desenho, e o rodapé anterior (2026-09-23) está à frente do relógio da máquina (10/09/2026).*
 *Atualizado 2026-09-23: BACKLOG-02/03 com especificação completa pronta para implementar (app como interface, Hermes como motor) — ponto crítico `meso → micros` com `S.dayPlan` manda, `S1` preservado, e `reports/*.html` só no Hermes como prova de reflexão.*
 *Atualizado 10/09/2026: criados **BACKLOG-06** (peso e reps por rotina — o template da rotina vence o caderno global; `progression.js:72` passa a nascer `off`) e **BACKLOG-07** (API para criar/apagar rotinas). **BACKLOG-02** passa a **BLOQUEADO** por BACKLOG-05/06/07.*
 *Atualizado 10/09/2026 (2): BACKLOG-06 especificada em `docs/specs/spec_peso_e_reps_por_rotina.md` (v3 final) — escopo ajustado: no modo cronometrado só a carga segue o template, helper `repFloor` para ler reps, e a leitura do piso da faixa em `readSession` entrou no escopo (evita deload indevido).*
+*Atualizado 11/09/2026: **BACKLOG-05** e **BACKLOG-06** encerradas e movidas para **Concluídos** (commit `49fa3c1` publicado no container + verificação do Hermes: 35/35 combinações rotina×exercício mostram o peso do template). **BACKLOG-02** passa a ter um único bloqueador (**BACKLOG-07**) e a restrição de alvos divergentes entre rotinas está liberada.*
