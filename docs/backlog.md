@@ -84,12 +84,14 @@
 
 ## BACKLOG-11 — Incidente de falha de job morre no banco (ninguém é avisado) — criado em 12/09/2026
 
-- **Status:** ABERTO — é a causa raiz que sobrou da lacuna 2.
+- **Status:** ABERTO — é a causa raiz que sobrou da lacuna 2. **Spec pronta (v3, 464 linhas) em `docs/specs/spec_incidentes_de_job.md`, com o código já exercitado numa cópia do banco; aguardando o OK do usuário para aplicar.**
+- **Decidido com o usuário em 12/09/2026:** ser lembrado **enquanto** continuar falhando (um aviso por dia, não um só); o incidente fica pendente até ele dar `ack` (com o comando dentro da mensagem); e os **quatro** jobs mudos passam a avisar.
+- **Descoberta que a spec corrigiu (e que quase passou):** o alvo do aviso tem que ser `--failure-deliver telegram`, **não** `origin` — o `Hermes Snapshot` tem `origin: null` (viraria `not_configured`: incidente marcado `alerted` e **nenhuma** mensagem) e o `hermes-local-backup` nasceu na WebUI (o aviso iria para a sessão web, não para o celular).
 - **Problema:** o agente detecta falha de job corretamente e grava em `cron_incidents`, mas **nada consome**: **14 incidentes, 0 reconhecidos, 0 fechados** (12 em `detected`, 2 em `alerted`) num total de 34 execuções falhas de 1000. O `failure_streak` só colore o texto de vermelho no `cron list`, e não existe auto-pausa. Foi exatamente assim que o `snapshot.sh` falhou **10 dias seguidos** (31/08 a 09/09) sem ninguém saber: cada falha gerou um arquivo em `~/.hermes/cron/output/c75628767d63/` que ninguém leu.
-- **O que já existe:** o canal de aviso funciona desde 12/09 (`alerta.sh`: binário resolvido por caminho absoluto, 3 tentativas, log de entrega em `~/.hermes/logs/island_alerts.log`); o CLI já tem `hermes cron incidents` para listar e reconhecer.
-- **Investigar/propor:** incidente novo (ou `failure_streak >= 2`) disparar um alerta pelo `alerta.sh`, com um resumo por execução para não floodar; decidir se o reconhecimento continua sendo ato humano (provável) e se o alerta deve incluir o caminho do arquivo de saída da execução.
-- **Aceite:** uma falha de job repetida chega no Telegram com o nome do job e o motivo, sem repetir a cada tick.
-- **Refs:** `~/.hermes/cron/{executions.db,jobs.json}` · `~/.hermes/cron/output/**` · `hermes_cli/cron.py` (`cron_incidents`, `failure_streak`) · `~/.hermes/scripts/alerta.sh`
+- **O que já existe:** o canal de aviso funciona desde 12/09 (`alerta.sh`: binário resolvido por caminho absoluto, 3 tentativas, log de entrega em `~/.hermes/logs/island_alerts.log`); o CLI já tem `hermes cron incidents` para listar e reconhecer, e `hermes cron edit --failure-deliver` (com `''` limpando o override).
+- **Investigado/proposto:** `failure_deliver: telegram` nos quatro jobs (aviso imediato, pelo caminho do próprio agente) + uma segunda perna independente dentro do `island_healthcheck.sh` (que roda no cron do sistema, a cada 15 min) para os incidentes que ficarem em `detected` e para a última execução cujo aviso não saiu. Detalhes, código copiável e critérios de aceite na spec.
+- **Aceite:** uma falha de job repetida chega no Telegram com o nome do job e o motivo, sem repetir a cada tick. Ver os 10 critérios da spec (dois deles mandam mensagem real no Telegram).
+- **Refs:** `docs/specs/spec_incidentes_de_job.md` · `~/.hermes/cron/{executions.db,jobs.json}` · `~/.hermes/cron/output/**` · `hermes_cli/cron.py` (`cron_incidents`, `failure_streak`) · `~/.hermes/scripts/{alerta.sh,island_healthcheck.sh}`
 
 ---
 
