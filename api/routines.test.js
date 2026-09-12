@@ -22,11 +22,15 @@ process.env.PORT = '0';
 const R = await import('./routines.js');
 const S = await import('./server.js');
 
+// Mesmo esquema do catálogo canônico (frontend/src/lib/exercises-data.json): o nome é `n`.
+// A consistência do fixture é conforto de leitura — ele NÃO amarra o arquivo real (estes testes
+// continuariam passando se o campo mudasse de novo). Quem amarra é api/catalog.test.js, que lê o
+// arquivo de verdade.
 const CATALOG = [
-  { id: '0326', name: 'dumbbell incline rear lateral raise', bp: 'shoulders', eq: 'dumbbell', img: 'a.jpg', gif: 'a.gif' },
-  { id: '0584', name: 'lever lateral raise', bp: 'shoulders', eq: 'leverage machine', img: 'b.jpg', gif: 'b.gif' },
-  { id: '0585', name: 'lever leg extension', bp: 'upper legs', eq: 'leverage machine', img: 'c.jpg', gif: 'c.gif' },
-  { id: '0001', name: '3/4 sit-up', bp: 'waist', eq: 'body weight', img: 'd.jpg', gif: 'd.gif' }
+  { id: '0326', n: 'dumbbell incline rear lateral raise', bp: 'shoulders', eq: 'dumbbell', img: 'a.jpg', gif: 'a.gif' },
+  { id: '0584', n: 'lever lateral raise', bp: 'shoulders', eq: 'leverage machine', img: 'b.jpg', gif: 'b.gif' },
+  { id: '0585', n: 'lever leg extension', bp: 'upper legs', eq: 'leverage machine', img: 'c.jpg', gif: 'c.gif' },
+  { id: '0001', n: '3/4 sit-up', bp: 'waist', eq: 'body weight', img: 'd.jpg', gif: 'd.gif' }
 ];
 fs.writeFileSync(path.join(TMP, 'exercise_catalog.json'), JSON.stringify(CATALOG));
 fs.writeFileSync(path.join(TMP, 'db.json'), JSON.stringify({ users: [{ id: 'u1', name: 'Test' }], creds: [], subs: [], invites: [] }));

@@ -1,4 +1,4 @@
-import { EXDB } from './exercises-data.js'
+import EXDB from './exercises-data.json'
 import { t } from './i18n.js'
 
 export { EXDB }

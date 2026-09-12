@@ -240,3 +240,12 @@ Fluxo: `Login → GET /api/me 200 → GET /api/coach/analysis 200 → render`. A
 - [ ] `Stats` logado com card, deslogado CTA, `500` com retry, `PUT` invalida cache.
 - [ ] `docker compose up api` e `curl :9000/api/coach/analysis` via `web` funcionam; `node --check api/coach.js` e `npm run build` passam.
 
+
+---
+
+> **Atualização de 11/09/2026:** o catálogo de exercícios deixou de ser
+> `api/exercise_catalog.json` (e de ter cópia em `~/.hermes/.../references/`). Agora existe **um
+> arquivo só**, `frontend/src/lib/exercises-data.json`, lido pelo app, pela API e pelo agente. Onde
+> este documento citar `exercise_catalog.json`, ou o campo `name`, leia o arquivo novo e o campo
+> `n`. Ver `docs/specs/spec_catalogo_unico.md`.
+

@@ -53,13 +53,6 @@
 
 ---
 
-## BACKLOG-04 — `exercise_catalog.json` dentro do repo
-
-- **Status:** Já espelhado em `/mnt/drivebackup/apps/openGym/openGym/api/exercise_catalog.json` para `GET /api/coach/analysis` (fonte única), mas ainda não versionado no repo. Quando revisitar, mover `~/.hermes/skills/fitness/treino-coach/references/exercise_catalog.json` (1324) para `frontend/src/lib/exercises-catalog.json` ou `api/exercise_catalog.json` versionado.
-- **Aceite:** `GET /api/coach/analysis` valida `id` sem ler `/home/pi/...`; build copia `img/gif` se necessário.
-
----
-
 ## BACKLOG-07 — API de rotinas: operações por rotina, validação e identidade do agente — BLOQUEADOR do BACKLOG-02
 
 - **Status:** **RESOLVIDO em 11/09/2026** (commits `73cfae1`, `ef363e3` e `0704f32` na branch `emerson-custom`; no ar nos containers `opengym-api-1` e `opengym-web-1`). Texto reescrito em 11/09/2026 com a análise fresca do que existe hoje; implementado no mesmo dia.
@@ -137,8 +130,45 @@
 
 > Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
 
-### BACKLOG-01 — Guardar `unit` por exercício (kg/lb por exercício) — **RESOLVIDO em 11/09/2026**
+### BACKLOG-04 — o catálogo de exercícios existia em SEIS cópias (título original: "`exercise_catalog.json` dentro do repo") — **RESOLVIDO em 11/09/2026**
 
+- **Texto original do item (09/09/2026), e por que a premissa estava errada:** dizia *"Já espelhado em `api/exercise_catalog.json` para `GET /api/coach/analysis` (fonte única), mas ainda não versionado no repo. Quando revisitar, mover `references/exercise_catalog.json` para `frontend/src/lib/exercises-catalog.json` ou `api/exercise_catalog.json` versionado."* As duas metades da premissa eram falsas: o `api/exercise_catalog.json` **já estava dentro do repo e versionado** desde o commit `7b6a1bb` (09/09/2026), e ele **não era fonte de nada** — era uma cópia. O problema real nunca foi "falta versionar"; foi "a mesma lista existe em seis lugares e cada leitor lê uma".
+
+- **Estado encontrado (medido em 11/09/2026, antes de qualquer mudança):**
+
+  | # | Arquivo | Quem lia de fato | Formato | Tamanho |
+  |---|---|---|---|---|
+  | 1 | `frontend/src/lib/exercises-data.js` | o app, em todas as telas | ESM, `export const EXDB=[…]` | 888.191 B |
+  | 2 | `api/exercise_catalog.json` | a API (`routines.js`, `coach.js`, `server.js`) | JSON | 259.429 B |
+  | 3 | `~/.hermes/skills/fitness/treino-coach/references/exercise_catalog.json` | o agente, por prosa da própria skill | JSON | 259.429 B |
+  | 4 | `~/.hermes/skills/fitness/treino-coach/references/catalog_summary.json` | **ninguém** | JSON | 669 B |
+  | 5 | `~/.hermes/workout/data/opengym_exmap.json` | `opengym_reader.py` (caminho legado) | JSON | 1324 × `{n,eq}` |
+  | 6 | `~/.hermes/profiles/treinador/skills/…/references/{exercise_catalog,catalog_summary}.json` | **ninguém** (profile que rodou ~40 min em 07/09 e parou) | JSON | idem 3 e 4 |
+
+  E os dois formatos nem falavam a mesma língua: o arquivo do app tem **10 campos** com o nome em `n` (`id,n,bp,eq,tg,mg,sm,st,img,gif`); o catálogo da API tinha **7** com o nome em `name` (`id,name,bp,eq,tg,img,gif`) e **sem** `mg`, `sm` e `st`. Os 1324 ids batiam, mas qualquer campo novo entrava num lado só.
+
+- **Evidência de que a API lia uma cópia, não uma fonte (provada por hash):** `api/exercise_catalog.json` no commit `7b6a1bb` é **byte-idêntico** (`10d6d782c61b3107…`, 259.437 B) à extração que o agente havia feito do bundle do app em 29/08 (`~/.hermes/workout/_archive_2026-09-08/root/exercise_catalog.json`). Linhagem: dataset do upstream → `exercises-data.js` → bundle `assets/index-DylSoVef.js` → extração do Hermes (29/08) → cópia no repo (09/09). Ou seja: o servidor validava ids contra um retrato do app tirado à mão, não contra o app.
+
+- **O sintoma que já tinha custado trabalho:** corrigir **quatro** nomes com um `в` cirílico (U+0432) colado antes do `°` (`0738`, `0739`, `0740`, `0742`) exigiu editar **cinco** arquivos no commit `422002a`, porque não havia uma fonte. O defeito foi encontrado por acaso e sobreviveu semanas.
+
+- **Dois defeitos que o mesmo levantamento achou, no mesmo lugar:**
+  - `api/coach.js` fazia **dois** `JSON.parse` do catálogo: um no topo do módulo e outro **dentro de `rowsFromState()`** — isto é, um por requisição de `GET /api/coach/analysis`.
+  - Quando o arquivo não carregava, `loadCatalog` engolia o erro e devolvia `null`, **em silêncio**: a validação de rotina passava a aceitar id inexistente e a análise devolvia o id numérico no lugar do nome. Nenhum dos dois aparecia em log de erro.
+
+- **Resolução (11/09/2026):** a lista passou a ter **um arquivo só**, versionado e lido por todos: `frontend/src/lib/exercises-data.json` (1324 exercícios, 10 campos — o arquivo do app convertido de `.js` para JSON puro, mesmo conteúdo, só o envelope fora). A API lê esse mesmo arquivo por `api/catalog.js`, com o `api/Dockerfile` buildando a partir da raiz do repositório e o campo do nome passando de `name` para `n`; o agente Hermes lê o mesmo caminho via `OPENGYM_CATALOG` e **não copia mais**. Spec: `docs/specs/spec_catalogo_unico.md` (v3, duas rodadas de revisão por subagente — 21 e 12 achados).
+  **Aposentados (6):** `api/exercise_catalog.json` (removido do repo), as duas cópias em `~/.hermes/skills/.../references/`, o `catalog_summary.json`, o `opengym_exmap.json`, o gerador `opengym_export_exmap.mjs` e a cópia do profile `treinador` — os seis movidos para `/home/pi/.hermes/workout/_retired_catalogs_20260911/`, sem apagar nada.
+  **Ganhos de quebra:** o catálogo passou a ser lido **uma vez por processo** (era uma vez por requisição de análise, e o arquivo ainda cresceu de 259 KB para 888 KB); o boot da API virou **fatal** com o catálogo ausente ou ilegível (contagem divergente de 1324 é aviso, não erro); o `api/Dockerfile` passou a copiar `api/*.js` por glob — o COPY arquivo a arquivo foi exatamente o que quase derrubou a BACKLOG-01 com o `units.js` faltando na imagem; e o `.dockerignore` novo na raiz derrubou o contexto de build de ~484 MB para **11,67 MB** na API e **1,01 MB** no site.
+  **Ferramenta nova:** `scripts/check-exercises.mjs` confere estrutura, ids, campos, nomes sem homoglifo e mídia (`--media DIR`), com `--fix` para o defeito dos quatro nomes (backup antes de gravar, idempotente). É manual de propósito, não barra o build.
+
+- **Aceite (conferido em 11/09/2026):** `GET /api/coach/analysis` valida `id` sem ler `/home/pi/...` — o log de boot imprime `catalogo carregado: 1324 exercicios de /app/frontend/src/lib/exercises-data.json` (uma linha) e a resposta tem `progress` com 62 exercícios, **zero** chaves que sejam id de 4 dígitos, e `0585` aparecendo como `lever leg extension`. Verificação: frontend **237/237**, API **76/76** (75 + `api/catalog.test.js`), Hermes **40/40**, `vite build` limpo, containers no ar com `/`, `/img/*.jpg` e `/gif/*.gif` em 200. `find` não encontra nenhum outro arquivo com a lista fora do diretório de aposentados e do `_archive_2026-09-08/`.
+
+- **Achado fora de escopo, registrado:** o repositório carrega **137 MB de mídia versionada no git** (`media/`, 2.649 arquivos rastreados, 1324 img + 1324 gif) além dos 128 MB de `.git`, e a mesma mídia já existe em `/mnt/drivebackup/apps/openGym/media`. O `.dockerignore` novo já tira essa pasta do build; decidir depois se ela deveria sair do controle de versão e passar a ser baixada pelo serviço `media` do compose.
+
+- **Refs:** `docs/specs/spec_catalogo_unico.md` (v3) · `api/catalog.js` · `scripts/check-exercises.mjs` · `docker-compose.yml` · `.dockerignore`
+
+---
+
+### BACKLOG-01 — Guardar `unit` por exercício (kg/lb por exercício) — **RESOLVIDO em 11/09/2026**
 - **Resolução (11/09/2026):** implementado nos commits `fd8953b` (código), `acf97e1` (docs) e `422002a` (nomes), publicado nos containers `opengym-api-1`/`opengym-web-1` e em `origin/emerson-custom` (confirmado por `git ls-remote`). Spec: `docs/specs/spec_unit_por_exercicio.md` (v2, duas rodadas de revisão por subagente — 45 e 23 achados — com a seção "Implementado em 11/09/2026" registrando as divergências).
   **O que foi entregue:** `routines[].ex[].unit` (`'kg'|'lb'`) chega em `entries[].target.unit` sozinho, porque a sessão já copia a prescrição; `sets[].wUnit` como override por série (lido, sem UI); resolução canônica única `wUnit → target.unit → S.unit`; `api/coach.js` convertendo **por série** (era pela unidade do perfil); `unit` fora de `kg|lb` → `400 BAD_UNIT` no `PATCH` e no `PUT`; chip de unidade no treino e na linha da rotina; sufixo `kg`/`lb` nos rótulos só quando diverge do perfil; volume do treino somado em kg e exibido na unidade do perfil (um treino com um exercício em kg e outro em lb não soma unidades diferentes); plano exportado carregando a unidade. **Migração** em `frontend/src/lib/unit-migration.js` (11 testes de comportamento): grava `unit:'lb'` em `0585`/`0599` nas 4 entradas de Legs 1/Legs 2, **sem tocar em `workouts[]`** — o histórico antigo já estava em kg.
   **Verificação:** `node --test` **75/75** no servidor, `vitest` **237/237** no frontend, **30/30** no escritor do Hermes, `vite build` sem erro novo, containers no ar com `/app/units.js` presente.
@@ -249,3 +279,4 @@
 *Atualizado 11/09/2026 (3): **BACKLOG-08** corrigida — o corpus operacional do Hermes **já é versionado** (`emersondsc/hermes-snapshot`, privado, snapshot diário às 06:00, com `RESTORE.md`; o `.env` vai redigido e `secret`/`vapid.json` ficam de fora). As lacunas reais: `~/.hermes/workout/` **não entra** na lista do `snapshot.sh` (e as skills apontam para arquivos de lá); o agendamento é do cron do próprio agente — 10 dias sem snapshot entre 30/08 e 08/09, enquanto os outros jobs rodaram; e `sync_treino.sh` existe duplicado com conteúdos diferentes.*
 *Atualizado 11/09/2026 (4): BACKLOG-08 — cobertura da lacuna 1 fechada no mesmo dia (`snapshot.sh` passa a versionar `~/.hermes/workout/`: mecânica, portão P1, planos e recibos; snapshot `7f4ab29`).*
 *Atualizado 11/09/2026 (5): **BACKLOG-07 RESOLVIDA** — escritor de rotinas com `--dry-run` (`opengym_writer.py`, 38 testes) + API de rotinas no servidor (`api/routines.js`, `PATCH`/`DELETE`/`GET /api/routines`/`GET /api/audit`, 61 testes) + identidade do agente (auditoria com hash-chain) + token de concorrência real (`S.rev` + `If-Match`, cliente ajustado, 219 testes). A BACKLOG-09 fica **parcialmente resolvida**: o token e o destino do `If-Match-State` estão decididos e implementados, mas o cenário do aceite ("PWA aberto + escrita externa + edição local" com o resultado medido) só fecha quando não houver cliente antigo em cache — o risco residual está declarado na `spec_api_rotinas.md`. **A BACKLOG-02 está desbloqueada.** Commits `73cfae1` (API), `ef363e3` (cliente) e `0704f32` (specs/backlog).*
+*Atualizado 11/09/2026 (6): **BACKLOG-04 RESOLVIDA e movida para Concluídos** — a lista de exercícios passou a ter um arquivo só, `frontend/src/lib/exercises-data.json`, lido pelo app, pela API (`api/catalog.js`) e pelo agente Hermes (somente leitura, via `OPENGYM_CATALOG`). As seis cópias antigas foram aposentadas em `/home/pi/.hermes/workout/_retired_catalogs_20260911/`; o `api/coach.js` deixou de reler o catálogo a cada requisição de análise; o boot da API passou a ser fatal com o catálogo ausente; e novo `scripts/check-exercises.mjs` (com `--fix`) verifica estrutura, nomes e mídia. Spec: `docs/specs/spec_catalogo_unico.md` (v3). Achado de quebra registrado lá: o repositório carrega 137 MB de mídia versionada no git, fora do escopo desta mudança.*

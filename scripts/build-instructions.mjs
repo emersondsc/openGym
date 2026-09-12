@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Regenerates the per-language exercise instruction packs in frontend/src/instr/
 // from the upstream dataset (hasaneyldrm/exercises-dataset). English stays inline
-// in exercises-data.js; every other language ships as its own lazy-loaded pack.
+// in exercises-data.json (o catálogo único, que a API e o agente também leem);
+// every other language ships as its own lazy-loaded pack.
 //
 //   node scripts/build-instructions.mjs [path-to-exercises.json]
 //

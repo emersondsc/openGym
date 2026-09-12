@@ -1,16 +1,15 @@
 // api/coach.js — matemática portada de process_workout.py (200 linhas) + opengym_reader.py
 // Sem fs de Hermes, sem csv-parse, sem compsio. Puro, recebe state já lido.
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { normUnit, kgFactor, unitOfSet } from './units.js';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-let catalogMap = {};
-try{
-  const cat = JSON.parse(fs.readFileSync(path.join(__dirname, 'exercise_catalog.json'), 'utf8'));
-  for(const e of cat) catalogMap[e.id]=e.name;
-}catch(e){ console.error('[coach] catalog load failed', e.message); }
+import { loadCatalog, CATALOG_PATH } from './catalog.js';
+
+// O catálogo é lido UMA vez por processo, do arquivo do app. Antes este arquivo fazia dois
+// JSON.parse: um aqui no topo e outro dentro de rowsFromState() — ou seja, um por requisição de
+// análise. Com o catálogo passando de 259 KB para 888 KB, manter aquilo seria pagar a leitura
+// inteira a cada GET /api/coach/analysis.
+// É daqui que sai a linha "catalogo carregado" no boot: este módulo é importado por server.js
+// antes de routines.js.
+const catalogEntries = loadCatalog(CATALOG_PATH) || new Map();
 
 function isoWeekKeyUTC(dateStr){
   // dateStr YYYY-MM-DD UTC → YYYY-Sww ISO 8601 (segunda, semana 1 contém 4 jan, regra Thu)
@@ -29,18 +28,12 @@ function e1rm(wKg, reps){
 
 export function rowsFromState(state){
   const exmap = {};
-  // catálogo base (1324 exercícios) — exId → nome, eq padrão; customEx sobrescreve
-  for(const [id,name] of Object.entries(catalogMap)) exmap[id]={n:name, eq:''};
-  // eq real vem do catálogo completo quando precisar, mas para lastro basta customEx; para nome, catálogo já basta
-  // sobrescreve com customEx (nome original preservado)
+  // catálogo base (1324 exercícios) — exId → nome e equipamento, já memoizado no topo do módulo
+  for(const [id, e] of catalogEntries) exmap[id] = { n: e.n, eq: e.eq || '' };
+  // customEx sobrescreve (nome original preservado)
   for(const c of (state.customEx || [])){
     if(c.id) exmap[c.id] = { n: c.n || c.id, eq: c.eq || 'custom' };
   }
-  // completa eq para itens do catálogo (para isBw) — re-lê catálogo com eq se disponível
-  try{
-    const cat2 = JSON.parse(fs.readFileSync(path.join(__dirname, 'exercise_catalog.json'), 'utf8'));
-    for(const e of cat2){ if(exmap[e.id]) exmap[e.id].eq = e.eq || exmap[e.id].eq; }
-  }catch{}
   // A unidade é do exercício, não do perfil (BACKLOG-01): `0585`/`0599` são máquinas em
   // libras num perfil em kg. Cada série é convertida pela unidade dela — `wUnit` da série,
   // senão a prescrição que a sessão copiou (`entry.target.unit`), senão o perfil.

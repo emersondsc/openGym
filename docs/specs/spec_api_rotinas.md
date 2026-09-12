@@ -1474,3 +1474,12 @@ para uma cópia local do estado (`OPENGYM_DATA_DIR`) mas a `OPENGYM_API_URL` con
 produção, e 4 `PATCH` atingiram o estado real (único dado alterado: `0326` no Upper C, 9→10, já
 **restaurado** com 1 `PATCH` auditado). O recibo completo está em
 `~/.hermes/workout/reports/sync_log.md`; a trava I7 (Spec A) nasceu daí.
+
+---
+
+> **Atualização de 11/09/2026:** o catálogo de exercícios deixou de ser
+> `api/exercise_catalog.json` (e de ter cópia em `~/.hermes/.../references/`). Agora existe **um
+> arquivo só**, `frontend/src/lib/exercises-data.json`, lido pelo app, pela API e pelo agente. Onde
+> este documento citar `exercise_catalog.json`, ou o campo `name`, leia o arquivo novo e o campo
+> `n`. Ver `docs/specs/spec_catalogo_unico.md`.
+

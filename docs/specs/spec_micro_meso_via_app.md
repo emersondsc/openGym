@@ -129,3 +129,12 @@ Systemd `hermes-api.service` + `web/nginx.conf` diff como em RF-5.
 - [ ] reports/relatorio_S2.html com Por que S2 e data-ex-id ≥3, mas POST não retorna html_path
 ```
 
+
+---
+
+> **Atualização de 11/09/2026:** o catálogo de exercícios deixou de ser
+> `api/exercise_catalog.json` (e de ter cópia em `~/.hermes/.../references/`). Agora existe **um
+> arquivo só**, `frontend/src/lib/exercises-data.json`, lido pelo app, pela API e pelo agente. Onde
+> este documento citar `exercise_catalog.json`, ou o campo `name`, leia o arquivo novo e o campo
+> `n`. Ver `docs/specs/spec_catalogo_unico.md`.
+

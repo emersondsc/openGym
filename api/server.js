@@ -10,14 +10,16 @@ import {
 } from '@simplewebauthn/server';
 import webpush from 'web-push';
 import { buildAnalysis } from './coach.js';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import * as catalog from './catalog.js';
 import * as routines from './routines.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
-// O catálogo vive ao lado do server.js (é o COPY do Dockerfile), NÃO em DATA_DIR (/data, que só
-// tem estado/segredo). `OG_CATALOG` permite apontar para outro arquivo sem rebuild.
-const CATALOG_PATH = process.env.OG_CATALOG || path.join(path.dirname(fileURLToPath(import.meta.url)), 'exercise_catalog.json');
+// O catálogo é o arquivo do app (fonte única), NÃO um arquivo em DATA_DIR (/data, que só tem
+// estado/segredo). O caminho e o leitor vivem em api/catalog.js; `OG_CATALOG` continua sendo o
+// override sem rebuild.
+const CATALOG_PATH = catalog.CATALOG_PATH;
 const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.ORIGIN || 'http://localhost:8080';
 const RP_NAME = process.env.RP_NAME || 'openGym';
@@ -755,11 +757,24 @@ Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
   readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH
 }));
 
-// Carrega o catálogo já no boot: se o arquivo não estiver onde devia, o erro aparece no log na
-// hora (em vez de virar um 503 misterioso na primeira escrita de rotina).
+// Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo
+// a validação de rotina aceita id inexistente e a análise devolve o id no lugar do nome, as duas
+// em silêncio. Contagem diferente do esperado é aviso, não erro: a base pode legitimamente
+// crescer, e travar o boot por isso seria pior do que a divergência.
+//
+// A primeira carga normalmente já aconteceu no import do coach.js (que vem antes deste módulo,
+// linha 12) — a mesma chamada aqui só reaproveita o cache pelo caminho.
 {
-  const cat = routines.loadCatalog(CATALOG_PATH);
-  if (!cat) console.error('[og-routine] ATENCAO: catalogo ausente — escrita de rotina respondera 503');
+  const cat = catalog.loadCatalog(CATALOG_PATH);
+  if (!cat) {
+    console.error(`[og-routine] FATAL: catalogo ausente/ilegivel em ${CATALOG_PATH}`);
+    console.error('[og-routine] o arquivo canonico e frontend/src/lib/exercises-data.json');
+    process.exit(1);
+  }
+  if (cat.size !== catalog.CATALOG_EXPECTED) {
+    console.warn(`[og-routine] AVISO: catalogo com ${cat.size} exercicios `
+      + `(esperado ${catalog.CATALOG_EXPECTED}) — confira o arquivo canonico`);
+  }
 }
 
 const server = http.createServer(async (req, res) => {

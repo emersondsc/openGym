@@ -1465,3 +1465,12 @@ Nada aqui foi executado. Esta é a sequência para quando houver ordem de implem
 > Duas regras atravessam tudo: **nada é gravado no app antes do `apply`**, e `extra_hosts` +
 > `nginx.conf` sobem **na mesma** aplicação — sozinho, o conf do nginx derruba o container `web`
 > (provado na §7).
+
+---
+
+> **Atualização de 11/09/2026:** o catálogo de exercícios deixou de ser
+> `api/exercise_catalog.json` (e de ter cópia em `~/.hermes/.../references/`). Agora existe **um
+> arquivo só**, `frontend/src/lib/exercises-data.json`, lido pelo app, pela API e pelo agente. Onde
+> este documento citar `exercise_catalog.json`, ou o campo `name`, leia o arquivo novo e o campo
+> `n`. Ver `docs/specs/spec_catalogo_unico.md`.
+

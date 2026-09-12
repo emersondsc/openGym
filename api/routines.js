@@ -20,8 +20,13 @@ const REP_RANGE = /^\s*(\d{1,3})\s*-\s*(\d{1,3})\s*$/;
 const MAX_SETS = 20, MAX_WEIGHT = 1000, MAX_REPS = 100, MAX_SEC = 3600;
 const AUDIT_MAX_LINES = 5000;     // rotação: mantém as últimas N linhas
 
-let _catalog = null;              // cache do boot (A12)
-let _catalogChecked = false;
+// O catálogo mora em api/catalog.js (leitor único, compartilhado com o coach.js).
+// IMPORTAR e re-exportar, nessa ordem: `loadCatalog` é chamado por nome local mais abaixo, e um
+// `export { … } from './catalog.js'` NÃO cria binding local — só re-exportar daria ReferenceError
+// em toda escrita de rotina.
+import { loadCatalog, __resetCatalogCache, catalogEq } from './catalog.js';
+export { loadCatalog, __resetCatalogCache, catalogEq };
+export { CATALOG_PATH, CATALOG_EXPECTED } from './catalog.js';
 
 /* ---------------------------------------------------------------- helpers de estado */
 
@@ -49,29 +54,6 @@ export function parseIfMatch(h) {
   const bare = v.replace(/^"|"$/g, '').trim();
   return /^\d+$/.test(bare) ? bare : 'BAD';
 }
-
-/** Mapa id → entrada do catálogo, carregado uma vez. null = indisponível (A12). */
-/** Mapa id → entrada do catálogo, carregado uma vez de `catalogPath`. null = indisponível (A12). */
-export function loadCatalog(catalogPath) {
-  if (_catalogChecked) return _catalog;
-  _catalogChecked = true;
-  const f = catalogPath;
-  try {
-    const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
-    const map = new Map();
-    if (Array.isArray(raw)) for (const c of raw) { if (c && c.id) map.set(c.id, c); }
-    else for (const [id, v] of Object.entries(raw)) map.set(id, typeof v === 'object' ? v : {});
-    _catalog = map;
-    console.log(`[og-routine] catalogo carregado: ${map.size} exercicios de ${f}`);
-  } catch (e) {
-    console.error('[og-routine] catalogo indisponivel:', f, e.message);
-    _catalog = null;
-  }
-  return _catalog;
-}
-/** Só para o teste: permite carregar outro catálogo sem reiniciar o processo. */
-export function __resetCatalogCache() { _catalog = null; _catalogChecked = false; }
-export function catalogEq(id) { return _catalog?.get(id)?.eq || null; }
 
 /** Reproduz defaultConfig de frontend/src/lib/history.js:121-129. */
 export function defaultExFields(eid, mode, eq) {
@@ -113,7 +95,8 @@ export function validateExEntry(e, opt = {}) {
   if (typeof e.id !== 'string' || !e.id) return bad('EX_ID_REQUIRED', 'id', 'ex.id required');
   if (catalog && !catalog.has(e.id) && !custom.has(e.id)) {
     return bad('CATALOG_UNKNOWN_EX', 'id',
-      `unknown exercise id "${e.id}" — not in exercise_catalog.json nor in this profile's customEx`);
+      `unknown exercise id "${e.id}" — not in the exercise catalog `
+      + `(frontend/src/lib/exercises-data.json) nor in this profile's customEx`);
   }
   if (!(Number.isInteger(e.sets) && e.sets >= 1 && e.sets <= MAX_SETS)) {
     return bad('BAD_SETS', 'sets', `sets must be an integer 1..${MAX_SETS}`, [1, MAX_SETS]);

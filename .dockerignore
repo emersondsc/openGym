@@ -1,0 +1,16 @@
+# Contexto de build é a RAIZ do repositório (serviços `api` e `web`).
+# Sem este arquivo, cada build envia ~484 MB de contexto:
+#   frontend/node_modules 197 MB · media 137 MB · .git 128 MB · frontend/dist 8,9 MB
+.git
+.gitignore
+**/node_modules
+/frontend/dist
+/data
+/media
+/docs
+/website
+/assets
+/.env
+/og.crt
+/og.key
+/.DS_Store

@@ -984,3 +984,12 @@ O script está em produção desde 11/09/2026 (`~/.hermes/workout/scripts/opengy
 Evidência de aceite (11/09/2026): `python3 test_escritor_rotinas.py` (28 testes) e
 `test_verificar_prescricao.py` (10 testes) verdes no Pi; `doctor` e `plan` rodados contra o estado
 real sem alterá-lo; a escrita de ponta a ponta foi exercitada contra a API publicada.
+
+---
+
+> **Atualização de 11/09/2026:** o catálogo de exercícios deixou de ser
+> `api/exercise_catalog.json` (e de ter cópia em `~/.hermes/.../references/`). Agora existe **um
+> arquivo só**, `frontend/src/lib/exercises-data.json`, lido pelo app, pela API e pelo agente. Onde
+> este documento citar `exercise_catalog.json`, ou o campo `name`, leia o arquivo novo e o campo
+> `n`. Ver `docs/specs/spec_catalogo_unico.md`.
+
