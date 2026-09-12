@@ -29,6 +29,13 @@ services:
       context: .                    # a raiz: o Dockerfile precisa ver frontend/src/lib/ também
       dockerfile: api/Dockerfile
     restart: unless-stopped
+    healthcheck:
+      # /api/health e rota real da API (api/server.js:384) e responde 200 com {"ok":true}
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     env_file: .env
     environment:
       - PORT=3000            # internal port (nginx proxies here) — do not change
@@ -50,6 +57,14 @@ services:
         condition: service_completed_successfully
       api:
         condition: service_started
+    healthcheck:
+      # o nginx do web escuta em 8081 (e 9000 ssl), NAO na 80 — sondar a 80 daria
+      # "connection refused" e o container ficaria unhealthy para sempre
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     ports:
       - "${WEB_PORT:-8080}:9000"
       - "8081:8081"
