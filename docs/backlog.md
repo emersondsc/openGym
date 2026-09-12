@@ -83,17 +83,6 @@
 
 ---
 
-## BACKLOG-10 — O snapshot ainda é agendado pelo próprio agente — criado em 12/09/2026
-
-- **Status:** ABERTO — não bloqueia nada. É o pedaço da lacuna 2 da BACKLOG-08 que não fechou.
-- **Problema:** o job `Hermes Snapshot` (`c75628767d63`, `0 6 * * *`) vive em `~/.hermes/cron/jobs.json`, ou seja, dentro do mesmo agente que ele deveria proteger. Se o gateway estiver fora no horário, o snapshot do dia não sai. O alarme de ausência (26 h) avisa depois — mas avisa que atrasou, não evita o atraso. O padrão da casa para isso já existe: o `/etc/cron.d/island-ops` roda como `pi`, independente do agente, "para sobreviver a quedas do gateway Hermes".
-- **O que já existe:** o alarme de ausência funciona desde 12/09 (snapshot parado há mais de 26 h avisa no Telegram, via `island_healthcheck.sh` + `alerta.sh`); o `snapshot.sh` só precisa de `git`, do `gh` já autenticado em `/home/pi/.config/gh/hosts.yml` e do clone em `/home/pi/hermes-snapshot` — nada disso depende do agente estar rodando.
-- **Investigar/propor:** mover a linha do job para `/etc/cron.d` (uma linha, no formato do `island-ops`) **ou** decidir que o alarme de ausência é a proteção escolhida e registrar isso. Se mover: conferir que o `gh` autentica sob o cron do sistema (o PATH de `/etc/cron.d/island-ops` já inclui `/home/pi/.local/bin` desde 12/09) e manter o horário das 06:00 para não deslocar o carimbo.
-- **Aceite:** o snapshot sai de um agendador que não depende do gateway do agente, ou está escrito que o alarme de ausência é a proteção aceita.
-- **Refs:** `~/.hermes/cron/jobs.json` · `/etc/cron.d/island-ops` · `~/.hermes/scripts/{snapshot.sh,island-ops.crontab}` · `~/.hermes/snapshot_last_ok` · `docs/specs/spec_alerta_sensor_ilha.md`
-
----
-
 ## BACKLOG-12 — Protocolo de mutação em dois lugares (fonte única) — criado em 12/09/2026
 
 - **Status:** ABERTO — documentação. Era a lacuna 4 da BACKLOG-08.
@@ -147,6 +136,21 @@
 ## Concluídos
 
 > Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
+
+### BACKLOG-10 — O snapshot ainda era agendado pelo próprio agente — **RESOLVIDO em 12/09/2026**
+
+- **Status (histórico):** aberto, sem bloquear nada. Era o pedaço da lacuna 2 da BACKLOG-08 que não fechou.
+- **O problema:** o job `Hermes Snapshot` (`c75628767d63`, `0 6 * * *`) vivia em `~/.hermes/cron/jobs.json` — dentro do mesmo agente que ele deveria proteger. Gateway fora no horário, snapshot do dia perdido; e o alarme de ausência (26 h) avisa **depois**: avisa que atrasou, não evita o atraso. O padrão da casa para isso já existia — o `/etc/cron.d/island-ops`, que roda como `pi` "para sobreviver a quedas do gateway Hermes".
+- **Decidido com o usuário (12/09/2026):** **mover** o agendamento para o cron do sistema, em vez de aceitar o alarme como proteção — um dia perdido de snapshot é um buraco permanente no histórico, não um atraso.
+- **Resolução:**
+  - `~/.hermes/scripts/island-ops.crontab` — a fonte versionada, que o próprio `snapshot.sh` copia para dentro do snapshot, então a mudança volta junto num restore — ganhou a linha do snapshot às **06:00**, o mesmo horário de antes, de propósito: o carimbo `~/.hermes/snapshot_last_ok` e o sensor da ilha medem a **idade** dele, e deslocar a hora mudaria a leitura do alarme.
+  - A mesma fonte ganhou **`HOME=/home/pi`**, e isso não é cosmético: em crontab de sistema o `HOME` **não** vem do login, e o `snapshot.sh` monta `$HOME/hermes-snapshot`. Medido com o ambiente que o cron entrega (`env -i`): sem a linha, `HOME` fica vazio, o caminho vira `/hermes-snapshot` e o job morre no primeiro `mkdir` — em silêncio, que é exatamente o modo de falha desta família de itens.
+  - `sudo install -m644 ... /etc/cron.d/island-ops` instalou o arquivo, conferido **idêntico** à fonte versionada (`-rw-r--r-- root`).
+  - O job do agente foi **pausado** (`hermes cron pause c75628767d63`), não apagado: reversível com `hermes cron resume`, e o agendador do agente segue rodando com os outros **7** jobs ativos.
+- **Provas (12/09/2026):** o `snapshot.sh` rodou com `env -i` (ambiente limpo, nada do agente, `HOME` explícito) e fechou o ciclo inteiro — 669 arquivos de skills, sessões, memórias, 76 scripts, plugins, os treinos do openGym e a pasta `workout/`; commit `632aa92` e **push aceito** (`5210c7f..632aa92`); carimbo atualizado; saída 0. E o cron do sistema continuou executando o `island_healthcheck.sh` nos ticks de 15 min (log em `~/.hermes/logs/island_health_cron.log`).
+- **Rollback:** `sudo install -m644 ~/.hermes/scripts/island-ops.crontab.bak.20260912-bk10 /etc/cron.d/island-ops` (o backup da fonte ficou guardado) e `hermes cron resume c75628767d63`.
+- **O que ficou de fora, de propósito:** nada de `MAILTO` (o aviso de falha continua pelo Telegram, pelo sensor independente); o horário preservado; o `island_backup.sh` (espelho do HD a cada 6 h) intocado. A BACKLOG-13 segue como estava — mas o `island-ops.crontab` já é versionado, então a linha nova volta junto num restore.
+- **Refs:** `~/.hermes/scripts/island-ops.crontab` · `/etc/cron.d/island-ops` · `~/.hermes/scripts/snapshot.sh` · `~/.hermes/cron/jobs.json` · `~/.hermes/snapshot_last_ok` · `docs/specs/spec_alerta_sensor_ilha.md`
 
 ### BACKLOG-16 — Espaço em disco sem sensor (HD em 91%) — **RESOLVIDO em 12/09/2026**
 
@@ -398,3 +402,4 @@
 **O critério de saída estava errado, e a medição mostrou:** o rótulo `actor: "pwa-legacy"` aparece em **100%** das escritas do navegador (72 de 72 linhas do registro, incluindo as de 16:31 já com o bundle novo no ar), porque só significa "sem assinatura do assistente" — o critério "7 dias sem `pwa-legacy`", escrito na v3 da spec, era **impossível de cumprir**. Por decisão do usuário, o `api/server.js` ganhou **9 linhas de instrumentação** (o campo `ifMatch` no registro e dois logs de escrita recusada) e o critério passou a ser **7 dias sem nenhuma escrita com `ifMatch: "none"`** — contador começou em 0.
 
 Ficaram registrados na spec o que **não** foi exercitado ao vivo (a releitura ao voltar, que depende de trocar de aba e voltar — coberta por invariantes de teste) e um **satélite novo, sem número**: um ajuste de configuração que perde a corrida é descartado em silêncio (a mescla do `409` monta o estado a partir do servidor; medido ao vivo, o `keepAwake` terminou no valor do servidor). É pré-existente e não afeta plano, rotina nem treino.*
+*Atualizado 12/09/2026 (19): **BACKLOG-10 RESOLVIDA e movida para Concluídos.** O snapshot diário saiu do agendador do próprio agente (job `Hermes Snapshot`, `c75628767d63`, agora **pausado** — reversível) e passou para o `/etc/cron.d/island-ops`, o mesmo arquivo que já roda o sensor da ilha como `pi`, com o **mesmo horário** (06:00) para não deslocar o carimbo que o sensor lê. **O achado que quase repetiu o silêncio:** em crontab de sistema o `HOME` não vem do login, e o `snapshot.sh` monta o caminho do clone com `$HOME` — medido com `env -i`, sem a linha `HOME=/home/pi` o caminho vira `/hermes-snapshot` e o job morre no primeiro `mkdir`, em silêncio. Com a linha, o script rodou em ambiente limpo e fechou o ciclo inteiro (commit `632aa92`, push aceito, carimbo atualizado), provando que nada nele depende do gateway. Seguem abertos, fora desta família: **BACKLOG-12** (protocolo de mutação em dois lugares), **BACKLOG-13** (cobertura do L1), **BACKLOG-14** (ensaio de restauração num Pi limpo) e **BACKLOG-15** (segredo real no `config.yaml`). A **BACKLOG-09** segue esperando a janela de 7 dias.*
