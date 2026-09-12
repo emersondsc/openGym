@@ -105,12 +105,12 @@ describe('invariantes do caminho de sync (no texto do store)', () => {
   it('no 409 reenvia o estado ADOTADO com a base nova (não o payload velho)', () => {
     expect(SRC).toMatch(/await sendState\(merged, merged\.rev\)/)
     expect(SRC).toMatch(/merged\.routines = adopted\.routines/)
-    expect(SRC).toMatch(/adoptServerRoutines\(srv\.routines \|\| \[\], S\.routines \|\| \[\], readBase\(\)\)/)
+    expect(SRC).toMatch(/adoptServerRoutines\(srv\.routines \|\| \[\], S\.routines \|\| \[\], prevBase\)/)
   })
 
   it('o boot não empurra o estado: abrir o app não é edição', () => {
-    const pull = SRC.slice(SRC.indexOf('async pullState()'))
-    const bloco = pull.slice(pull.indexOf('} else if (hasData(S))'), pull.indexOf('async signOut()'))
+    const pull = SRC.slice(SRC.indexOf('async pullState('))
+    const bloco = pull.slice(pull.indexOf('} else if (hasData(S) && serverMoved)'), pull.indexOf('async signOut()'))
     expect(bloco.length).toBeGreaterThan(50)                     // o recorte existe
     expect(bloco).not.toMatch(/await get\(\)\.pushState\(\)/)
   })
@@ -119,9 +119,11 @@ describe('invariantes do caminho de sync (no texto do store)', () => {
     expect((SRC.match(/rememberBase\(/g) || []).length).toBeGreaterThanOrEqual(3)
   })
 
-  it('o aviso aparece quando a versão do servidor foi adotada', () => {
-    expect(SRC).toMatch(/adopted\.changed && !localStorage\.getItem\(NO_TOAST_KEY\)/)
-    expect(SRC).toMatch(/Plan updated by the coach/)
+  // BACKLOG-09: o aviso mudou de critério, de chave e de frase. A cobertura dele vive no
+  // describe 'concorrência do sync (BACKLOG-09)', no fim deste arquivo.
+  it('a frase do aviso não atribui autoria', () => {
+    expect(SRC).toMatch(/Plan updated — your own edits were kept\./)
+    expect(SRC).not.toMatch(/Plan updated by the coach/)
   })
 
   // BACKLOG-01: a migração em si é testada por comportamento em lib/unit-migration.test.js;
@@ -129,5 +131,66 @@ describe('invariantes do caminho de sync (no texto do store)', () => {
   it('o boot chama a migração da unidade passando a chave do estado', () => {
     expect(SRC).toMatch(/import \{ pinUnits \} from '\.\.\/lib\/unit-migration\.js'/)
     expect(SRC).toMatch(/pinUnits\(state, localStorage, KEY\)/)
+  })
+})
+
+// BACKLOG-09: a releitura ao voltar para o app, o aviso por revisão e a revisão confirmada em cada
+// escrita. Estes invariantes olham o TEXTO do store (o projeto não tem jsdom). `at()` confere que o
+// marcador existe: um `indexOf` que devolve -1 produz recorte vazio, e `.not.toMatch()` sobre
+// string vazia passa sempre — verde falso.
+describe('concorrência do sync (BACKLOG-09)', () => {
+  const at = marker => {
+    const i = SRC.indexOf(marker)
+    expect(i).toBeGreaterThan(-1)
+    return i
+  }
+
+  it('a revisão confirmada é gravada no sucesso e no reenvio pós-409 (RF-3)', () => {
+    expect(SRC).toMatch(/const res = await send\(\)/)
+    expect(SRC).toMatch(/adoptRev\(res && res\.rev\)/)
+    expect(SRC).toMatch(/const res2 = await sendState\(merged, merged\.rev\)/)
+    expect(SRC).toMatch(/adoptRev\(res2 && res2\.rev\)/)
+  })
+
+  it('adoptRev não carimba _ts e leva a revisão ao armazenamento nativo no Android (RF-3)', () => {
+    const body = SRC.slice(at('const adoptRev = rev =>'), at('const noticeIfChanged'))
+    expect(body).not.toMatch(/_ts\s*=/)
+    expect(body).not.toMatch(/pushState/)
+    expect(body).toMatch(/if \(MOBILE\) nativePersist\(\)/)
+  })
+
+  it('voltar para o app relê, com limite, sem push pendente e sem window.focus (RF-1)', () => {
+    const body = SRC.slice(at('const pullOnReturn'), at("document.addEventListener('visibilitychange'"))
+    expect(body).toMatch(/if \(pushTm\) return/)
+    expect(body).toMatch(/now - lastPull < FOCUS_PULL_MS/)
+    expect(body).toMatch(/if \(!ok\) lastPull = 0/)
+    expect(body).not.toMatch(/pushState/)
+    expect(SRC).toMatch(/visibilityState === 'visible'\) \{ pullOnReturn\(\); return \}/)
+    expect(SRC).not.toMatch(/addEventListener\('focus'/)
+  })
+
+  it('o aviso é por revisão, com valor validado, e a chave antiga sumiu (RF-2)', () => {
+    expect(SRC).toMatch(/NOTICE_REV_KEY/)
+    expect(SRC).toMatch(/Number\.isInteger\(parsed\) \? parsed : -1/)
+    expect(SRC).not.toMatch(/NO_TOAST_KEY|gym_coach_notice_shown/)
+  })
+
+  it('o aviso usa o plano do SERVIDOR, não o resultado da mescla', () => {
+    expect(SRC).toMatch(/noticeIfChanged\(state\.routines \|\| \[\], base, serverRev\)/)
+    expect(SRC).toMatch(/noticeIfChanged\(srv\.routines \|\| \[\], prevBase,/)
+    expect(SRC).not.toMatch(/noticeIfChanged\(merged\.routines/)
+    expect(SRC).not.toMatch(/noticeIfChanged\(next\.routines/)
+  })
+
+  it('a releitura decide por rev (não por _ts) e mescla com a base (RF-1)', () => {
+    const body = SRC.slice(at('async pullState'), at('async signOut'))
+    expect(body).toMatch(/const serverMoved = serverRev !== null && serverRev > myRev/)
+    expect(body).not.toMatch(/\(_ts \|\| 0\)\s*[<>]=?/)
+    expect(body).toMatch(/adoptServerRoutines\(state\.routines \|\| \[\], S\.routines \|\| \[\], base\)/)
+  })
+
+  it('a base do aviso é lida antes do rememberBase nos dois caminhos', () => {
+    expect(at('const base = readBase()')).toBeLessThan(at('rememberBase(next.routines)'))
+    expect(at('const prevBase = readBase()')).toBeLessThan(at('rememberBase(adopted.routines)'))
   })
 })

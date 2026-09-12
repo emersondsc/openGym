@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { api } from '../lib/api.js'
 import { localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { adoptServerRoutines, rememberBase, readBase, ifMatchFor } from '../lib/plan-merge.js'
+import { adoptServerRoutines, rememberBase, readBase, ifMatchFor, planChanged } from '../lib/plan-merge.js'
 import { registerCustom } from '../lib/exercises.js'
 import { pinUnits } from '../lib/unit-migration.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
@@ -18,8 +18,12 @@ export const DEF = {
   reminder: { on: false, time: '08:00', tz: null }, effort: null
 }
 const clone = o => JSON.parse(JSON.stringify(o))
-// Um aviso de "o plano foi atualizado" por sessão de sync (evita repetir a cada 409).
-const NO_TOAST_KEY = 'gym_coach_notice_shown'
+// Um aviso por MUDANÇA: a chave guarda a revisão em que o aviso já apareceu. A chave antiga
+// (a de "aviso já mostrado", da BACKLOG-07) era gravada e nunca removida em lugar nenhum do
+// código — o aviso saía no máximo uma vez na vida do aparelho.
+const NOTICE_REV_KEY = 'gym_coach_notice_rev'
+// No máximo uma releitura a cada 20 s quando o app volta para a frente (RF-1).
+const FOCUS_PULL_MS = 20000
 
 export const isValidRest = n => typeof n === 'number' && Number.isInteger(n) && n>=30 && n<=300
 
@@ -75,6 +79,7 @@ const sendState = (state, base) => api('/api/data', {
 export const useStore = create((set, get) => {
   let pushTm = null
   let saveTm = null
+  let lastPull = 0        // última releitura por volta ao app (RF-1)
 
   const nativePersist = () => {
     clearTimeout(saveTm)
@@ -93,7 +98,49 @@ export const useStore = create((set, get) => {
     }
   }
 
+  // RF-3: grava a revisão que o servidor confirmou. Sincronizar não é editar, então não carimba
+  // `_ts` e não dispara push — só deixa a PRÓXIMA escrita mandar a base certa em vez de levar 409.
+  // `nativePersist()` no Android é obrigatório: o boot do app nativo lê o armazenamento nativo
+  // (nativeLoad) e sem isso o aparelho voltaria a mandar base velha.
+  const adoptRev = rev => {
+    if (!Number.isInteger(rev)) return
+    const S = clone(get().S)
+    if (S.rev === rev) return
+    S.rev = rev
+    localStorage.setItem(KEY, JSON.stringify(S))
+    set({ S })
+    if (MOBILE) nativePersist()
+  }
+
+  // RF-2 / U3: um aviso por mudança de plano, sem separar quem escreveu. `srvRoutines` é SEMPRE a
+  // lista do SERVIDOR (não o resultado da mescla, que incluiria rotina criada só aqui e daria
+  // aviso falso); `prevBase` é a base lida ANTES de qualquer adoção. A revisão guardada é validada:
+  // lixo no localStorage não pode transformar "uma vez por revisão" em "toda releitura".
+  const noticeIfChanged = (srvRoutines, prevBase, rev) => {
+    if (!planChanged(srvRoutines, prevBase)) return
+    const parsed = Number.parseInt(localStorage.getItem(NOTICE_REV_KEY) ?? '-1', 10)
+    const shown = Number.isInteger(parsed) ? parsed : -1        // parseInt de lixo = NaN
+    if (Number.isInteger(rev) && rev <= shown) return
+    if (Number.isInteger(rev)) localStorage.setItem(NOTICE_REV_KEY, String(rev))
+    import('./useUI.js')
+      .then(({ useUI }) => useUI.getState().toast(t('Plan updated — your own edits were kept.')))
+      .catch(() => { /* sem UI montada não é erro */ })
+  }
+
+  // Voltar para o app é o momento de descobrir o que foi escrito enquanto ele estava aberto.
+  // Relê; nunca empurra (empurrar aqui é o que a BACKLOG-09 tirou do boot). Só a visibilidade
+  // entra: `window.focus` dispararia também em diálogo de passkey e seletor de arquivo.
+  const pullOnReturn = async () => {
+    if (!get().user) return
+    if (pushTm) return                       // push agendado: ele resolve pelo 409, sem corrida
+    const now = Date.now()
+    if (now - lastPull < FOCUS_PULL_MS) return
+    lastPull = now
+    const ok = await get().pullState(true)
+    if (!ok) lastPull = 0                    // offline não consome a janela: a próxima volta tenta
+  }
   document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { pullOnReturn(); return }
     if (document.visibilityState !== 'hidden') return
     if (MOBILE && saveTm) {
       clearTimeout(saveTm)
@@ -145,12 +192,18 @@ export const useStore = create((set, get) => {
       if(sanitized.active?.entries) sanitized.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
       if(!isValidRest(sanitized.globalRestSec)) sanitized.globalRestSec = 90
       const send = (base = ifMatchFor(sanitized)) => sendState(sanitized, base)
-      try { await send(); localStorage.removeItem('gym_dirty'); try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{} }
+      try {
+        const res = await send()
+        adoptRev(res && res.rev)                     // RF-3: o próximo PUT já manda a base certa
+        localStorage.removeItem('gym_dirty')
+        try { const { clearCoachCache } = await import('../lib/coach.js'); clearCoachCache() } catch { /* */ }
+      }
       catch (e) {
         localStorage.setItem('gym_dirty', '1')
         if (e && e.status === 401) { get().setUser(null); return }
         if (e && e.status === 409) {
           try {
+            const prevBase = readBase()              // ANTES do rememberBase: é o que liga o aviso
             const { state: srv } = await api('/api/data')
             if (srv) {
               if(srv.routines) srv.routines.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
@@ -162,32 +215,30 @@ export const useStore = create((set, get) => {
               const merged = Object.assign(clone(DEF), srv)      // routines/week/dayPlan do SERVIDOR
               merged.workouts = [...byId.values()]
               if (S.active) merged.active = S.active
-              const adopted = adoptServerRoutines(srv.routines || [], S.routines || [], readBase())
+              const adopted = adoptServerRoutines(srv.routines || [], S.routines || [], prevBase)
               merged.routines = adopted.routines
               merged._ts = Math.max(Date.now(), srv._ts || 0) + 1
               merged.rev = Number.isInteger(srv.rev) ? srv.rev : merged.rev
+              // RF-4: o aviso deste caminho sai daqui, do plano do SERVIDOR contra a base.
+              noticeIfChanged(srv.routines || [], prevBase, Number.isInteger(srv.rev) ? srv.rev : null)
               persist(merged, false)
               rememberBase(adopted.routines)
               try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
               // Reenvia o MERGED (não o `sanitized` do topo, que é o estado velho) com a base
               // que acabou de ser lida.
-              await sendState(merged, merged.rev)
+              const res2 = await sendState(merged, merged.rev)
+              adoptRev(res2 && res2.rev)             // RF-3: o reenvio também confirma revisão
               localStorage.removeItem('gym_dirty')
-              if (adopted.changed && !localStorage.getItem(NO_TOAST_KEY)) {
-                try { const { useUI } = await import('./useUI.js')
-                  useUI.getState().toast(t('Plan updated by the coach — your own edits were kept.'))
-                } catch { /* */ }
-                localStorage.setItem(NO_TOAST_KEY, '1')      // um aviso por sessão de sync
-              }
               try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
             }
           } catch { /* stays dirty, heals on next boot */ }
         }
       }
     },
-    async pullState() {
+    async pullState(notify = false) {
       try {
         const { state } = await api('/api/data')
+        const base = readBase()                 // a base ANTES de adotar (é o que liga o aviso)
         const S = get().S
         const dirty = localStorage.getItem('gym_dirty') === '1'
         if (state) {
@@ -195,31 +246,43 @@ export const useStore = create((set, get) => {
           if(!isValidRest(state.globalRestSec) && state.globalRestSec!=null) delete state.globalRestSec
           if(state.active?.entries) state.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
         }
-        if (state && (!hasData(S) || ((state._ts || 0) >= (S._ts || 0) && !dirty))) {
+        // O servidor ANDOU? Comparação por TOKEN, não por relógio. `rev` só cresce (é o contador do
+        // servidor) e o GET injeta 0 quando o arquivo nunca foi escrito pela versão nova.
+        const serverRev = Number.isInteger(state?.rev) ? state.rev : null
+        const myRev = Number.isInteger(S.rev) ? S.rev : -1
+        const serverMoved = serverRev !== null && serverRev > myRev
+        if (state && (!hasData(S) || (serverMoved && !dirty))) {
+          // Nada pendente (`dirty` falso): o que este aparelho tinha já está confirmado no
+          // servidor, então adotar o estado inteiro não descarta edição nenhuma. `active` é local.
           const active = S.active
           const next = Object.assign(clone(DEF), state)
           if (active) next.active = active
+          if (notify) noticeIfChanged(state.routines || [], base, serverRev)
           persist(next, false)
           rememberBase(next.routines)
           try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
-        } else if (hasData(S)) {
-          if (state && (state._ts || 0) > (S._ts || 0)) {
-            const byId = new Map()
-            ;(state.workouts || []).forEach(w => byId.set(w.id, w))
-            ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
-            const merged = Object.assign(clone(DEF), state)
-            merged.workouts = [...byId.values()]
-            if (S.active) merged.active = S.active
-            merged._ts = Date.now()
-            persist(merged, false)
-            rememberBase(merged.routines)
-            try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
-          }
-          // Sem push aqui de propósito: abrir o app NÃO é uma edição. Empurrar o estado inteiro
-          // só porque o app abriu é o que deixava uma cópia velha vencer a corrida do relógio
-          // (BACKLOG-09). Se o servidor estiver atrás, a próxima edição real empurra (com If-Match).
+        } else if (hasData(S) && serverMoved) {
+          // Tem coisa local (ou edição pendente): MESCLA em vez de sobrescrever — e a mescla de
+          // rotina passa pelo mesmo adotador do caminho de 409, senão a releitura ao voltar
+          // descartaria a edição que o usuário acabou de fazer.
+          const byId = new Map()
+          ;(state.workouts || []).forEach(w => byId.set(w.id, w))
+          ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
+          const merged = Object.assign(clone(DEF), state)
+          merged.workouts = [...byId.values()]
+          if (S.active) merged.active = S.active
+          merged.routines = adoptServerRoutines(state.routines || [], S.routines || [], base).routines
+          merged._ts = Math.max(Date.now(), state._ts || 0) + 1     // igual ao caminho de 409
+          if (notify) noticeIfChanged(state.routines || [], base, serverRev)
+          persist(merged, false)
+          rememberBase(merged.routines)
+          try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
         }
+        // Sem push aqui de propósito: abrir o app NÃO é uma edição — regra que a BACKLOG-09 fixou.
+        // E sem `serverMoved`, nada é adotado, então nenhum aviso.
+        return true
       } catch (e) { /* offline — keep local */ }
+      return false
     },
 
     async signOut() {

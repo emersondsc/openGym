@@ -56,3 +56,22 @@ export const ifMatchFor = state => {
   const rev = state && Number.isInteger(state.rev) ? state.rev : null
   return rev == null ? null : String(rev)
 }
+
+/**
+ * O plano do servidor mudou em relação ao que ESTE aparelho baixou (a base)?
+ * É o gatilho do aviso (U3): o fato é "o plano guardado mudou", sem separar quem escreveu.
+ * `srv` é a lista de rotinas vinda do servidor; `base` é o MAPA id→rotina de `readBase()`
+ * (não uma lista — passar lista aqui devolve false sempre). Compara rotina a rotina e responde
+ * true se qualquer uma apareceu, sumiu ou mudou. Pura de propósito: entra no teste sem DOM.
+ * Nota: a comparação é por JSON e portanto sensível à ORDEM das chaves.
+ */
+export function planChanged(srv, base) {
+  const byId = new Map((srv || []).map(r => [r.id, r]))
+  for (const [id, before] of Object.entries(base || {})) {
+    const after = byId.get(id)
+    if (after === undefined) return true               // estava na base e sumiu: foi apagada
+    if (JSON.stringify(before) !== JSON.stringify(after)) return true
+    byId.delete(id)
+  }
+  return byId.size > 0                                 // sobrou rotina que a base não tinha
+}

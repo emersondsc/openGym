@@ -17,6 +17,9 @@ export default {
   'Log': 'Registar',
   'Goal': 'Meta',
   'Plan': 'Plano',
+  // BACKLOG-09: o aviso de "o plano foi atualizado" agora aparece de verdade (uma vez por
+  // revisão), então precisa existir em português. A frase não nomeia autor de propósito.
+  'Plan updated — your own edits were kept.': 'Plano atualizado — as tuas edições foram mantidas.',
   'Today': 'Hoje',
   'Home': 'Início',
   'Start': 'Começar',
