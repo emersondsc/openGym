@@ -575,12 +575,16 @@ const routes = {
     }
     if (ifMatch !== null && ifMatch !== '*') {
       if (ifMatch !== String(curRev)) {
+        // BACKLOG-09: escrita RECUSADA também fica no log — sem isto não dá para contar as
+        // requisições por edição (o cliente antigo paga 409 e reenvia; o novo, não).
+        console.log(`[og-state] op=put-rejected uid=${user.id} reason=stale ifMatch=${ifMatch} serverRev=${curRev}`);
         return json(res, 409, { error: 'stale base, re-pull and merge', code: 'STALE_STATE',
                                 rev: curRev, serverTs: cur?._ts || 0 });
       }
     } else {
       const incoming = body.state._ts || 0;
       if (cur && incoming < (cur._ts || 0)) {
+        console.log(`[og-state] op=put-rejected uid=${user.id} reason=clock ifMatch=none serverRev=${curRev}`);
         return json(res, 409, { error: 'stale base, re-pull and merge', serverTs: cur._ts || 0, rev: curRev });
       }
     }
@@ -591,13 +595,17 @@ const routes = {
     const meta = {
       rev: body.state.rev, revBefore: curRev, revAfter: body.state.rev, etag: crypto.randomUUID(),
       actor: actor.actor || 'pwa-legacy', verified: actor.actor ? actor.verified : 'none',
+      // BACKLOG-09: o registro passa a dizer se a escrita trouxe o token de concorrência.
+      // `'none'` é o caso do cliente antigo (e é o que o critério de saída conta); um `rev` é o
+      // valor que o cliente mandou. Sem este campo não havia como distinguir as duas versões.
+      ifMatch: ifMatch === null ? 'none' : ifMatch,
       stateHash: routines.sha256(routines.canon(body.state)),
       beforeHash: cur ? routines.sha256(routines.canon(cur)) : null,
       action: 'put-state', at: new Date().toISOString()
     };
     routines.appendAudit(DATA, { otp: meta.etag, uid: user.id, ...meta });
     console.log(`[og-state] op=put uid=${user.id} actor=${meta.actor} verified=${meta.verified} `
-      + `rev=${curRev}->${meta.rev}`);
+      + `ifMatch=${meta.ifMatch} rev=${curRev}->${meta.rev}`);
     json(res, 200, { ok: true, ts: body.state._ts, rev: meta.rev, meta });
   },
 
