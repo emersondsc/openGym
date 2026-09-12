@@ -177,8 +177,9 @@ function CoachAnalysisCard(){
 // sobreviver à troca de aba (App.jsx remonta a view inteira a cada rota) e ao reload.
 // No estado sincronizado ele viraria uma escrita com `rev` a cada toque no seletor, e uma
 // escolha que perdesse a corrida de 409 seria descartada em silêncio — o satélite da BACKLOG-09.
-// Id guardado que não existe mais no histórico não precisa de faxina: Stats.jsx:195 já cai no
-// primeiro da lista quando o id não está em exHist.
+// Id guardado que não existe mais no histórico não precisa de faxina: o fallback de `curEx` já
+// cai no primeiro da lista quando o id não está em exHist. E se o exercício voltar ao histórico
+// depois (relogado, ou restaurado de um backup), o card volta a ele sozinho.
 const EX_KEY = 'gym_stats_ex'
 const readEx = () => { try { return localStorage.getItem(EX_KEY) } catch { return null } }
 const saveEx = id => { try { localStorage.setItem(EX_KEY, id) } catch { /* sem storage: vale só nesta sessão */ } }
