@@ -173,12 +173,23 @@ function CoachAnalysisCard(){
   </div>;
 }
 
+// O exercício em foco é preferência do aparelho, não dado de treino: mora no localStorage para
+// sobreviver à troca de aba (App.jsx remonta a view inteira a cada rota) e ao reload.
+// No estado sincronizado ele viraria uma escrita com `rev` a cada toque no seletor, e uma
+// escolha que perdesse a corrida de 409 seria descartada em silêncio — o satélite da BACKLOG-09.
+// Id guardado que não existe mais no histórico não precisa de faxina: Stats.jsx:195 já cai no
+// primeiro da lista quando o id não está em exHist.
+const EX_KEY = 'gym_stats_ex'
+const readEx = () => { try { return localStorage.getItem(EX_KEY) } catch { return null } }
+const saveEx = id => { try { localStorage.setItem(EX_KEY, id) } catch { /* sem storage: vale só nesta sessão */ } }
+
 // Stats = the analytics hub: all charts, progress and history live here.
 export default function Stats() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const [range, setRange] = useState(90)
-  const [exId, setExId] = useState(null)
+  const [exId, setExId] = useState(readEx)
+  const pickEx = id => { setExId(id); saveEx(id) }
   const [exMetric, setExMetric] = useState('top')
   const now = Date.now()
   const anyEffort = hasEffort(S)
@@ -284,7 +295,7 @@ export default function Stats() {
         <h2>{t('Exercise progress')}</h2>
         {exHist.length ? <>
           <div className="sect-b" style={{ marginBottom: 10 }}>
-            <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={setExId}
+            <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={pickEx}
               options={exHist.map(id => ({ value: id, label: EXIDX[id].n }))} />
           </div>
           {exOpts.length > 1 && <Segmented className="seg-range" value={onEff ? 'effort' : onE1 ? 'e1rm' : 'top'} onChange={setExMetric} options={exOpts} />}
