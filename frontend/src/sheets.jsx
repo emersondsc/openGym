@@ -24,7 +24,7 @@ import { unitOfCfg, unitOfEntry, normUnit } from './lib/units.js'
 import UnitChip from './components/UnitChip.jsx'
 import {
   normalizeMeso, activateMesoState, mesoState, todayInMeso, extrasOf, shiftWeeks, buildWeeks,
-  addDays, LIMITS, mesoBytes
+  addDays, LIMITS, mesoBytes, pickMeso
 } from './lib/meso.js'
 import {
   parseMesoFile, noteText, mesoToJSON, mesoToCSV, mesoFileName, MAX_FILE_BYTES, MESO_ACCEPT
@@ -673,7 +673,10 @@ function PlanTools({ close }) {
   const user = useStore(s => s.user)
   const fileRef = useRef(null)
   const hasRoutines = (st.routines || []).some(r => r.ex && r.ex.length)
-  const activeMeso = (st.mesos || []).find(m => m.id === st.activeMeso) || null
+  // O mesociclo do Plan Tools: o ativo e, sem ativo, o primeiro da biblioteca — a mesma escolha
+  // que a visão crua faz (`pickMeso`). Sem isto, um perfil com mesociclos e `activeMeso` nulo não
+  // teria seção nenhuma nesta folha.
+  const activeMeso = pickMeso(st.mesos, null, st.activeMeso)
 
   const exportFile = async () => {
     const bundle = buildPlanBundle(st, user?.name ? t('{0}’s plan', user.name) : '')

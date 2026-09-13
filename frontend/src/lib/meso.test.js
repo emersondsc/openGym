@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   LIMITS, addDays, spanDays, realISO, mesoBytes, todayInMeso, phaseFor, buildWeeks, weeksFromRange,
   shiftWeeks, resolveWeeks, normalizeMeso, extrasOf, weekAt, mesoState, activateMesoState,
-  mergeMesos, fixMesoPointers
+  mergeMesos, fixMesoPointers, pickMeso
 } from './meso.js'
 
 const M = (over = {}) => ({
@@ -184,5 +184,13 @@ describe('mescla e ponteiros', () => {
     fixMesoPointers(S)
     expect(S.activeMeso).toBe(null)
     expect(S.mesoPrev).toBe('a')
+  })
+  it('pickMeso: id manda, senão o ativo, senão o primeiro, senão nenhum', () => {
+    const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+    expect(pickMeso(list, 'c', 'a').id).toBe('c')       // o id pedido vence
+    expect(pickMeso(list, 'sumiu', 'b').id).toBe('b')   // id que não existe cai no ativo
+    expect(pickMeso(list, null, null).id).toBe('a')     // sem id e sem ativo: o primeiro
+    expect(pickMeso([], 'a', 'b')).toBe(null)
+    expect(pickMeso(undefined, 'a', 'b')).toBe(null)
   })
 })

@@ -225,3 +225,13 @@ export function fixMesoPointers(S) {
   if (S.mesoPrev && !ids.has(S.mesoPrev)) S.mesoPrev = null
   return S
 }
+
+/**
+ * Qual mesociclo mostrar quando a tela pergunta por um id: o do id, senão o ATIVO, senão o
+ * primeiro da biblioteca, senão nenhum. Pura de propósito — a escolha é o que a visão crua e o
+ * Plan Tools decidem, e isso entra no teste sem DOM.
+ */
+export function pickMeso(mesos, id, activeMeso) {
+  const list = mesos || []
+  return list.find(m => m.id === id) || list.find(m => m.id === activeMeso) || list[0] || null
+}

@@ -1,5 +1,7 @@
 // Portuguese UI strings. Keys are the English source strings (see lib/i18n.js).
 export default {
+  '{0} line': '{0} linha',
+
   'Data': 'Dados',   // usada pelo titulo da secao em Settings — nao e so da visao crua
 
   'Exactly what the app stores for this mesocycle — extra fields included.': 'Exatamente o que o app guarda deste mesociclo — campos extras incluídos.',
@@ -71,11 +73,7 @@ export default {
   'Share .json': 'Compartilhar .json',
   'Copied': 'Copiado',
   'Could not copy': 'Não consegui copiar',
-  'mesocycle.json': 'mesociclo.json',
-  'plan.json': 'plano.json',
-  'state.json': 'estado.json',
   '{0} lines': '{0} linhas',
-  'rev {0} · synced {1}': 'rev {0} · sincronizado {1}',
   'Mesocycle created': 'Mesociclo criado',
   'Mesocycle updated': 'Mesociclo atualizado',
   'Create mesocycle': 'Criar mesociclo',

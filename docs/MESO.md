@@ -150,8 +150,11 @@ Toda escrita entra no `audit.jsonl` (`action: put-meso` / `activate-meso`, com `
   extras do mesociclo). O import aceita um objeto, uma lista ou `{ "mesos": [...] }`, deriva o que
   falta (anotando), preserva campo desconhecido em qualquer nível, recusa item sem núcleo **pelo
   nome** e pergunta antes de substituir um `id` existente.
-- **Visão crua** (`/plan/raw?scope=meso|plan|all`, no navegador `#/plan/raw…`): o JSON como o app
-  guarda, só leitura, com copiar e compartilhar.
+- **Visão crua** (`/plan/raw?id=<meso>`, no navegador `#/plan/raw…`): **só o mesociclo** — o JSON
+  como o app guarda, só leitura, com copiar e compartilhar (o arquivo `<id>.json`, que o import
+  aceita de volta). Os escopos de plano e de estado inteiro **foram retirados** (13/09/2026): o
+  plano não é um objeto guardado e o estado inteiro é o backup, que vive em Settings. Ver
+  `docs/specs/spec_visao_json_meso.md`.
 
 ### Onde as coisas moram
 

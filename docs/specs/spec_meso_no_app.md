@@ -1825,3 +1825,12 @@ curl -s -o /dev/null -w '%{http_code}\n' https://opengym.edsc.fun/api/plan/meso
   valida forma); uma caixa de texto livre seria um caminho de escrita sem validação nenhuma.
 - **O CSV não é round-trip fiel** (A16): `log[]`, carimbos de ativação, `updatedAt` e extras do
   mesociclo ficam de fora. Quem precisa do arquivo inteiro usa JSON.
+
+---
+
+> **Atualização de 13/09/2026 — a visão crua mudou.** O RF-11 e o teste manual 9 desta spec descrevem
+> **três escopos** (`meso`, `plan`, `all`) e o cabeçalho com `rev`/`_ts`. Por decisão do usuário, a
+> visão crua passou a mostrar **só o mesociclo** (`/plan/raw?id=<meso>`), e os escopos de plano e de
+> estado inteiro foram retirados: o plano não é um objeto guardado (era um envelope montado na hora) e
+> o estado inteiro é o backup, que vive em Settings. A fonte da verdade é
+> `docs/specs/spec_visao_json_meso.md`; o restante desta spec continua valendo.

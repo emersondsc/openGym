@@ -23,6 +23,12 @@
   - Hermes: `~/.hermes/workout/scripts/hermes_api.py` (novo, 220 linhas, FastAPI 8091, `workers 2+`, `jobs/{job_id}.json`, `verify_gymsid` com `HMAC` hex, `ZoneInfo`, `flock`, `SlowAPI` rate-limit 5/min por `gymsid` cookie `HttpOnly=true`, `CORS` só `https://opengym.edsc.fun`), `~/.hermes/skills/fitness/treino-coach/SKILL.md` (FLUXO passo 6 para `POST /api/hermes/micro` com `S.dayPlan` sem sobrescrita), `~/.hermes/skills/fitness/opengym-workout-pipeline/SKILL.md` (Planner integration para `prefere API, fallback HD`), `~/.hermes/workout/scripts/opengym_reader.py` + `process_workout.py` (já são API-only/fallback, manter)
   - Persistência: `S.routines[]` com `r_*_S2_${hash}` + `S.dayPlan` com 5 datas `America/Sao_Paulo` + `S._ts` server-side; `mesociclo_ativo.json` + `plans/historico/meso-...-HHmmss-rand4.json` (10 retenção) + `reports/relatorio_S2.html` (só no Hermes)
 
+- **Atualizado 12/09/2026 (publicação pelo Hermes):** o **passo 6 mudou**. Quem grava o micro é o
+  Hermes, por `POST /api/plan/micro` (spec `docs/specs/spec_publicacao_micro.md` v2; operação e
+  nomenclatura em `docs/MICRO.md`), numa escrita só, com assinatura de agente, `If-Match` e
+  `Idempotency-Key`; o app só lê, e o merge + `PUT /api/data` do PWA saem do desenho. Conflito de
+  dia é informação da API (a política de perguntar ao usuário é do assistente).
+
 - **Critérios (como testar quando revisitar):**
   - [ ] Com `meso-2026-09-08` S1 e 299 sessões, `Gerar micro S2` bloqueado sem `motivo>=10`, libera após 3 respostas, `POST 202` + poll `pronto` + `PUT 200`, `S.routines` tem `S1+S2` (10) sem duplicar em retry (Idempotency-Key com hash de answers), `S.dayPlan` tem `2026-09-08` e `2026-09-15` sem sobrescrita
   - [ ] `POST` sem `gymsid` `401`, sem `answers` `400`, stale `409`, `truncated:true` → `state:error` com `ANALYSIS_TRUNCATED` no polling (não `413` síncrono)
@@ -83,17 +89,6 @@
 
 ---
 
-## BACKLOG-12 — Protocolo de mutação em dois lugares (fonte única) — criado em 12/09/2026
-
-- **Status:** ABERTO — documentação. Era a lacuna 4 da BACKLOG-08.
-- **Problema:** o passo 6 da `treino-coach/SKILL.md` **já é** ponteiro para o `opengym_writer.py` desde 11/09, mas `skills/fitness/opengym-workout-pipeline/references/og_state_mutation.md` continua receita completa (6.688 B) sem apontar de volta. Se os dois divergirem, vale a versão que o agente leu por último — e ninguém percebe a divergência.
-- **O que já existe:** o escritor validado (`opengym_writer.py`, 30 testes) e o portão P1 (`verificar_prescricao.py`, 10 testes) fazem o trabalho; a receita em prosa não é mais necessária para operar. Ambos estão versionados no snapshot.
-- **Investigar/propor:** transformar o `og_state_mutation.md` em ponteiro para o escritor (mantendo uma nota de que é histórico do que existia) **ou** marcá-lo como histórico no topo, com a skill como fonte declarada.
-- **Aceite:** existe uma fonte única declarada e a outra aponta para ela.
-- **Refs:** `~/.hermes/skills/fitness/opengym-workout-pipeline/references/og_state_mutation.md` · `~/.hermes/skills/fitness/treino-coach/SKILL.md` · `~/.hermes/workout/scripts/opengym_writer.py` · `docs/specs/spec_escritor_rotinas.md`
-
----
-
 ## BACKLOG-13 — Cobertura do L1: o que o restore precisa e não sobe ao GitHub — criado em 12/09/2026
 
 - **Status:** ABERTO — herdado da varredura de 12/09/2026 (6 subagentes em paralelo, só leitura).
@@ -133,6 +128,41 @@
 
 ---
 
+## BACKLOG-17 — Aviso de "ainda não enviado" na visão crua — criado em 13/09/2026
+
+- **Status:** ABERTO — decidido em 13/09/2026 **adiar** (as três perguntas de produto foram respondidas
+  com "backlog"). A visão crua mostra a cópia **local** do estado; quando há alteração que ainda não
+  subiu, a tela não avisa e parece sincronizada.
+- **Por que não entrou na spec da visão crua:** o sinal que a spec tinha proposto não existe. O
+  `gym_dirty` do `localStorage` é gravado **quando o envio falha**, não no instante da edição, e o
+  `pushTm` que agenda o envio é um `let` de closure dentro do `create()` do store — não dá para ler de
+  fora nem dispara re-render. Sem um sinal de verdade no store, o critério de aceite não fecharia.
+- **O que falta decidir (as três perguntas, com a recomendação de quem revisou):**
+  1. **Escopo do aviso:** qualquer mudança pendente no app (treino, peso, rotina, mesociclo) com texto
+     genérico — "há alterações neste aparelho ainda não enviadas" — ou só quando o mesociclo mudou?
+     (o segundo exige guardar a última versão sincronizada do mesociclo só para comparar).
+  2. **Instante:** só quando o envio realmente falhou (offline, servidor fora), sem piscar a cada
+     edição, ou desde o instante da edição (sempre verdade, mas aparece e some a cada série marcada)?
+  3. **Onde mora o sinal:** expor um campo no store (`pending`), ligado no `persist` e desligado no
+     sucesso/erro, e a tela ler dele.
+- **Instrumento de teste que já existe** (e foi apontado na revisão): `docs/specs/spec_concorrencia_sync.md`
+  fixa o procedimento — DevTools **offline antes** da edição, depois
+  `localStorage.getItem('gym_dirty')` no console. Ficar offline depois de editar não prova nada (o
+  envio é debounced em 1,5 s e pode ter saído antes).
+- **Refs:** `frontend/src/store/useStore.js` (`persist`, `pushState`, `gym_dirty`, `pushTm`) ·
+  `frontend/src/views/PlanRaw.jsx` · `docs/specs/spec_visao_json_meso.md` (RF-9 retirado daqui) ·
+  `docs/specs/spec_concorrencia_sync.md`
+
+## BACKLOG-18 — Mesociclo grande na visão crua (até 64 KB) — criado em 13/09/2026
+
+- **Status:** ABERTO — decidido em 13/09/2026 **adiar** (resposta "backlog" à pergunta de produto).
+  Hoje a tela joga o objeto inteiro num `<pre>` com quebra de linha, sem regra para arquivo grande; o
+  teto de um mesociclo é 64 KB (`LIMITS.meso`), e o caso normal tem 1-2 KB.
+- **O que falta decidir:** rolar tudo de uma vez (o teto é exceção e o tamanho já aparece no subtítulo)
+  ou mostrar o começo com um "mostrar tudo".
+- **Refs:** `frontend/src/views/PlanRaw.jsx` · `frontend/src/lib/meso.js` (`LIMITS`) ·
+  `docs/specs/spec_visao_json_meso.md` (§5, item adiado)
+
 ## Concluídos
 
 > Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
@@ -151,6 +181,16 @@
 - **Rollback:** `sudo install -m644 ~/.hermes/scripts/island-ops.crontab.bak.20260912-bk10 /etc/cron.d/island-ops` (o backup da fonte ficou guardado) e `hermes cron resume c75628767d63`.
 - **O que ficou de fora, de propósito:** nada de `MAILTO` (o aviso de falha continua pelo Telegram, pelo sensor independente); o horário preservado; o `island_backup.sh` (espelho do HD a cada 6 h) intocado. A BACKLOG-13 segue como estava — mas o `island-ops.crontab` já é versionado, então a linha nova volta junto num restore.
 - **Refs:** `~/.hermes/scripts/island-ops.crontab` · `/etc/cron.d/island-ops` · `~/.hermes/scripts/snapshot.sh` · `~/.hermes/cron/jobs.json` · `~/.hermes/snapshot_last_ok` · `docs/specs/spec_alerta_sensor_ilha.md`
+
+### BACKLOG-12 — Protocolo de mutação em dois lugares (fonte única) — **RESOLVIDO em 12/09/2026**
+
+- **Status (histórico):** era a lacuna 4 da BACKLOG-08. **RESOLVIDO em 12/09/2026** — spec `docs/specs/spec_fonte_unica_protocolo_mutacao.md` (v3, 2 revisões por subagente: 16 + 10 achados, todos verificados) + implementação doc-only nos 3 arquivos, com os 5 testes da spec verdes.
+- **Resolução:** `og_state_mutation.md` reescrito como ponteiro para o `opengym_writer.py` (nota histórica + links de auditoria + carimbo invalidando receitas anteriores a 11/09/2026); `opengym-workout-pipeline/SKILL.md` em 5 pontos (ROTINA SYNC, Mutating, References, parentético de leitura, fonte de verdade); `treino-coach/SKILL.md` em 3 pontos (persistência, nota do passo 6 com path válido, fronteira). Backups `.bak.20260912-1803` dos 3 arquivos.
+- **Achados além do escopo original:** a `pipeline/SKILL.md` mandava PUT manual em pontos extras além do ROTINA SYNC; `treino-coach/references/` estava vazio, então a referência era um path quebrado; `og_frontend_patches.md:100` (log de deploy datado de 2026-09-03) aceito como risco residual explícito.
+- **Aceite:** cumprido — T1 (sem receita copiável) · T2 (ponteiro nos 3) · T3 (PUT manual morto) · T4 (menções restantes só históricas) · T5 (backups).
+- **Refs:** `docs/specs/spec_fonte_unica_protocolo_mutacao.md` (v3) · `docs/specs/spec_escritor_rotinas.md` v3 · BACKLOG-08 (lacuna 4).
+
+---
 
 ### BACKLOG-16 — Espaço em disco sem sensor (HD em 91%) — **RESOLVIDO em 12/09/2026**
 
