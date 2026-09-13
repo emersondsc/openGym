@@ -711,10 +711,10 @@ function PlanTools({ close }) {
       <div style={{ height: 8 }} />
       <Button variant="ghost" icon="upload" onClick={() => exportMeso(activeMeso, 'csv')}>{t('Export mesocycle (CSV)')}</Button>
       <div style={{ height: 8 }} />
-      <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/meso/' + activeMeso.id) }}>{t('Open the mesocycle')}</Button>
+      <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/raw?id=' + activeMeso.id) }}>{t('View JSON')}</Button>
+      <div style={{ height: 8 }} />
+      <Button variant="ghost" icon="pencil" onClick={() => { close(); nav('/plan/meso/' + activeMeso.id) }}>{t('Open the mesocycle')}</Button>
     </>}
-    <h4 className="sec">{t('Data')}</h4>
-    <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/raw?scope=plan') }}>{t('View plan as JSON')}</Button>
     <h4 className="sec">{t('Got a plan from a friend?')}</h4>
     <Button variant="ghost" icon="folder" onClick={() => fileRef.current?.click()}>{t('Import a plan file')}</Button>
     <input ref={fileRef} type="file" accept="application/json,.json" onChange={pickFile} hidden />
@@ -1188,7 +1188,7 @@ function MesoActions({ meso, close }) {
     <div style={{ height: 8 }} />
     <Button variant="ghost" icon="upload" onClick={() => { close(); exportMeso(meso, 'csv') }}>{t('Export mesocycle (CSV)')}</Button>
     <div style={{ height: 8 }} />
-    <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/raw?scope=meso&id=' + meso.id) }}>{t('View JSON')}</Button>
+    <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/raw?id=' + meso.id) }}>{t('View JSON')}</Button>
   </>
 }
 

@@ -1,5 +1,12 @@
 // Portuguese UI strings. Keys are the English source strings (see lib/i18n.js).
 export default {
+  'Data': 'Dados',   // usada pelo titulo da secao em Settings — nao e so da visao crua
+
+  'Exactly what the app stores for this mesocycle — extra fields included.': 'Exatamente o que o app guarda deste mesociclo — campos extras incluídos.',
+
+  'mesocycle object': 'objeto do mesociclo',
+  'Read-only: this is what the app stores, not an editor.': 'Só leitura: é o que o app guarda, não um editor.',
+
   'Mesocycle': 'Mesociclo',
   'Mesocycles': 'Mesociclos',
   'No mesocycle yet': 'Nenhum mesociclo ainda',
@@ -59,7 +66,6 @@ export default {
   '{0} mesocycles imported': '{0} mesociclos importados',
   'Export mesocycle (JSON)': 'Exportar mesociclo (JSON)',
   'Export mesocycle (CSV)': 'Exportar mesociclo (CSV)',
-  'View plan as JSON': 'Ver plano em JSON',
   'View JSON': 'Ver JSON',
   'Copy JSON': 'Copiar JSON',
   'Share .json': 'Compartilhar .json',
@@ -68,8 +74,6 @@ export default {
   'mesocycle.json': 'mesociclo.json',
   'plan.json': 'plano.json',
   'state.json': 'estado.json',
-  'Everything': 'Tudo',
-  'Data': 'Dados',
   '{0} lines': '{0} linhas',
   'rev {0} · synced {1}': 'rev {0} · sincronizado {1}',
   'Mesocycle created': 'Mesociclo criado',
@@ -372,7 +376,6 @@ export default {
   'Rest must be between 30 and 300s': 'Descanso deve ser entre 30 e 300s',
   'Sounds': 'Sons',
   'Note: switching units only changes the label — logged numbers are not converted.': 'Nota: mudar a unidade só muda o rótulo — os números registados não são convertidos.',
-  'Data': 'Dados',
   'Export backup (JSON)': 'Exportar cópia (JSON)',
   'Import backup': 'Importar cópia',
   'Reset everything?': 'Repor tudo?',
