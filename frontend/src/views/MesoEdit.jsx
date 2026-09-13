@@ -180,9 +180,13 @@ export default function MesoEdit() {
         </div>
         {open.extras && extras.map(([k, v]) => <div key={k} className="lrow" style={{ alignItems: 'flex-start', cursor: 'default' }}>
           <b className="small" style={{ minWidth: 104, fontWeight: 500 }}>{k}</b>
-          <div className="lrow-m"><div className="small dim" style={{ lineHeight: 1.45, overflowWrap: 'anywhere' }}>
-            {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-          </div></div>
+          <div className="lrow-m">
+            {/* Objeto aninhado sai indentado, no mesmo monoespaçado da visão crua: um
+                `JSON.stringify` de uma linha só esconde a estrutura e estoura a largura. */}
+            {v !== null && typeof v === 'object'
+              ? <pre className="rawjson" style={{ margin: 0 }}>{JSON.stringify(v, null, 2)}</pre>
+              : <div className="small dim" style={{ lineHeight: 1.45, overflowWrap: 'anywhere' }}>{String(v)}</div>}
+          </div>
         </div>)}
       </div>
     </>}
