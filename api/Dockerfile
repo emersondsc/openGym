@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:22-alpine AS runtime
 # A árvore dentro da imagem espelha a do repositório: /app/api (o servidor) e
 # /app/frontend/src/lib (o catálogo único). Assim `../frontend/src/lib/exercises-data.json`,
 # que é como api/catalog.js resolve o caminho, vale igual no Pi e aqui dentro.
@@ -16,3 +16,17 @@ COPY frontend/src/lib/exercises-data.json /app/frontend/src/lib/exercises-data.j
 ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["node", "server.js"]
+
+# Alvo de teste: `RUN`, não `CMD` — `docker build --target test -f api/Dockerfile .` precisa
+# FALHAR quando a suíte falha, senão o portão do deploy não prova nada (um `CMD` fazia o build
+# passar sem rodar um único teste). Os testes voltam por COPY porque o estágio `runtime` os
+# apaga; os caminhos são relativos ao WORKDIR (/app/api). Nada disto entra na imagem de produção.
+#
+# Com este estágio no FIM do arquivo ele passa a ser o alvo padrão do build do Compose — daí o
+# `target: runtime` no docker-compose.yml.
+FROM runtime AS test
+COPY api/*.test.js ./
+# Os fixtures JSON também: o glob `api/*.js` do estágio de produção não os leva, e sem eles a
+# suíte de contrato do routines.test.js morre no primeiro readFileSync.
+COPY api/*.json ./
+RUN node --test ./*.test.js

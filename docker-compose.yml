@@ -28,6 +28,11 @@ services:
     build:
       context: .                    # a raiz: o Dockerfile precisa ver frontend/src/lib/ também
       dockerfile: api/Dockerfile
+      target: runtime               # o Dockerfile tem um alvo `test` no fim (build da suíte);
+                                    # sem esta linha o Compose buildaria AQUELE alvo e a API
+                                    # subiria rodando os testes em vez do servidor
+    pull_policy: never              # o serviço tem `image:` de outro namespace: sem isto o
+                                    # `up -d` puxaria `latest` de lá, inclusive no rollback
     restart: unless-stopped
     healthcheck:
       # /api/health e rota real da API (api/server.js:384) e responde 200 com {"ok":true}

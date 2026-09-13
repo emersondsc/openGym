@@ -13,6 +13,8 @@ import { buildAnalysis } from './coach.js';
 import { pathToFileURL } from 'node:url';
 import * as catalog from './catalog.js';
 import * as routines from './routines.js';
+import * as meso from './meso.js';
+import { checkMesos } from './meso.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -75,6 +77,13 @@ function checkState(s) {
       }
     }
   }
+  // Mesociclos: mesma régua tolerante do resto (teto e forma mínima), NUNCA a tabela inteira do
+  // §6 da spec do meso. A tabela é da rota do assistente, onde a recusa é uma resposta; aqui um
+  // 400 travaria treino, rotina e peso junto, e a escrita ficaria pendente para sempre.
+  if (s.mesos !== undefined) {
+    const bad = checkMesos(s.mesos);
+    if (bad) return bad;
+  }
   return null;
 }
 function readState(uid) {
@@ -83,7 +92,8 @@ function readState(uid) {
 
 // Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
-         readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server };
+         readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
+         ROUTINE_HANDLERS, meso };
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -365,7 +375,8 @@ setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt 
 // como as rotas com ?id= já funcionam hoje.
 const PATTERNS = [
   { method: 'PATCH',  re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'patchRoutine' },
-  { method: 'DELETE', re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'deleteRoutine' }
+  { method: 'DELETE', re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'deleteRoutine' },
+  { method: 'POST',   re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})\/activate$/, params: ['mid'], handler: 'activateMeso' }
 ];
 // Preenchido depois de `R()`, porque os handlers de rotina precisam do roteador pronto.
 const ROUTINE_HANDLERS = {};
@@ -416,6 +427,11 @@ const routes = {
 
   // Trilha de auditoria: quem escreveu o quê. Dono vê o dele; admin vê qualquer uid.
   'GET /api/audit': (req, res) => ROUTINE_HANDLERS.audit(req, res),
+
+  // Mesociclo: o app escreve pelo estado (PUT /api/data); estas rotas são do assistente e do
+  // `dump` do escritor. Overwrite total, sem regra sobre quem escreve (spec_meso_no_app §RF-12).
+  'PUT /api/plan/meso': (req, res) => ROUTINE_HANDLERS.putMeso(req, res),
+  'GET /api/plan/meso': (req, res) => ROUTINE_HANDLERS.getMeso(req, res),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -763,6 +779,11 @@ const routes = {
 // para não haver import circular entre server.js e routines.js.
 Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
   readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH
+}));
+// Mesociclo: MESMO mapa, porque o `matchRoute` procura handler de padrão só em ROUTINE_HANDLERS —
+// registrar num mapa próprio deixaria a rota de ativação respondendo 404.
+Object.assign(ROUTINE_HANDLERS, meso.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor
 }));
 
 // Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo

@@ -3,6 +3,7 @@ import { api } from '../lib/api.js'
 import { localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { adoptServerRoutines, rememberBase, readBase, ifMatchFor, planChanged } from '../lib/plan-merge.js'
+import { normalizeMeso, mergeMesos, fixMesoPointers } from '../lib/meso.js'
 import { registerCustom } from '../lib/exercises.js'
 import { pinUnits } from '../lib/unit-migration.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
@@ -15,7 +16,8 @@ export const DEF = {
   bodyweight: [], routines: [], week: {}, dayPlan: {},
   exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'full',
   confirmTopWeight: false,
-  reminder: { on: false, time: '08:00', tz: null }, effort: null
+  reminder: { on: false, time: '08:00', tz: null }, effort: null,
+  mesos: [], activeMeso: null, mesoPrev: null
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 // Um aviso por MUDANÇA: a chave guarda a revisão em que o aviso já apareceu. A chave antiga
@@ -59,6 +61,12 @@ function loadState() {
       // BACKLOG-01 (U1): marca em libras os dois aparelhos de perna que estão em libras.
       // Só a prescrição; `workouts[]` nunca. Ver lib/unit-migration.js (testado à parte).
       pinUnits(state, localStorage, KEY)
+      // Mesociclos: normaliza UMA vez, na entrada. Objeto sem núcleo (sem nome, sem data de
+      // início ou sem semana derivável) é descartado aqui — nunca na tela. Normalizar aqui é o
+      // que garante que o que este aparelho grava é o que a API aceita: um 400 no PUT /api/data
+      // deixaria a escrita pendente para sempre, e com ela treino, rotina e peso.
+      state.mesos = (Array.isArray(state.mesos) ? state.mesos : []).map(m => normalizeMeso(m)).filter(Boolean)
+      fixMesoPointers(state)
       return state
     }
   } catch (e) { /* ignore */ }
@@ -214,6 +222,10 @@ export const useStore = create((set, get) => {
               ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
               const merged = Object.assign(clone(DEF), srv)      // routines/week/dayPlan do SERVIDOR
               merged.workouts = [...byId.values()]
+              merged.mesos = mergeMesos(srv.mesos, S.mesos)      // nada criado aqui se perde
+              // Ponteiro do mesociclo: o do SERVIDOR manda (a API é overwrite total e quem
+              // coordena é o assistente, lendo antes de escrever). Id que sumiu vira null.
+              fixMesoPointers(merged)
               if (S.active) merged.active = S.active
               const adopted = adoptServerRoutines(srv.routines || [], S.routines || [], prevBase)
               merged.routines = adopted.routines
@@ -256,6 +268,8 @@ export const useStore = create((set, get) => {
           // servidor, então adotar o estado inteiro não descarta edição nenhuma. `active` é local.
           const active = S.active
           const next = Object.assign(clone(DEF), state)
+          next.mesos = (next.mesos || []).map(m => normalizeMeso(m)).filter(Boolean)
+          fixMesoPointers(next)
           if (active) next.active = active
           if (notify) noticeIfChanged(state.routines || [], base, serverRev)
           persist(next, false)
@@ -270,6 +284,8 @@ export const useStore = create((set, get) => {
           ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
           const merged = Object.assign(clone(DEF), state)
           merged.workouts = [...byId.values()]
+          merged.mesos = mergeMesos(state.mesos, S.mesos)
+          fixMesoPointers(merged)
           if (S.active) merged.active = S.active
           merged.routines = adoptServerRoutines(state.routines || [], S.routines || [], base).routines
           merged._ts = Math.max(Date.now(), state._ts || 0) + 1     // igual ao caminho de 409

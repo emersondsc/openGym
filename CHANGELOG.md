@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.3.0 — 2026-09-13
+
+O plano de médio prazo passa a existir dentro do app. Até aqui o mesociclo vivia só no agente que
+planeja; agora ele é um objeto do seu perfil: uma biblioteca com um deles em uso, a tela completa do
+que ele persegue e do que já foi registrado, criação à mão, arquivo de entrada e saída, a visão crua
+em JSON e as rotas que o agente usa para publicar.
+
+- 🧱 **Mesocycle, no topo da aba Plan.** Nome, `semana N de M` e a fase da semana. Tocar abre a tela
+  do mesociclo; o mesociclo que terminou continua ativo, marcado, com a oferta do próximo.
+- 📋 **A tela de um mesociclo** mostra o que ele persegue (objetivo, prioridades), como (regras), a
+  semana escolhida na trilha `S1..S4` (o que foi planejado e o que foi registrado), a evidência, o
+  histórico do coach e **os campos extras** de um arquivo importado. Seção sem dado não aparece: o
+  mesociclo que você criou à mão não parece inacabado ao lado do que o coach escreveu.
+- ✍️ **Quatro campos criam um mesociclo:** nome, começa em, semanas (4/6/8) e objetivo. O resto é
+  derivado — e a fase de cada semana é editável depois, com um toque.
+- 📥 **Import de arquivo (CSV ou JSON)** valida só a forma: deriva o que falta **anotando o que
+  derivou**, preserva qualquer campo que o app não conheça (em qualquer nível), recusa item sem
+  núcleo pelo nome e pergunta antes de substituir um mesociclo existente. O CSV leva um subconjunto
+  declarado; o JSON faz round-trip fiel.
+- 🔍 **Visão crua do plano** (`⋯ → Ver plano em JSON`): o que o app guarda, sem tradução, com copiar
+  e compartilhar. Só leitura.
+- 🔌 **Rotas para o agente:** `PUT`/`GET /api/plan/meso` e `POST /api/plan/meso/:id/activate`, com
+  identidade de máquina verificada, `If-Match`, auditoria (`put-meso`/`activate-meso`) e a linha
+  `[og-meso]` no log. A API é overwrite total, sem regra sobre quem escreve.
+- 🧪 **Testes:** 35 novos no servidor (rodando pelo alvo `test` da imagem) e 37 no frontend, mais o
+  alvo de teste que agora **falha** o build quando a suíte falha.
+- 📚 **Documento permanente:** `docs/MESO.md`.
+
 ## v1.2.4 — 2026-08-01
 
 The effort ratings you have been recording since v1.2.3 now answer questions, and bodyweight

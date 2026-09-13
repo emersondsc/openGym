@@ -917,3 +917,12 @@ h4.sec{
   .exmedia img{height:380px}
   .hm-wrap{display:flex;flex-direction:column;align-items:center}
 }
+
+/* ---- visão crua do plano (PlanRaw) ------------------------------------- */
+/* Monoespaçada, indentada e QUEBRANDO LINHA: o texto do coach é prosa longa, e rolagem
+   horizontal em telefone é pior do que uma linha a mais. */
+.rawjson{
+  margin:0;padding:14px;background:var(--surface);border-radius:var(--r-card);
+  font:400 12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2;color:var(--label);
+}

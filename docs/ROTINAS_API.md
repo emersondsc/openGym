@@ -10,6 +10,11 @@
 Última conferência contra o código: **13/09/2026** — `emerson-custom`, suíte `api/routines.test.js`
 com **69 testes, 69 passando** (medida dentro da imagem da API, contra a árvore de trabalho).
 
+> **Mesociclo não é rotina.** A biblioteca de mesociclos, o ponteiro do ativo e as rotas
+> `PUT`/`GET /api/plan/meso` e `POST /api/plan/meso/:id/activate` têm documento próprio:
+> **`docs/MESO.md`**. Rotina continua sendo template de exercícios; mesociclo é o bloco de
+> semanas que a contém.
+
 ---
 
 ## 1. Resumo em uma tela

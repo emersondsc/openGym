@@ -11,7 +11,7 @@ import { starterRoutines } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
-import { Button, Slider, Switch, Segmented, SelectRow, Row } from './components/ui.jsx'
+import { Button, Slider, Switch, Segmented, SelectRow, Row, TextField, TextArea } from './components/ui.jsx'
 import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
@@ -22,6 +22,13 @@ import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLIC
 import { MOBILE, shareExport } from './lib/mobile.js'
 import { unitOfCfg, unitOfEntry, normUnit } from './lib/units.js'
 import UnitChip from './components/UnitChip.jsx'
+import {
+  normalizeMeso, activateMesoState, mesoState, todayInMeso, extrasOf, shiftWeeks, buildWeeks,
+  addDays, LIMITS, mesoBytes
+} from './lib/meso.js'
+import {
+  parseMesoFile, noteText, mesoToJSON, mesoToCSV, mesoFileName, MAX_FILE_BYTES, MESO_ACCEPT
+} from './lib/meso-file.js'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -666,6 +673,7 @@ function PlanTools({ close }) {
   const user = useStore(s => s.user)
   const fileRef = useRef(null)
   const hasRoutines = (st.routines || []).some(r => r.ex && r.ex.length)
+  const activeMeso = (st.mesos || []).find(m => m.id === st.activeMeso) || null
 
   const exportFile = async () => {
     const bundle = buildPlanBundle(st, user?.name ? t('{0}’s plan', user.name) : '')
@@ -697,6 +705,16 @@ function PlanTools({ close }) {
       <div className="dim small" style={{ margin: '7px 2px 0', lineHeight: 1.4 }}>{t('A clean one-page-per-plan printout — no exercise ever splits across a page.')}</div>
     </>}
     {!hasRoutines && <div className="dim small" style={{ margin: '12px 2px 0' }}>{t('Add an exercise to a routine first — an empty plan has nothing to share.')}</div>}
+    {activeMeso && <>
+      <h4 className="sec">{t('Mesocycle')}</h4>
+      <Button variant="ghost" icon="upload" onClick={() => exportMeso(activeMeso, 'json')}>{t('Export mesocycle (JSON)')}</Button>
+      <div style={{ height: 8 }} />
+      <Button variant="ghost" icon="upload" onClick={() => exportMeso(activeMeso, 'csv')}>{t('Export mesocycle (CSV)')}</Button>
+      <div style={{ height: 8 }} />
+      <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/meso/' + activeMeso.id) }}>{t('Open the mesocycle')}</Button>
+    </>}
+    <h4 className="sec">{t('Data')}</h4>
+    <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/raw?scope=plan') }}>{t('View plan as JSON')}</Button>
     <h4 className="sec">{t('Got a plan from a friend?')}</h4>
     <Button variant="ghost" icon="folder" onClick={() => fileRef.current?.click()}>{t('Import a plan file')}</Button>
     <input ref={fileRef} type="file" accept="application/json,.json" onChange={pickFile} hidden />
@@ -1010,4 +1028,278 @@ function doFinishWorkout() {
   useUI.getState().stopRest()
   beep(snd(), 880, 0.15); beep(snd(), 1100, 0.15, 0.18); beep(snd(), 1320, 0.3, 0.36)
   ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} close={close} />, { kind: 'center', locked: true })
+}
+
+/* ============================ mesocycles ============================ */
+// O mesociclo no app: biblioteca (S.mesos) + um ativo (S.activeMeso). O app escreve pelo caminho
+// normal do estado; as rotas /api/plan/meso são do assistente. Nada é apagado: trocar de ativo só
+// move o ponteiro, e o "voltar ao anterior" é o mesmo helper de ativação.
+
+/** Export do mesociclo — o mesmo caminho do `exportFile` do PlanTools. */
+export async function exportMeso(meso, ext) {
+  const text = ext === 'csv' ? mesoToCSV(meso) : mesoToJSON(meso)
+  const name = mesoFileName(meso, ext)
+  if (MOBILE) { try { await shareExport(text, name) } catch { /* dismissed */ } return }
+  const blob = new Blob([text], { type: ext === 'csv' ? 'text/csv' : 'application/json' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+/** Ativação, com os dois avisos. Usada pelo painel, pela lista, pela tela e pelo import. */
+export function activateMeso(id) {
+  update(s => {
+    if (!activateMesoState(s, id, 'user')) return
+    toast(t('{0} is now your mesocycle', (s.mesos.find(m => m.id === id) || {}).name))
+    toast(t('Your published week stays as it is until the next publication.'))
+  })
+}
+
+export const mesoListSheet = () => ui().openSheet(close => <MesoList close={close} />)
+
+function MesoList({ close }) {
+  const st = useStore(s => s.S)
+  const today = todayInMeso()
+  const fileRef = useRef(null)
+  // Ativo no topo, o resto por data de início decrescente.
+  const list = [...(st.mesos || [])].sort((a, b) =>
+    a.id === st.activeMeso ? -1 : b.id === st.activeMeso ? 1 : (b.start || '').localeCompare(a.start || ''))
+  // Um toque ATIVA; o `>` (alvo próprio, com stopPropagation) abre a tela.
+  const open = id => { close(); nav('/plan/meso/' + id) }
+  return <>
+    <h3>{t('Mesocycles')}</h3>
+    {list.length ? <div className="list">
+      {list.map(m => {
+        const s = mesoState(m, today)
+        return <div key={m.id} className="item" onClick={() => activateMeso(m.id)}>
+          <div className="grow">
+            <div className="tt">{m.name}</div>
+            <div className="ss">{fmtDate(m.start)} – {fmtDate(m.end)} · {t(s === 'ended' ? 'ended' : s === 'future' ? 'starts soon' : 'in progress')}</div>
+          </div>
+          {m.id === st.activeMeso && <Icon name="check" className="accent" />}
+          <button className="iconbtn" onClick={e => { e.stopPropagation(); open(m.id) }} aria-label={t('Open')}>
+            <Icon name="chevronRight" /></button>
+        </div>
+      })}
+    </div> : <div className="muted small" style={{ marginBottom: 14 }}>{t('No mesocycle yet')}</div>}
+    <div style={{ height: 12 }} />
+    <Button variant="primary" icon="plus" onClick={() => { close(); mesoFormSheet({}) }}>{t('New mesocycle')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="tinted" icon="folder" onClick={() => fileRef.current?.click()}>{t('Import a mesocycle file')}</Button>
+    <input ref={fileRef} type="file" accept={MESO_ACCEPT} hidden
+      onChange={ev => { const f = ev.target.files[0]; ev.target.value = ''; if (f) { close(); importMesoFile(f) } }} />
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+  </>
+}
+
+/** Lê o arquivo e abre o resumo — mesmo caminho do `importFromApp`. */
+export function importMesoFile(file) {
+  if (file.size > MAX_FILE_BYTES) { toast(t('That file is too large')); return }
+  const rd = new FileReader()
+  rd.onload = () => {
+    let parsed
+    try { parsed = parseMesoFile(String(rd.result), file.name) }
+    catch { toast(t('Could not read that file')); return }
+    if (parsed.errors.includes('empty')) { toast(t('That file is empty')); return }
+    if (parsed.errors.includes('json') || parsed.errors.includes('csv')) { toast(t('Could not read that file')); return }
+    if (!parsed.mesos.length) { toast(t('That file has no mesocycle in it')); return }
+    ui().openSheet(close => <MesoImport parsed={parsed} close={close} />)
+  }
+  rd.onerror = () => toast(t('Could not read that file'))
+  rd.readAsText(file)
+}
+
+function MesoImport({ parsed, close }) {
+  const st = useStore(s => s.S)
+  const clashes = parsed.mesos.filter(m => (st.mesos || []).some(x => x.id === m.id))
+  // Teto da biblioteca conferido aqui também: o arquivo pode ter até 2 MB e nada impede 60
+  // mesociclos nele. Os que não couberem são recusados PELO NOME, não engolidos.
+  const room = Math.max(0, LIMITS.library - ((st.mesos || []).length - clashes.length))
+  const fits = parsed.mesos.slice(0, room)
+  const overflow = parsed.mesos.slice(room)
+  const first = fits[0]
+
+  const doImport = () => {
+    update(s => {
+      for (const m of fits) {
+        const i = s.mesos.findIndex(x => x.id === m.id)
+        if (i >= 0) s.mesos[i] = m; else s.mesos.push(m)
+      }
+    })
+    close()
+    toast(t(fits.length === 1 ? '{0} imported' : '{0} mesocycles imported', fits.length))
+    if (first) confirmSheet({
+      title: t('Activate it now?'), message: first.name, confirmText: t('Activate'),
+      onConfirm: () => activateMeso(first.id)
+    })
+  }
+
+  const extras = first ? extrasOf(first).length : 0
+  return <>
+    <h3>{t('Import mesocycle')}</h3>
+    <div className="muted small" style={{ marginBottom: 14 }}>
+      {t('{0} mesocycles imported', fits.length)}
+      {first ? ' · ' + fmtDate(first.start) + ' → ' + fmtDate(first.end) : ''}
+    </div>
+    <div className="tiles" style={{ textAlign: 'left' }}>
+      <div className="tile"><div className="l">{t('Mesocycles')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{fits.length}</div></div>
+      <div className="tile"><div className="l">{t('Weeks')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{first ? first.weeks.length : 0}</div></div>
+      <div className="tile"><div className="l">{t('Rules')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{first ? Object.keys(first.rules || {}).length : 0}</div></div>
+      <div className="tile"><div className="l">{t('Extras')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{extras}</div></div>
+    </div>
+    {parsed.notes.map((n, i) => <div key={i} className="small dim" style={{ marginBottom: 6, lineHeight: 1.4 }}>ℹ {noteText(n, t)}</div>)}
+    {parsed.refused.length > 0 && <div className="small" style={{ color: 'var(--yellow)', marginBottom: 10, lineHeight: 1.4 }}>
+      {t('{0} item(s) without a name or a date were left out: {1}',
+        parsed.refused.length, parsed.refused.map(r => '#' + r.index).join(', '))}
+    </div>}
+    {overflow.length > 0 && <div className="small" style={{ color: 'var(--yellow)', marginBottom: 10, lineHeight: 1.4 }}>
+      {t('{0} mesocycles do not fit in the library (limit of 40): {1}',
+        overflow.length, overflow.map(m => m.name).join(', '))}
+    </div>}
+    {clashes.length > 0 && <div className="small" style={{ color: 'var(--yellow)', marginBottom: 10, lineHeight: 1.4 }}>
+      {clashes.map(m => t('{0} already exists', m.name)).join(' · ')}
+    </div>}
+    <Button variant="primary" disabled={!fits.length} onClick={doImport}>
+      {clashes.length ? t('Replace') : t('Import')}
+    </Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+  </>
+}
+
+/** Menu do mesociclo (⋯): vale para o ativo e para qualquer um da lista. */
+export const mesoActionsSheet = meso => ui().openSheet(close => <MesoActions meso={meso} close={close} />)
+
+function MesoActions({ meso, close }) {
+  const st = useStore(s => s.S)
+  const active = st.activeMeso === meso.id
+  return <>
+    <h3>{meso.name}</h3>
+    <div className="muted small" style={{ marginBottom: 14 }}>
+      {fmtDate(meso.start)} – {fmtDate(meso.end)} · {t('{0} weeks', meso.weeks.length)}
+    </div>
+    {!active && <>
+      <Button variant="primary" icon="check" onClick={() => { close(); activateMeso(meso.id) }}>{t('Activate this mesocycle')}</Button>
+      <div style={{ height: 8 }} />
+    </>}
+    <Button variant="tinted" icon="pencil" onClick={() => { close(); mesoFormSheet({ meso }) }}>{t('Edit')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" icon="upload" onClick={() => { close(); exportMeso(meso, 'json') }}>{t('Export mesocycle (JSON)')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" icon="upload" onClick={() => { close(); exportMeso(meso, 'csv') }}>{t('Export mesocycle (CSV)')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" icon="code" onClick={() => { close(); nav('/plan/raw?scope=meso&id=' + meso.id) }}>{t('View JSON')}</Button>
+  </>
+}
+
+/** Criar (sem `meso`) ou editar (com `meso`). Molde: o `CustomExForm`. */
+export const mesoFormSheet = (opts = {}) =>
+  ui().openSheet(close => <MesoForm meso={opts.meso || null} close={close} />)
+
+function MesoForm({ meso, close }) {
+  const base = meso
+  const [name, setName] = useState(base?.name || '')
+  const [start, setStart] = useState(base?.start || todayISO())
+  const [count, setCount] = useState(base ? base.weeks.length : 4)     // só a criação usa
+  const [goal, setGoal] = useState(base?.goal || '')
+  const [focusL, setFocusL] = useState(base?.priorities?.lower || '')
+  const [focusU, setFocusU] = useState(base?.priorities?.upper || '')
+  const [reps, setReps] = useState(base?.rules?.['Reps alvo'] || '')
+  const [phases, setPhases] = useState(() => Object.fromEntries((base?.weeks || []).map(w => [w.n, w.phase])))
+  // Só o campo que o usuário mexeu é gravado; o resto do objeto passa byte a byte. Sem isto,
+  // editar o nome apagaria as nove regras e as prioridades que o coach escreveu.
+  const dirty = useRef(new Set())
+  const touch = (k, setter) => v => { dirty.current.add(k); setter(v) }
+
+  const badStart = !/^\d{4}-\d{2}-\d{2}$/.test(start)
+
+  const save = () => {
+    if (badStart || !name.trim()) { toast(t('Fill the name and the date (AAAA-MM-DD)')); return }
+    const notes = []
+    update(s => {
+      const before = (s.mesos || []).find(m => m.id === base?.id) || null
+      let next = before ? { ...before } : { id: 'meso-' + start, origin: 'user', weeks: [] }
+      if (!before || dirty.current.has('name')) next.name = name.trim()
+      if (!before || dirty.current.has('goal')) next.goal = goal.trim() || undefined
+      if (!before) {
+        next.start = start
+        next.weeks = buildWeeks(start, count)
+        next.end = next.weeks[next.weeks.length - 1].end
+      } else if (dirty.current.has('start') && start !== before.start) {
+        // As semanas ANDAM junto com a data nova, preservando fase, planejado, registrado e
+        // extras: re-derivar do zero perderia o que o coach escreveu.
+        const delta = Math.round((new Date(start + 'T12:00:00Z') - new Date(before.start + 'T12:00:00Z')) / 86400000)
+        next.start = start
+        next.end = addDays(before.end, delta)
+        next.weeks = shiftWeeks(before.weeks, delta)
+      }
+      if (!before || dirty.current.has('focusL') || dirty.current.has('focusU')) {
+        const p = { ...(focusL.trim() ? { lower: focusL.trim() } : {}), ...(focusU.trim() ? { upper: focusU.trim() } : {}) }
+        if (Object.keys(p).length) next.priorities = p; else delete next.priorities
+      }
+      if (!before || dirty.current.has('reps')) {
+        next.rules = { ...(next.rules || {}) }
+        if (reps.trim()) next.rules['Reps alvo'] = reps.trim(); else delete next.rules['Reps alvo']
+        if (!Object.keys(next.rules).length) delete next.rules
+      }
+      if (dirty.current.has('phases')) next.weeks = next.weeks.map(w => ({ ...w, phase: (phases[w.n] ?? w.phase) || w.phase }))
+      next = normalizeMeso(next, notes) || next      // a mesma régua do import
+      next.updatedAt = new Date().toISOString()
+      const i = (s.mesos || []).findIndex(m => m.id === next.id)
+      if (i >= 0) s.mesos[i] = next; else s.mesos.push(next)
+    })
+    close()
+    toast(base ? t('Mesocycle updated') : t('Mesocycle created'))
+  }
+
+  return <>
+    <h3>{base ? t('Edit mesocycle') : t('New mesocycle')}</h3>
+    <div className="muted small" style={{ marginBottom: 14 }}>
+      {t('Four fields are enough. Everything else can come later, and nothing here rewrites what the coach wrote.')}
+    </div>
+    <div className="list">
+      <div className="item" style={{ cursor: 'default' }}>
+        <div className="grow"><div className="ss">{t('Name')}</div>
+          <TextField value={name} onChange={e => touch('name', setName)(e.target.value)} placeholder={t('Mesocycle 3')} /></div>
+      </div>
+      <div className="item" style={{ cursor: 'default' }}>
+        <div className="grow"><div className="ss">{t('Starts on')}</div>
+          <TextField value={start} inputMode="numeric" onChange={e => touch('start', setStart)(e.target.value)} placeholder="2026-09-15" /></div>
+      </div>
+      {!base && <div className="item" style={{ cursor: 'default' }}>
+        <div className="grow"><div className="ss">{t('Weeks')}</div>
+          <Segmented options={[4, 6, 8].map(n => ({ value: n, label: String(n) }))} value={count} onChange={setCount} /></div>
+      </div>}
+      <div className="item" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+        <div className="grow"><div className="ss">{t('Objective')}</div>
+          <TextArea rows={2} value={goal} onChange={e => touch('goal', setGoal)(e.target.value)} placeholder={t('One line: what this block is for')} /></div>
+      </div>
+      <div className="item" style={{ cursor: 'default' }}>
+        <div className="grow"><div className="ss">{t('Focus lower')}</div>
+          <TextField value={focusL} onChange={e => touch('focusL', setFocusL)(e.target.value)} placeholder="glúteos" /></div>
+      </div>
+      <div className="item" style={{ cursor: 'default' }}>
+        <div className="grow"><div className="ss">{t('Focus upper')}</div>
+          <TextField value={focusU} onChange={e => touch('focusU', setFocusU)(e.target.value)} placeholder="deltoide lateral" /></div>
+      </div>
+      <div className="item" style={{ cursor: 'default' }}>
+        <div className="grow"><div className="ss">{t('Target reps')}</div>
+          <TextField value={reps} onChange={e => touch('reps', setReps)(e.target.value)} placeholder="6-8" /></div>
+      </div>
+      {base && <div className="item" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+        <div className="grow"><div className="ss" style={{ marginBottom: 6 }}>{t('Phase of each week')}</div>
+          <div className="list">
+            {(base.weeks || []).map(w => <div key={w.n} className="row" style={{ gap: 8 }}>
+              <b className="small dim" style={{ minWidth: 28 }}>S{w.n}</b>
+              <TextField value={phases[w.n] ?? w.phase} onChange={e => touch('phases', setPhases)({ ...phases, [w.n]: e.target.value })} />
+            </div>)}
+          </div>
+        </div>
+      </div>}
+    </div>
+    <div style={{ height: 12 }} />
+    <Button variant="primary" onClick={save}>{base ? t('Save') : t('Create mesocycle')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+  </>
 }
