@@ -75,6 +75,13 @@ describe('validateMesoBody (a tabela do §6)', () => {
   test('id fora do formato', () => {
     assert.equal(M.validateMesoBody(mesoOk({ id: 'meso3' }))?.code, 'BAD_MESO_ID');
     assert.equal(M.validateMesoBody(mesoOk({ id: 'meso-26-09-01' }))?.code, 'BAD_MESO_ID');
+    assert.equal(M.validateMesoBody(mesoOk({ id: 'meso-2026-09-01-AB' }))?.code, 'BAD_MESO_ID');   // sufixo é minúsculo
+    assert.equal(M.validateMesoBody(mesoOk({ id: 'meso-2026-09-01-sufixolongo' }))?.code, 'BAD_MESO_ID');
+  });
+  test('id com sufixo curto passa (dois mesociclos no mesmo dia)', () => {
+    assert.equal(M.validateMesoBody(mesoOk({ id: 'meso-2026-09-01-2' })), null);
+    assert.equal(M.validateMesoBody(mesoOk({ id: 'meso-2026-09-01-b' })), null);
+    assert.equal(M.checkMesos([mesoOk({ id: 'meso-2026-09-01-2' })]), null);
   });
   test('nome vazio e nome com 121 caracteres', () => {
     assert.equal(M.validateMesoBody(mesoOk({ name: '   ' }))?.code, 'BAD_MESO_NAME');

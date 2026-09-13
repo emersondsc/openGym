@@ -63,7 +63,9 @@ lendo o mesociclo antes de escrever — isso é política dele, não da API.
 
 | Campo | Obrigatório | Regra |
 |---|---|---|
-| `id` | sim | `^meso-\d{4}-\d{2}-\d{2}$` (a data é o início), único na biblioteca |
+| `id` | sim | `^meso-\d{4}-\d{2}-\d{2}(-[a-z0-9]{1,8})?$` — a data é o início; o sufixo
+  curto (`meso-2026-09-13-2`) existe para **dois mesociclos começarem no mesmo dia**, que é
+  legítimo e antes sobrescrevia o primeiro |
 | `name` | sim | 1..120 caracteres |
 | `start` | sim | ISO `AAAA-MM-DD`, data real do calendário |
 | `end` | sim no corpo | ≥ `start` |

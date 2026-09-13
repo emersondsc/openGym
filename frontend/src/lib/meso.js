@@ -22,6 +22,13 @@ export const MESO_KNOWN = new Set([
 ])
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
+/**
+ * O id carrega a data de início e, quando aquele dia já tem um mesociclo, um sufixo curto
+ * (`meso-2026-09-13-2`). Mesma regra do servidor (`api/meso.js`, `MESO_ID_RE`): se as duas
+ * divergirem, o cliente normaliza um id que a API recusa — ou pior, reescreve um id com sufixo de
+ * volta para a data e o mesociclo passa a SUBSTITUIR outro na biblioteca.
+ */
+export const MESO_ID_RE = /^meso-\d{4}-\d{2}-\d{2}(-[a-z0-9]{1,8})?$/
 const DAY = 86400000
 export const isISO = s => typeof s === 'string' && ISO.test(s)
 const at = iso => new Date(iso + 'T12:00:00Z')
@@ -144,7 +151,7 @@ export function normalizeMeso(raw, notes = []) {
   }
   if (!weeks.length) return null                       // sem semana não há mesociclo
 
-  const id = /^meso-\d{4}-\d{2}-\d{2}$/.test(raw.id) ? raw.id : 'meso-' + start
+  const id = MESO_ID_RE.test(raw.id) ? raw.id : 'meso-' + start
   if (id !== raw.id) notes.push({ kind: 'derived', field: 'id', from: 'start', value: id })
   const end = realISO(raw.end) && raw.end >= start ? raw.end : weeks[weeks.length - 1].end
   if (end !== raw.end) notes.push({ kind: 'derived', field: 'end', from: 'weeks', value: end })
@@ -234,4 +241,21 @@ export function fixMesoPointers(S) {
 export function pickMeso(mesos, id, activeMeso) {
   const list = mesos || []
   return list.find(m => m.id === id) || list.find(m => m.id === activeMeso) || list[0] || null
+}
+
+/**
+ * Id de um mesociclo NOVO a partir da data de início: `meso-<data>` quando está livre, senão
+ * `meso-<data>-2`, `-3`… Criar dois mesociclos que começam no mesmo dia é legítimo (um teste, um
+ * plano B), e antes disso o segundo **substituía** o primeiro em silêncio, porque o id é a chave
+ * da biblioteca. O sufixo é o que o servidor aceita (`^meso-\d{4}-\d{2}-\d{2}(-[a-z0-9]{1,8})?$`).
+ */
+export function uniqueMesoId(mesos, start) {
+  const taken = new Set((mesos || []).map(m => m.id))
+  const base = 'meso-' + start
+  if (!taken.has(base)) return base
+  for (let n = 2; n <= 99; n++) {
+    const id = base + '-' + n
+    if (!taken.has(id)) return id
+  }
+  return base + '-' + Date.now().toString(36).slice(-4)   // 99 no mesmo dia: improvável, mas não trava
 }

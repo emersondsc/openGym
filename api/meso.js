@@ -7,7 +7,10 @@
 // inteiro: campo desconhecido é preservado em qualquer nível.
 import { withState, parseIfMatch, checkIfMatch, stateMeta } from './routines.js';
 
-export const MESO_ID_RE = /^meso-\d{4}-\d{2}-\d{2}$/;
+// O id carrega a data de início e, quando aquele dia já tem um mesociclo, um sufixo curto
+// (`meso-2026-09-13-2`): dois mesociclos começando no mesmo dia são legítimos — um teste, um plano
+// B — e sem o sufixo o segundo substituiria o primeiro, porque o id é a chave da biblioteca.
+export const MESO_ID_RE = /^meso-\d{4}-\d{2}-\d{2}(-[a-z0-9]{1,8})?$/;
 export const MAX_MESO_BYTES = 64 * 1024;
 export const MAX_MESOS = 40;
 export const MAX_WEEKS = 52;

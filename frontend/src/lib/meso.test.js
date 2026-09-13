@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   LIMITS, addDays, spanDays, realISO, mesoBytes, todayInMeso, phaseFor, buildWeeks, weeksFromRange,
   shiftWeeks, resolveWeeks, normalizeMeso, extrasOf, weekAt, mesoState, activateMesoState,
-  mergeMesos, fixMesoPointers, pickMeso
+  mergeMesos, fixMesoPointers, pickMeso, uniqueMesoId, MESO_ID_RE
 } from './meso.js'
 
 const M = (over = {}) => ({
@@ -192,5 +192,23 @@ describe('mescla e ponteiros', () => {
     expect(pickMeso(list, null, null).id).toBe('a')     // sem id e sem ativo: o primeiro
     expect(pickMeso([], 'a', 'b')).toBe(null)
     expect(pickMeso(undefined, 'a', 'b')).toBe(null)
+  })
+  it('uniqueMesoId: dois mesociclos que começam no mesmo dia coexistem', () => {
+    expect(uniqueMesoId([], '2026-09-13')).toBe('meso-2026-09-13')
+    const um = [{ id: 'meso-2026-09-13' }]
+    expect(uniqueMesoId(um, '2026-09-13')).toBe('meso-2026-09-13-2')          // não sobrescreve
+    const dois = [...um, { id: 'meso-2026-09-13-2' }]
+    expect(uniqueMesoId(dois, '2026-09-13')).toBe('meso-2026-09-13-3')
+    expect(uniqueMesoId(dois, '2026-10-01')).toBe('meso-2026-10-01')          // outra data não colide
+  })
+  it('normalizeMeso PRESERVA o id com sufixo (senão o segundo meso volta a sobrescrever o primeiro)', () => {
+    const notas = []
+    const novo = normalizeMeso({ id: 'meso-2026-09-13-2', name: 'Plano B', start: '2026-09-13', weeks: buildWeeks('2026-09-13', 4) }, notas)
+    expect(novo.id).toBe('meso-2026-09-13-2')
+    expect(notas.some(n => n.kind === 'derived' && n.field === 'id')).toBe(false)
+    // e o formato do cliente é o mesmo que o servidor aceita
+    expect(MESO_ID_RE.test('meso-2026-09-13-2')).toBe(true)
+    expect(MESO_ID_RE.test('meso-2026-09-13')).toBe(true)
+    expect(MESO_ID_RE.test('meso-2026-09-13-AB')).toBe(false)
   })
 })

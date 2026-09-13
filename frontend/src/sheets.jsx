@@ -24,7 +24,7 @@ import { unitOfCfg, unitOfEntry, normUnit } from './lib/units.js'
 import UnitChip from './components/UnitChip.jsx'
 import {
   normalizeMeso, activateMesoState, mesoState, todayInMeso, extrasOf, shiftWeeks, buildWeeks,
-  addDays, LIMITS, mesoBytes, pickMeso
+  addDays, LIMITS, mesoBytes, pickMeso, uniqueMesoId
 } from './lib/meso.js'
 import {
   parseMesoFile, noteText, mesoToJSON, mesoToCSV, mesoFileName, MAX_FILE_BYTES, MESO_ACCEPT
@@ -1221,7 +1221,10 @@ function MesoForm({ meso, close }) {
     const notes = []
     update(s => {
       const before = (s.mesos || []).find(m => m.id === base?.id) || null
-      let next = before ? { ...before } : { id: 'meso-' + start, origin: 'user', weeks: [] }
+      // Id de mesociclo NOVO: derivado da data, e com sufixo quando aquele dia já tem um. Sem
+      // isto, criar o segundo mesociclo começando hoje SUBSTITUÍA o primeiro (o id é a chave da
+      // biblioteca) e o usuário perdia o que tinha escrito.
+      let next = before ? { ...before } : { id: uniqueMesoId(s.mesos, start), origin: 'user', weeks: [] }
       if (!before || dirty.current.has('name')) next.name = name.trim()
       if (!before || dirty.current.has('goal')) next.goal = goal.trim() || undefined
       if (!before) {
