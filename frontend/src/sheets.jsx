@@ -1219,6 +1219,7 @@ function MesoForm({ meso, close }) {
   const save = () => {
     if (badStart || !name.trim()) { toast(t('Fill the name and the date (AAAA-MM-DD)')); return }
     const notes = []
+    let criado = null                       // nome do mesociclo criado, para os avisos pós-gravação
     update(s => {
       const before = (s.mesos || []).find(m => m.id === base?.id) || null
       // Id de mesociclo NOVO: derivado da data, e com sufixo quando aquele dia já tem um. Sem
@@ -1253,9 +1254,16 @@ function MesoForm({ meso, close }) {
       next.updatedAt = new Date().toISOString()
       const i = (s.mesos || []).findIndex(m => m.id === next.id)
       if (i >= 0) s.mesos[i] = next; else s.mesos.push(next)
+      // Criar já ativa. Sem isto o mesociclo novo entrava na biblioteca e a TELA não mudava nada
+      // (o painel mostra o ativo), o que parecia que ele não tinha sido salvo.
+      if (!before && activateMesoState(s, next.id, 'user')) criado = next.name
     })
     close()
     toast(base ? t('Mesocycle updated') : t('Mesocycle created'))
+    if (criado) {
+      toast(t('{0} is now your mesocycle', criado))
+      toast(t('Your published week stays as it is until the next publication.'))
+    }
   }
 
   return <>

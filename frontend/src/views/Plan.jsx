@@ -54,7 +54,13 @@ export default function Plan() {
 
     <div className="row between" style={{ marginTop: 22, marginBottom: 10 }}>
       <h4 className="sec" style={{ margin: 0 }}>{t('Mesocycle')}</h4>
-      <Button size="sm" variant="tinted" icon="plus" onClick={() => mesoFormSheet({})}>{t('New')}</Button>
+      <div className="row" style={{ gap: 8 }}>
+        {/* A biblioteca precisava de uma porta: com um mesociclo ativo, a linha do painel abre a
+            tela dele, e não havia como ver os outros (foi assim que um mesociclo recém-criado
+            ficou invisível). `New` continua sendo a ação forte; `All` é a secundária. */}
+        <Button size="sm" variant="ghost" icon="list" onClick={mesoListSheet}>{t('All')}</Button>
+        <Button size="sm" variant="tinted" icon="plus" onClick={() => mesoFormSheet({})}>{t('New')}</Button>
+      </div>
     </div>
     <div className="list" style={{ marginBottom: 4 }}>
       {active ? <div className="item" onClick={() => nav('/plan/meso/' + active.id)}>
