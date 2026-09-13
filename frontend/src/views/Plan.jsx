@@ -52,7 +52,10 @@ export default function Plan() {
       <button className="iconbtn" onClick={planToolsSheet} aria-label={t('Share your plan')} title={t('Share your plan')}><Icon name="upload" /></button>
     </div>
 
-    <h4 className="sec">{t('Mesocycle')}</h4>
+    <div className="row between" style={{ marginTop: 22, marginBottom: 10 }}>
+      <h4 className="sec" style={{ margin: 0 }}>{t('Mesocycle')}</h4>
+      <Button size="sm" variant="tinted" icon="plus" onClick={() => mesoFormSheet({})}>{t('New')}</Button>
+    </div>
     <div className="list" style={{ marginBottom: 4 }}>
       {active ? <div className="item" onClick={() => nav('/plan/meso/' + active.id)}>
         <div className="grow">

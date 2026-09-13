@@ -69,6 +69,9 @@ const P = {
   /* ---- actions ---- */
   plus: <path d="M12 5.2v13.6M5.2 12h13.6" />,
   minus: <path d="M5.2 12h13.6" />,
+  // Tres pontos do menu de acoes. Pontos solidos no peso do traco (1.7 no grid de 24),
+  // como os do `list`: um icone isolado com traco fino leria como falha de renderizacao.
+  more: <><circle cx="6" cy="12" r="1.15" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none" /><circle cx="18" cy="12" r="1.15" fill="currentColor" stroke="none" /></>,
   check: <path d="m4.8 12.6 4.8 4.8L19.2 6.8" />,
   checkCircle: <><circle cx="12" cy="12" r="8.2" /><path d="m8.2 12.2 2.7 2.7 5.1-5.4" /></>,
   xmark: <path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8" />,
@@ -107,6 +110,9 @@ const P = {
   // what reads as a finish line at 16px
   flag: <><path d="M6 20.4V4.2" /><path d="M6.4 5.2h13v9.2h-13" /><path d="M12.9 5.2v9.2M6.4 9.8h13" /></>,
   chartLine: <path d="M3.6 20.2V4.4M3.6 20.2h16.8M6.4 16.4l3.9-4.8 3.1 2.7 5.2-6.6" />,
+  // Angulos de codigo (a visao crua em JSON): dois chevrons abertos, no mesmo desenho do
+  // `chevronRight`, sem a barra do meio — que nesta grade de 24 so encheria o vao.
+  code: <><path d="M9.6 7.2 4.8 12l4.8 4.8" /><path d="M14.4 7.2 19.2 12l-4.8 4.8" /></>,
   dot: <circle cx="12" cy="12" r="4.2" fill="currentColor" stroke="none" />,
   history: <><path d="M4.5 12.2a7.6 7.6 0 1 0 2.5-5.6" /><path d="M4.1 4.4v4.3h4.3" /><path d="M12 8.3v4.2l3.1 1.9" /></>,
   signOut: <><path d="M14.2 4.6H7a1.9 1.9 0 0 0-1.9 1.9v11a1.9 1.9 0 0 0 1.9 1.9h7.2" /><path d="m16.8 8.4 3.6 3.6-3.6 3.6M20.4 12H10.2" /></>,

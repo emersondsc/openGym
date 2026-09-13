@@ -58,14 +58,14 @@ export default function PlanRaw() {
 
   return <>
     <div className="hdr">
-      <div>
-        <h1>{title}</h1>
+      <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Plan')}><Icon name="chevronLeft" /></button>
+      <div style={{ flex: 1, margin: '0 12px' }}>
+        <h1 style={{ fontSize: 24 }}>{title}</h1>
         <div className="sub">
           {t(scope === 'meso' ? 'mesocycle.json' : scope === 'plan' ? 'plan.json' : 'state.json')}
           {payload ? ` · ${kb} KB · ${t('{0} lines', lines)}` : ''}
         </div>
       </div>
-      <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Back')}><Icon name="chevronRight" /></button>
     </div>
 
     <Segmented

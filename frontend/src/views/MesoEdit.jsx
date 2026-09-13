@@ -35,8 +35,10 @@ export default function MesoEdit() {
 
   const meso = (S.mesos || []).find(m => m.id === id)
   if (!meso) return <>
-    <div className="hdr"><div><h1>{t('Mesocycle')}</h1></div>
-      <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Back')}><Icon name="chevronRight" /></button></div>
+    <div className="hdr">
+      <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Plan')}><Icon name="chevronLeft" /></button>
+      <div style={{ flex: 1, margin: '0 12px' }}><h1 style={{ fontSize: 24 }}>{t('Mesocycle')}</h1></div>
+    </div>
     <div className="empty"><div className="ico"><Icon name="clipboard" /></div>{t('That mesocycle is not in this profile.')}</div>
   </>
 
@@ -59,9 +61,15 @@ export default function MesoEdit() {
 
   return <>
     <div className="hdr">
-      <div>
-        <h1>{meso.name}</h1>
-        <div className="sub">{meso.origin === 'assistant' ? t('mesocycle from the assistant') : t('your mesocycle')}</div>
+      <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Plan')}><Icon name="chevronLeft" /></button>
+      <div style={{ flex: 1, margin: '0 12px' }}>
+        <input className="input" defaultValue={meso.name}
+          style={{ fontWeight: 600, fontSize: 20, letterSpacing: '-.021em' }}
+          aria-label={t('Name')}
+          onChange={e => update(s => {
+            const m = s.mesos.find(x => x.id === id)
+            if (m) { m.name = e.target.value.trim() || t('Mesocycle'); m.updatedAt = new Date().toISOString() }
+          })} />
       </div>
       <button className="iconbtn" onClick={() => mesoActionsSheet(meso)} aria-label={t('More')}><Icon name="more" /></button>
     </div>
@@ -79,10 +87,12 @@ export default function MesoEdit() {
         />
       </div>
       <div className="small"><b>{w.phase}</b> · {fmtDate(w.start)} → {fmtDate(w.end)}{w.n === current?.n ? ' · ' + t('this week') : ''}</div>
-      {active && meso.activatedBy && <div className="dim small" style={{ marginTop: 8 }}>
-        {t('Active since {0}', fmtDate(String(meso.activatedAt || '').slice(0, 10)))}
-        {' · ' + t(meso.activatedBy === 'assistant' ? 'activated by the assistant' : 'activated by you')}
-      </div>}
+      <div className="dim small" style={{ marginTop: 8 }}>
+        {active && meso.activatedBy
+          ? t('Active since {0}', fmtDate(String(meso.activatedAt || '').slice(0, 10))) + ' · ' +
+            t(meso.activatedBy === 'assistant' ? 'activated by the assistant' : 'activated by you')
+          : t(meso.origin === 'assistant' ? 'mesocycle from the assistant' : 'your mesocycle')}
+      </div>
     </div>
 
     <h4 className="sec">{t('THIS WEEK')}</h4>
