@@ -55,8 +55,9 @@ export default function MesoEdit() {
 
   const activate = () => update(s => {
     if (!activateMesoState(s, id, 'user')) return
+    // Um aviso só: o toast guarda uma mensagem, e dois seguidos mostram apenas o último. A nota da
+    // semana publicada virou a linha fixa logo abaixo do botão.
     useUI.getState().toast(t('{0} is now your mesocycle', meso.name))
-    useUI.getState().toast(t('Your published week stays as it is until the next publication.'))
   })
 
   return <>
@@ -193,7 +194,12 @@ export default function MesoEdit() {
 
     <div style={{ height: 12 }} />
     {!active
-      ? <Button variant="primary" icon="check" onClick={activate}>{t('Activate this mesocycle')}</Button>
+      ? <>
+          <Button variant="primary" icon="check" onClick={activate}>{t('Activate this mesocycle')}</Button>
+          <div className="dim small" style={{ margin: '8px 2px 0', lineHeight: 1.45 }}>
+            {t('Your published week stays as it is until the next publication.')}
+          </div>
+        </>
       : <Button variant="tinted" icon="pencil" onClick={() => mesoFormSheet({ meso })}>{t('Edit')}</Button>}
     {!active && <><div style={{ height: 8 }} />
       <Button variant="ghost" icon="pencil" onClick={() => mesoFormSheet({ meso })}>{t('Edit')}</Button></>}

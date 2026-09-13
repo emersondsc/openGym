@@ -35,8 +35,8 @@ export default function Plan() {
 
   const activate = id => update(s => {
     if (!activateMesoState(s, id, 'user')) return
+    // Um aviso só: o toast guarda uma mensagem, e dois seguidos mostram apenas o último.
     useUI.getState().toast(t('{0} is now your mesocycle', (s.mesos.find(m => m.id === id) || {}).name))
-    useUI.getState().toast(t('Your published week stays as it is until the next publication.'))
   })
   // O "Importar" do mesociclo vencido usa o mesmo input escondido da folha, criado na hora.
   const pickMesoFile = () => {

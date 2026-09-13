@@ -1048,14 +1048,19 @@ export async function exportMeso(meso, ext) {
   URL.revokeObjectURL(a.href)
 }
 
-/** Ativação, com os dois avisos. Usada pelo painel, pela lista, pela tela e pelo import. */
+/** Ativação, com o aviso. Usada pelo painel, pela lista, pela tela e pelo import. */
 export function activateMeso(id) {
   update(s => {
     if (!activateMesoState(s, id, 'user')) return
+    // UM aviso só: o toast guarda uma mensagem e a segunda substitui a primeira na hora — dois
+    // `toast()` seguidos faziam o usuário nunca ver qual mesociclo passou a valer. A nota da
+    // semana publicada virou linha fixa (na folha e na tela), que é onde ela é lida.
     toast(t('{0} is now your mesocycle', (s.mesos.find(m => m.id === id) || {}).name))
-    toast(t('Your published week stays as it is until the next publication.'))
   })
 }
+
+/** A nota que era o segundo toast, agora fixa onde a ativação acontece. */
+const WEEK_NOTE = 'Your published week stays as it is until the next publication.'
 
 export const mesoListSheet = () => ui().openSheet(close => <MesoList close={close} />)
 
@@ -1092,6 +1097,7 @@ function MesoList({ close }) {
       onChange={ev => { const f = ev.target.files[0]; ev.target.value = ''; if (f) { close(); importMesoFile(f) } }} />
     <div style={{ height: 8 }} />
     <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+    <div className="dim small" style={{ margin: '12px 2px 0', lineHeight: 1.45 }}>{t(WEEK_NOTE)}</div>
   </>
 }
 
@@ -1183,7 +1189,8 @@ function MesoActions({ meso, close }) {
     </div>
     {!active && <>
       <Button variant="primary" icon="check" onClick={() => { close(); activateMeso(meso.id) }}>{t('Activate this mesocycle')}</Button>
-      <div style={{ height: 8 }} />
+      <div className="dim small" style={{ margin: '7px 2px 0', lineHeight: 1.45 }}>{t(WEEK_NOTE)}</div>
+      <div style={{ height: 12 }} />
     </>}
     <Button variant="tinted" icon="pencil" onClick={() => { close(); mesoFormSheet({ meso }) }}>{t('Edit')}</Button>
     <div style={{ height: 8 }} />
@@ -1260,10 +1267,7 @@ function MesoForm({ meso, close }) {
     })
     close()
     toast(base ? t('Mesocycle updated') : t('Mesocycle created'))
-    if (criado) {
-      toast(t('{0} is now your mesocycle', criado))
-      toast(t('Your published week stays as it is until the next publication.'))
-    }
+    if (criado) toast(t('{0} is now your mesocycle', criado))
   }
 
   return <>
