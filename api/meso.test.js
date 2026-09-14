@@ -342,6 +342,118 @@ describe('activateMeso', () => {
   });
 });
 
+describe('deleteMeso', () => {
+  // O corpo de um DELETE é vazio: `raw: ''` é o que o `readRawBody` devolve de verdade quando não
+  // há corpo, e é o que a assinatura do agente cobre (sha256 do vazio).
+  const del = (over = {}) => harness({ raw: '', ...over });
+
+  test('sem sessão: 401 e nada muda', async () => {
+    writeState({ mesos: [mesoOk()] });
+    const { H, res } = del({ session: null });
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-09-01']);
+    assert.equal(res.code, 401);
+    assert.equal(JSON.parse(fs.readFileSync(STATE, 'utf8')).mesos.length, 1);
+  });
+  test('sem If-Match: 428 e nada muda', async () => {
+    writeState({ mesos: [mesoOk()] });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: {} }, res, ['meso-2026-09-01']);
+    assert.equal(res.code, 428);
+    assert.equal(JSON.parse(fs.readFileSync(STATE, 'utf8')).mesos.length, 1);
+  });
+  test('base velha: 409 STALE_STATE com o rev atual', async () => {
+    writeState({ mesos: [mesoOk()] });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '2' } }, res, ['meso-2026-09-01']);
+    assert.equal(res.code, 409);
+    assert.equal(res.body.code, 'STALE_STATE');
+    assert.equal(res.body.rev, 3);
+  });
+  test('id fora do formato: 400 BAD_MESO_ID (sem tocar no estado)', async () => {
+    writeState({ mesos: [mesoOk()] });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-09-01-AB']);
+    assert.equal(res.code, 400);
+    assert.equal(res.body.code, 'BAD_MESO_ID');
+    assert.equal(JSON.parse(fs.readFileSync(STATE, 'utf8')).rev, 3);
+  });
+  test('id inexistente: 404 MESO_NOT_FOUND com a lista', async () => {
+    writeState({ mesos: [mesoOk()] });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-01-01']);
+    assert.equal(res.code, 404);
+    assert.equal(res.body.code, 'MESO_NOT_FOUND');
+    assert.deepEqual(res.body.mesos, ['meso-2026-09-01']);
+    assert.equal(JSON.parse(fs.readFileSync(STATE, 'utf8')).rev, 3, 'recusa não grava');
+  });
+  test('apaga só o mesociclo pedido, com extras e carimbos intactos nos outros', async () => {
+    writeState({
+      mesos: [
+        mesoOk({ id: 'meso-2026-08-01', name: 'Antigo', cargas: { a: 1 } }),
+        mesoOk({ id: 'meso-2026-09-01', activatedBy: 'assistant', activatedAt: '2026-09-01T10:00:00Z' })
+      ],
+      activeMeso: 'meso-2026-09-01'
+    });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-08-01']);
+    assert.equal(res.code, 200);
+    assert.equal(res.body.meta.deleted, true);
+    assert.equal(res.body.meta.wasActive, false);
+    const st = JSON.parse(fs.readFileSync(STATE, 'utf8'));
+    assert.deepEqual(st.mesos.map(m => m.id), ['meso-2026-09-01']);
+    assert.equal(st.mesos[0].activatedBy, 'assistant', 'o resto do objeto passa inteiro');
+    assert.equal(st.activeMeso, 'meso-2026-09-01');
+  });
+  test('apagar o ATIVO limpa o ponteiro e não promove o anterior', async () => {
+    writeState({
+      mesos: [mesoOk({ id: 'meso-2026-08-01' }), mesoOk({ id: 'meso-2026-09-01' })],
+      activeMeso: 'meso-2026-09-01', mesoPrev: 'meso-2026-08-01'
+    });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-09-01']);
+    assert.equal(res.body.meta.wasActive, true);
+    const st = JSON.parse(fs.readFileSync(STATE, 'utf8'));
+    assert.equal(st.activeMeso, null);
+    assert.equal(st.mesoPrev, 'meso-2026-08-01', 'o anterior continua guardado, só não é ativado');
+  });
+  test('apagar o anterior limpa o mesoPrev', async () => {
+    writeState({
+      mesos: [mesoOk({ id: 'meso-2026-08-01' }), mesoOk({ id: 'meso-2026-09-01' })],
+      activeMeso: 'meso-2026-09-01', mesoPrev: 'meso-2026-08-01'
+    });
+    const { H, res } = del();
+    await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-08-01']);
+    const st = JSON.parse(fs.readFileSync(STATE, 'utf8'));
+    assert.equal(st.activeMeso, 'meso-2026-09-01');
+    assert.equal(st.mesoPrev, null);
+  });
+  test('auditoria e linha de log próprias', async () => {
+    writeState({ mesos: [mesoOk()], activeMeso: 'meso-2026-09-01' });
+    const lines = [];
+    const orig = console.log;
+    console.log = (...a) => lines.push(a.join(' '));
+    try {
+      const { H, res } = del();
+      await H.deleteMeso({ method: 'DELETE', headers: { 'if-match': '3' } }, res, ['meso-2026-09-01']);
+    } finally { console.log = orig; }
+    assert.ok(lines.some(l => l.startsWith('[og-meso] op=delete-meso') && l.includes('wasActive=true')));
+    const audit = fs.readFileSync(path.join(TMP, 'audit.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    const last = audit[audit.length - 1];
+    assert.equal(last.action, 'delete-meso');
+    assert.equal(last.uid, UID);
+    assert.equal(last.mesoId, 'meso-2026-09-01');
+    assert.equal(last.verified, 'signature');
+  });
+  test('a rota existe no roteador (não é o 404 do servidor)', () => {
+    const hit = S.matchRoute('DELETE', '/api/plan/meso/meso-2026-09-01');
+    assert.ok(hit, 'padrão do DELETE registrado');
+    // O `matchRoute` procura handler de padrão SÓ em ROUTINE_HANDLERS: comparar com o mapa é o que
+    // pega o erro que já aconteceu uma vez (rota no ar respondendo 404).
+    assert.equal(hit.handler, S.ROUTINE_HANDLERS.deleteMeso);
+    assert.deepEqual(hit.params, ['meso-2026-09-01']);
+  });
+});
+
 describe('getMeso', () => {
   test('sem sessão: 401; sem estado: 404; com estado: biblioteca + ponteiros', async () => {
     let { H, res } = harness({ session: null });

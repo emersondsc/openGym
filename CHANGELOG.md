@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.1 — 2026-09-14
+
+O mesociclo passa a poder ser apagado: a biblioteca deixa de ser só crescente. O botão está na lista
+e o assistente ganhou a rota que faltava para desfazer uma publicação.
+
+- 🗑️ **Apagar um mesociclo** na folha "Mesocycles": lixeira na linha, confirmação com o nome do
+  mesociclo, e o aviso de sucesso muda quando ele era o **ativo** — nesse caso você fica sem nenhum
+  em uso, e o anterior **não** é ativado sozinho (ativar é gesto seu, não efeito colateral de apagar).
+- 🔌 **`DELETE /api/plan/meso/:id`** para o agente: `If-Match` obrigatório, identidade de máquina
+  verificada, auditoria (`delete-meso`, com `wasActive`) e a linha `[og-meso]` no log. `404
+  MESO_NOT_FOUND` quando o id não está na biblioteca.
+- 🧪 **Testes:** 10 novos no servidor e 5 no frontend.
+
 ## v1.3.0 — 2026-09-13
 
 O plano de médio prazo passa a existir dentro do app. Até aqui o mesociclo vivia só no agente que

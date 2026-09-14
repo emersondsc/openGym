@@ -376,7 +376,8 @@ setInterval(() => { for (const [k, v] of presence) if (Date.now() - v.updatedAt 
 const PATTERNS = [
   { method: 'PATCH',  re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'patchRoutine' },
   { method: 'DELETE', re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'deleteRoutine' },
-  { method: 'POST',   re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})\/activate$/, params: ['mid'], handler: 'activateMeso' }
+  { method: 'POST',   re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})\/activate$/, params: ['mid'], handler: 'activateMeso' },
+  { method: 'DELETE', re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})$/, params: ['mid'], handler: 'deleteMeso' }
 ];
 // Preenchido depois de `R()`, porque os handlers de rotina precisam do roteador pronto.
 const ROUTINE_HANDLERS = {};
@@ -430,6 +431,7 @@ const routes = {
 
   // Mesociclo: o app escreve pelo estado (PUT /api/data); estas rotas são do assistente e do
   // `dump` do escritor. Overwrite total, sem regra sobre quem escreve (spec_meso_no_app §RF-12).
+  // O DELETE é a exceção que não tem corpo: o id vai no caminho (`PATTERNS`) e a base no If-Match.
   'PUT /api/plan/meso': (req, res) => ROUTINE_HANDLERS.putMeso(req, res),
   'GET /api/plan/meso': (req, res) => ROUTINE_HANDLERS.getMeso(req, res),
 

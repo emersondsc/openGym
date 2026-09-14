@@ -23,7 +23,7 @@ import { MOBILE, shareExport } from './lib/mobile.js'
 import { unitOfCfg, unitOfEntry, normUnit } from './lib/units.js'
 import UnitChip from './components/UnitChip.jsx'
 import {
-  normalizeMeso, activateMesoState, mesoState, todayInMeso, extrasOf, shiftWeeks, buildWeeks,
+  normalizeMeso, activateMesoState, removeMesoState, mesoState, todayInMeso, extrasOf, shiftWeeks, buildWeeks,
   addDays, LIMITS, mesoBytes, pickMeso, uniqueMesoId
 } from './lib/meso.js'
 import {
@@ -1062,6 +1062,28 @@ export function activateMeso(id) {
 /** A nota que era o segundo toast, agora fixa onde a ativação acontece. */
 const WEEK_NOTE = 'Your published week stays as it is until the next publication.'
 
+/**
+ * Apagar um mesociclo. O caminho é o do app — `update()` e o push normal do estado —, o mesmo da
+ * criação e da edição; a rota `DELETE /api/plan/meso/:id` existe para o assistente. O aviso muda
+ * quando o mesociclo apagado era o ativo, porque aí o efeito é outro: fica sem nenhum em uso.
+ * Um toast só (dois seguidos, o segundo substitui o primeiro e o usuário não lê nenhum).
+ */
+export function deleteMeso(meso) {
+  const active = S().activeMeso === meso.id
+  confirmSheet({
+    title: t('Delete “{0}”?', meso.name),
+    message: active
+      ? t('This is your active mesocycle. Nothing is active after this, and it cannot be undone.')
+      : t('It leaves your library, here and on your other devices. This cannot be undone.'),
+    confirmText: t('Delete'), danger: true,
+    onConfirm: () => {
+      if (!(S().mesos || []).some(m => m.id === meso.id)) return
+      update(s => { removeMesoState(s, meso.id) })
+      toast(active ? t('{0} deleted. No active mesocycle.', meso.name) : t('{0} deleted', meso.name))
+    }
+  })
+}
+
 export const mesoListSheet = () => ui().openSheet(close => <MesoList close={close} />)
 
 function MesoList({ close }) {
@@ -1071,7 +1093,8 @@ function MesoList({ close }) {
   // Ativo no topo, o resto por data de início decrescente.
   const list = [...(st.mesos || [])].sort((a, b) =>
     a.id === st.activeMeso ? -1 : b.id === st.activeMeso ? 1 : (b.start || '').localeCompare(a.start || ''))
-  // Um toque ATIVA; o `>` (alvo próprio, com stopPropagation) abre a tela.
+  // Um toque ATIVA; o `>` (alvo próprio, com stopPropagation) abre a tela; a lixeira apaga, com
+  // confirmação. O aviso vermelho fica discreto — apagar mesociclo é raro, não é a ação da linha.
   const open = id => { close(); nav('/plan/meso/' + id) }
   return <>
     <h3>{t('Mesocycles')}</h3>
@@ -1084,6 +1107,10 @@ function MesoList({ close }) {
             <div className="ss">{fmtDate(m.start)} – {fmtDate(m.end)} · {t(s === 'ended' ? 'ended' : s === 'future' ? 'starts soon' : 'in progress')}</div>
           </div>
           {m.id === st.activeMeso && <Icon name="check" className="accent" />}
+          <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, color: 'var(--red)' }}
+            onClick={e => { e.stopPropagation(); deleteMeso(m) }}
+            aria-label={t('Delete')}>
+            <Icon name="trash" /></button>
           <button className="iconbtn" onClick={e => { e.stopPropagation(); open(m.id) }} aria-label={t('Open')}>
             <Icon name="chevronRight" /></button>
         </div>

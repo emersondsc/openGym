@@ -1,0 +1,833 @@
+# Spec: publicação do micro no openGym pelo Hermes — v2
+
+> Contrato e implementação da **publicação do micro**: uma operação do servidor que recebe as
+> rotinas da semana, cada uma com o dia em que cai, e grava tudo numa escrita só.
+>
+> Documento permanente de operação (nomenclatura, fluxo, invariantes): **`docs/MICRO.md`**.
+>
+> **v2 — o que mudou da v1** (41 achados de 2 revisões, 14 bloqueantes):
+> **1)** a API ficou **funcional e autônoma**: não existe nenhuma regra de autoria ("rotina do
+> agente"), nenhuma política de perguntar ao usuário e nenhuma inferência de posse — a operação
+> **sobrescreve os dias declarados**, relata o que estava lá e aplica o que for autorizado
+> (decisão do usuário, 12/09/2026). **2)** correção de uma semana já publicada passou a existir
+> (`autorizar.routines`). **3)** janela de uma semana ISO: o que não for declarado dentro dela perde
+> a marcação (fim das datas zumbi). **4)** a API nunca muda o que uma data passada resolve
+> (congelamento). **5)** idempotência com TTL na leitura, dono da chave e verificação contra o
+> estado. **6)** ordem real das checagens, com a idempotência **antes** do `If-Match`.
+> **7)** cliente: `--uid` explícito, trava de alvo, erro de rede com código próprio, validador
+> próprio. **8)** seção de **deploy e rollback**. **9)** tabela de recusas completa.
+
+## Contexto e Objetivo
+
+Hoje o micro nasce no Hermes (plano + relatório com os porquês) e o openGym não sabe dele. O desenho
+da BACKLOG-02 mandava o **PWA** receber as rotinas, fazer o merge e gravar o estado inteiro com
+`PUT /api/data`: o navegador virava autor de um dado que o motor gerou, e a publicação dependia do
+app aberto na hora.
+
+Esta spec entrega a **operação do servidor** que o agente usa para publicar, com identidade de
+máquina, idempotência, auditoria e recusa explícita. O que atravessa a fronteira é só o que o app
+renderiza: as rotinas e o dia de cada uma.
+
+- Repo: `/mnt/drivebackup/apps/openGym/openGym`, branch `emerson-custom`
+- Servidor: Node 22 — `api/server.js`, `api/routines.js`, `api/catalog.js` (+ `api/plan-micro.js`, novo)
+- App: React PWA (`frontend/`) — **nenhuma mudança nesta entrega** (nem `nginx.conf`, salvo o limite de corpo)
+- Agente: `~/.hermes/workout/scripts/opengym_writer.py` (cliente autenticado que já existe)
+- Substitui o **passo 6** da BACKLOG-02 (o app gravando com `PUT`). O gatilho no app e a geração do
+  micro (LLM, `hermes_api.py`, `POST /api/hermes/micro`) continuam como estão.
+
+## Escopo
+
+- **Inclui**
+  - `POST /api/plan/micro` — N rotinas com o dia de cada uma, numa gravação só.
+  - Identidade de máquina obrigatória, `If-Match`, `Idempotency-Key`, auditoria, códigos de recusa.
+  - Substituição autorizada de rotina publicada (`autorizar.routines`) — via de correção.
+  - Janela de uma semana ISO com limpeza do que não foi declarado; congelamento do que é passado.
+  - Cliente: `Api.publish_micro()` + subcomando `publish` (com `--uid` explícito e trava de alvo).
+  - `web/nginx.conf`: `client_max_body_size 8m` (o default de 1 MB não comporta o estado, que já tem 275.945 B).
+  - `docs/MICRO.md`: documentação permanente (nomenclatura, fluxo, invariantes, deploy, diagnóstico).
+  - Seção **Deploy e rollback** (o `docker compose pull` de hoje apaga a rota e a autenticação de agente).
+  - Testes `node --test` dos casos de aceite, rodando **no host**.
+  - Atualização do passo 6 da BACKLOG-02 no `docs/backlog.md`.
+- **Não inclui**
+  - **Como o assistente age**: quando perguntar ao usuário, o que fazer com um dia ocupado, como
+    redigir a pergunta, o que fazer com um treino faltado. Isso o usuário define **com o assistente**,
+    fora desta spec; a API só informa e obedece ao que for autorizado.
+  - Gerar o micro (LLM, persona, análise, prompt) — BACKLOG-02 / `spec_micro_meso_via_app.md`.
+  - O gatilho no app (botão, stepper da Fase 2, poll de status) — BACKLOG-02.
+  - Apagar rotinas (nada é apagado; a correção substitui o conteúdo do mesmo id).
+  - Qualquer regra na API de rotina ligando autoria a dia: `PATCH`/`DELETE`/`GET /api/routines` ficam como estão.
+  - Mudar `PUT /api/data` e o caminho de escrita do PWA.
+  - Backup do `audit.jsonl` e do `micro-idem.json` no snapshot das 06:00 (família da BACKLOG-13;
+    registrado em Riscos, não resolvido aqui).
+
+## Decisões do usuário (produto)
+
+| # | Decisão | Efeito visível |
+|---|---|---|
+| U1 | A publicação **sobrescreve os dias declarados**; a API não distingue rotina do agente de rotina do usuário | Mesma regra para qualquer rotina: o dia que a publicação declara passa a apontar para ela |
+| U2 | A **lista de segunda a domingo** pode ser substituída pela semana publicada (mapa `grade`), e dia não usado pode virar descanso — decisão de quem publica, declarada no payload | A aba Plan mostra a semana publicada |
+| U3 | **Nada é apagado**: rotina de semana antiga e histórico de treino ficam; corrigir é substituir o conteúdo do mesmo id | A lista cresce; nenhum treino some |
+| U4 | O app **deixa de escrever o micro** (convenção; ver Riscos: não há guarda no servidor) | A semana aparece mesmo com o app fechado, na próxima vez que você abrir |
+| U5 | O dia vem **atrelado à rotina publicada**; nenhuma regra genérica diz que rotina publicada tem dia | Publicar rotina sem `dias` é permitido e nenhum dia aponta para ela |
+| U6 | **A API não tem política.** Ela relata o que ocupa o dia e aplica o que vier autorizado; perguntar ou não é do assistente | Nada é sobrescrito sem que a requisição autorize explicitamente |
+
+## Decisões assumidas
+
+Decididas por mim por serem detalhe de implementação. Nenhuma muda o que o usuário vê.
+
+- **A1 — Rota `POST /api/plan/micro`** na tabela exata de rotas do `server.js`. O path é o que a
+  assinatura do ator cobre, então não pode variar (barra final, query) sem quebrar o cliente.
+- **A2 — Módulo novo `api/plan-micro.js`** (o `routines.js` tem 469 linhas). Devolve `{code, body}`; quem responde é o `server.js`.
+- **A3 — Idempotência em `data/micro-idem.json`** (`0600`, `atomicWrite`, TTL 24 h **aplicada também na leitura**, 200 registros), não no arquivo de estado (o PWA baixa o estado inteiro e o `PUT` reescreveria o campo). O registro guarda `key`, `bodyHash`, `uid`, `rev` e `meta`.
+- **A4 — Assinatura do ator obrigatória** (`X-OG-Actor` + `X-OG-Actor-Sig`, `verified: "signature"`). O par de chaves real é o arquivo `/data/agent.key` (o cliente deriva `HMAC(SECRET,"opengym-agent-v1")` justamente porque não lê o arquivo, que é root 0600) — ver Riscos.
+- **A5 — Formato do id exigido e conferido**: `r_<slug>_S<n>_<hash4>` com
+  `hash4 = sha256(meso_id + semana + slug).slice(0,4)`; o servidor **recomputa** e recusa
+  (`BAD_ROUTINE_ID_HASH`) quando não casa. O id também casa com `^[A-Za-z0-9_-]{1,64}$`, então
+  `PATCH`/`DELETE /api/routines/:id` alcançam a rotina publicada. É formato de id desta operação,
+  não regra de autoria.
+- **A6 — O servidor nunca apaga rotina.** Corrigir uma semana é **substituir o conteúdo do mesmo id**,
+  com `autorizar.routines` (RF-8). `sweepRoutineRefs` continua existindo só para o `DELETE` explícito.
+- **A7 — `prog` ausente vira `"off"`** na rotina publicada (progressão nasce desligada; BACKLOG-06).
+- **A8 — 1..10 rotinas por publicação** (meso de 3 a 6 dias, mais folga). Cinco é política do motor.
+- **A9 — Datas ISO `YYYY-MM-DD` no fuso `America/Sao_Paulo`**, geradas pelo motor; o servidor valida
+  formato e janela, e usa `America/Sao_Paulo` só para saber o que já é passado (congelamento).
+- **A10 — `report_id` opaco** (opcional) entra na linha de auditoria; o relatório em si fica no Hermes.
+- **A11 — Ordem canônica das checagens** (a mesma no código e nesta spec): sessão → corpo →
+  **idempotência** → `If-Match` → catálogo → forma → conflito → gravação. A idempotência vem antes do
+  `If-Match` de propósito: um retry depois de resposta perdida traz o `rev` velho e **tem** de
+  receber replay em vez de `409`.
+- **A12 — Log de uma linha no `stdout`** (`[og-routine] op=publish-micro …`) e uma linha no
+  `audit.jsonl` com `action`, `meso_id`, `semana`, rotinas, datas, grade, `autorizar`, a chave de
+  idempotência, `report_id` e `rev` antes/depois.
+- **A13 — `201` na primeira publicação, `200 {replayed:true}` no replay.**
+- **A14 — A chave de idempotência é derivada do corpo canônico** — e o cliente tem **uma** função que
+  gera os bytes do corpo e a chave, para os dois casarem byte a byte.
+- **A15 — Uma publicação vive numa semana ISO** (segunda a domingo). Todas as datas declaradas têm de
+  cair na mesma semana; é o que permite limpar o que não foi declarado sem tocar em outra semana.
+- **A16 — A API não muda o passado**: antes de trocar a grade, o servidor fixa em `dayPlan` as datas
+  de hoje até a véspera da janela, com o valor que elas resolviam antes (ou `rest`). Sem isso, trocar
+  a grade mudaria retroativamente o treino de dias que já passaram ou que ainda estão por vir nesta semana.
+- **A17 — Publicação com treino em andamento é recusada** (`409 WORKOUT_IN_PROGRESS`), usando o mapa
+  `presence` (`POST /api/activity`, TTL 70 s) quando a publicação toca a data de hoje. O estado em
+  disco não tem `active` (o `PUT` o remove), então `S.active` não serve para isso.
+- **A18 — `If-Match: *` é recusado** aqui (`412 IF_MATCH_WILDCARD`): a guarda de base velha não pode
+  ser dispensada na operação que grava N rotinas.
+- **A19 — `503 CATALOG_UNAVAILABLE` é defensivo e praticamente inalcançável** (o boot faz
+  `process.exit(1)` sem catálogo e o mapa fica memoizado). Fica no código, sai dos critérios de aceite.
+- **A20 — Cliente sem herança do validador de intenção do `apply`**: o `publish` tem validador
+  próprio (`validate_publish_payload`), porque `validate_intent` exige `op ∈ {patch,unfreeze,noop}`.
+- **A21 — Códigos de saída do `publish`** (estende a tabela do script): `0` ok/replay · `1` payload
+  inválido · `2` conflito que exige decisão (`PLAN_CONFLICT`) · `3` credencial/ambiente · `4` base
+  mudou (`STALE_STATE`) · `5` rede/timeout/5xx · `6` verificação pós-escrita · `7` falta `--yes` ou
+  `--target-live` · `8` id já existe (`ROUTINE_EXISTS`, corrigir com `autorizar.routines`).
+
+## Requisitos Funcionais
+
+- **RF-1.** `POST /api/plan/micro` aceita `{meso_id, semana, routines[], grade?, autorizar?, report_id?}` e grava **tudo numa escrita só**.
+- **RF-2.** Exige sessão do dono (`gymsid`) e assinatura verificada: sem assinatura → `401 ACTOR_SIGNATURE_REQUIRED`; inválida/expirada (>300 s) → `401 BAD_ACTOR_SIG`.
+- **RF-3.** Exige `Idempotency-Key` (1..128 chars): ausente → `400 IDEMPOTENCY_REQUIRED`; acima de 128 → `400 IDEMPOTENCY_KEY_TOO_LONG`. Mesma chave + mesmo corpo + **mesmo uid** + dentro de 24 h → replay `200 {replayed:true, rev, meta, currentRev, intact}` **sem escrever**; chave de outro uid ou corpo diferente → `409 IDEMPOTENCY_MISMATCH`.
+- **RF-4.** Exige `If-Match` (depois da idempotência): ausente → `428 IF_MATCH_REQUIRED`; malformado → `400 IF_MATCH_MALFORMED`; `*` → `412 IF_MATCH_WILDCARD`; diferente do `rev` → `409 STALE_STATE` com o `rev` atual.
+- **RF-5.** Forma validada com os mesmos validadores do `PATCH` (`validateRoutineBody`, `validateExEntry`), **aplicando antes os defaults do app** (`defaultExFields`), para que o mesmo payload que o `PATCH` aceita não seja recusado aqui. Cada exercício é tratado como novo (`isNewEntry: true`): `mode:"normal"` e `sg:0` são recusados.
+- **RF-6.** Exercício fora do catálogo e fora do `customEx` → `400 CATALOG_UNKNOWN_EX`; sem catálogo → `503 CATALOG_UNAVAILABLE` (defensivo, A19).
+- **RF-7.** `routines[i].id`: obrigatório, no formato de A5, **hash conferido**, único no payload e inexistente no estado — id repetido no payload → `400 DUPLICATE_ROUTINE_ID`; já existente sem autorização → `409 ROUTINE_EXISTS` com `routines:[id]`.
+- **RF-8.** **Substituição autorizada (via de correção):** o id listado em `autorizar.routines` e existente no estado é **substituído** (nome, emoji, prog, exercícios) mantendo o id — o `dayPlan`/`week` que já apontam para ele passam a valer a versão nova. Sem `autorizar.routines`, id existente é `409 ROUTINE_EXISTS`.
+- **RF-9.** **Janela de uma semana ISO (A15):** todas as datas de `routines[i].dias` caem na mesma semana (segunda a domingo); datas fora → `400 DATE_OUT_OF_WINDOW`; mais de uma data na mesma janela por rotina é permitido, o mesmo weekday duas vezes → `400 DUPLICATE_WEEKDAY`.
+- **RF-10.** **Escrita dos dias:** `dayPlan[date] = rotina` para cada data declarada; `week[weekday] = rotina` para o weekday de cada data declarada. Se o payload trouxer `grade`, ele **substitui a grade inteira** (7 chaves, valor = id de rotina do payload/estado ou `null` = descanso).
+- **RF-11.** **Limpeza dentro da janela:** `dayPlan` de datas da janela que **não** foram declaradas é removido (elas voltam à grade), e as datas removidas vêm na resposta (`meta.limpas`). Fora da janela, nada é tocado.
+- **RF-12.** **Congelamento (A16):** antes de trocar a grade, cada data de hoje (`America/Sao_Paulo`) até a véspera da janela que ainda não tenha `dayPlan` recebe o valor que resolvia antes (`week[weekday]` ou `"rest"`). As datas fixadas vêm em `meta.congeladas`.
+- **RF-13.** **Conflito é informação + autorização, nunca política:** sem autorização, ocupação em data declarada (`dayPlan` com outro valor, ou treino registrado em `workouts[].d`) → `409 PLAN_CONFLICT` com `datas[] = {date, current, kind:"routine"|"rest"|"free", trained, wanted}`; em weekday declarado na `grade` com valor diferente → `grade[] = {weekday, current, next}`. Com `autorizar.datas[]` / `autorizar.grade[]`, os itens autorizados são aplicados.
+- **RF-14.** **Aplicação atômica:** rotinas acrescentadas (ou substituídas), `dayPlan`/`week` ajustados, `rev` somado pelo servidor, `_ts` do servidor, `workouts[]`, `customEx[]`, `exWeights` e `active` intocados. Uma recusa não grava nada e não muda o `rev`.
+- **RF-15.** **Auditoria** (A12) e log de uma linha com o mesmo conteúdo essencial.
+- **RF-16.** **Nunca apaga rotina.**
+- **RF-17.** `201 {ok, rev, meta}` onde `meta` traz `action`, `actor`, `verified`, `ifMatch`, `revBefore`, `revAfter`, `stateHash`, `beforeHash`, `meso_id`, `semana`, `report_id`, `routines`, `dias`, `grade`, `congeladas`, `limpas`. Replay: `200 {ok:true, replayed:true, rev, currentRev, intact, meta}` — `intact:false` avisa que alguma rotina publicada não existe mais no estado (a publicação foi desfeita por outro caminho).
+- **RF-18.** O app recebe a publicação **sem mudança de código**: `pullState`/`pullOnReturn` adotam `week`/`dayPlan` do servidor, `adoptServerRoutines` adota a rotina que o aparelho não conhece, e `noticeIfChanged` avisa uma vez por revisão.
+
+## O contrato (o que atravessa a fronteira)
+
+### Requisição
+
+```http
+POST /api/plan/micro HTTP/1.1
+Host: opengym.edsc.fun
+Cookie: gymsid=<sessão forjada do dono>
+X-OG-Actor: agent=hermes; tool=opengym_writer; run=20260912-1830
+X-OG-Actor-Sig: t=1789254659; v1=<hmac-sha256>
+If-Match: 85
+Idempotency-Key: 3d9a…   (sha256 do MESMO corpo enviado — ver A14)
+Content-Type: application/json
+```
+
+```json
+{
+  "meso_id": "meso-2026-09-08",
+  "semana": 2,
+  "report_id": "relatorio_S2_2026-09-15",
+  "routines": [
+    { "id": "r_push_S2_9a3f", "name": "Push S2", "emoji": "🔺", "prog": "off",
+      "dias": ["2026-09-15"],
+      "ex": [ { "id": "0326", "sets": 3, "reps": "6-8", "weight": 8, "mode": "reps", "restSec": 90 },
+              { "id": "0584", "sets": 3, "reps": "6-8", "weight": 30, "mode": "reps" } ] },
+    { "id": "r_pull_S2_4b81", "name": "Pull S2", "emoji": "🔻", "prog": "off",
+      "dias": ["2026-09-19"], "ex": [ { "id": "0585", "sets": 3, "reps": "6-8", "weight": 200, "mode": "reps" } ] }
+  ],
+  "grade": { "1": null, "2": "r_push_S2_9a3f", "3": null, "4": null, "5": null, "6": "r_pull_S2_4b81", "0": null },
+  "autorizar": { "datas": ["2026-09-15"], "grade": ["2"], "routines": ["r_push_S2_9a3f"] }
+}
+```
+
+- `dias` é opcional (U5); `[]` = rotina de reserva, sem dia.
+- `grade` é opcional; quando presente, **as 7 chaves** (`"0"`..`"6"`, numeração do `getDay()` do JS: **domingo = 0**) e o mapa inteiro substitui a grade.
+- `autorizar` é opcional; cada lista libera exatamente o que nomeia.
+- `routines[i].dias` com `"2026-09-15"` = terça; a conversão ISO ↔ `getDay()` está na tabela do `docs/MICRO.md` §2 e vale para `grade`.
+
+### Resposta
+
+```json
+{ "ok": true, "rev": 86, "meta": {
+  "action": "publish-micro", "actor": "hermes", "verified": "signature", "ifMatch": "85",
+  "revBefore": 85, "revAfter": 86, "stateHash": "…", "beforeHash": "…",
+  "meso_id": "meso-2026-09-08", "semana": 2, "report_id": "relatorio_S2_2026-09-15",
+  "routines": ["r_push_S2_9a3f", "r_pull_S2_4b81"], "dias": ["2026-09-15", "2026-09-19"],
+  "grade": { "2": "r_push_S2_9a3f", "6": "r_pull_S2_4b81" },
+  "congeladas": ["2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12", "2026-09-13", "2026-09-14"],
+  "limpas": [] } }
+```
+
+Replay: `200 {"ok":true,"replayed":true,"rev":86,"currentRev":91,"intact":true,"meta":{…}}`.
+
+### Recusas
+
+| HTTP | code | quando |
+|---|---|---|
+| 400 | `BAD_JSON`, `BAD_BODY`, `BAD_MESO_ID`, `BAD_SEMANA`, `BAD_ROUTINES`, `BAD_ROUTINE`, `BAD_ROUTINE_ID`, `BAD_ROUTINE_ID_HASH`, `DUPLICATE_ROUTINE_ID`, `BAD_NAME`, `BAD_EMOJI`, `BAD_PROG`, `BAD_EX`, `EX_ID_REQUIRED`, `DUPLICATE_EX`, `CATALOG_UNKNOWN_EX`, `BAD_SETS`, `BAD_REPS`, `BAD_WEIGHT`, `BAD_SEC`, `BAD_MIN`, `BAD_SPEED`, `BAD_REST`, `BAD_UNIT`, `BAD_MODE`, `BAD_SG`, `BAD_FLAG`, `BAD_FIELD`, `MODE_TIME_NO_SEC`, `MODE_CARDIO_INCOMPLETE`, `SIDE_ON_TIME`, `BAD_DATE`, `DATE_OUT_OF_WINDOW`, `DUPLICATE_WEEKDAY`, `BAD_GRADE`, `IDEMPOTENCY_REQUIRED`, `IDEMPOTENCY_KEY_TOO_LONG`, `IF_MATCH_MALFORMED`, `BAD_AUTORIZAR` | forma, janela, grade ou chave |
+| 401 | `UNAUTH`, `ACTOR_SIGNATURE_REQUIRED`, `BAD_ACTOR_SIG` | sessão e identidade |
+| 404 | — (corpo `{error:"not found"}`) | **rota não implantada** (ver Deploy) |
+| 409 | `PLAN_CONFLICT`, `ROUTINE_EXISTS`, `STALE_STATE`, `IDEMPOTENCY_MISMATCH`, `NO_STATE`, `WORKOUT_IN_PROGRESS` | estado |
+| 412 | `IF_MATCH_WILDCARD` | `If-Match: *` |
+| 413 | — (nginx) | corpo acima de `client_max_body_size` |
+| 428 | `IF_MATCH_REQUIRED` | sem `If-Match` |
+| 503 | `CATALOG_UNAVAILABLE` | defensivo (A19) |
+| 500 | `{error:"server error"}` | exceção (o `server.js` já captura) |
+
+Qualquer `400` de forma significa "corrija o payload e reenvie"; a lista existe para o cliente
+escolher a mensagem, não para ele decidir se tenta de novo.
+
+## Como o app recebe (sem mudar o app)
+
+| Onde | O que já faz |
+|---|---|
+| `frontend/src/store/useStore.js:238` `pullState()` | Com `serverRev > rev` local e nada pendente, adota o estado do servidor inteiro (`week`/`dayPlan` inclusos); com dados locais, mescla |
+| `frontend/src/store/useStore.js:133` `pullOnReturn()` | Relê ao voltar para a frente (BACKLOG-09), no máximo 1×/20 s, sem empurrar |
+| `frontend/src/lib/plan-merge.js:34` `adoptServerRoutines()` | Rotina que o aparelho não conhece → adota a do servidor (caminho da rotina publicada) |
+| `frontend/src/store/useStore.js:119` `noticeIfChanged()` | Toast "Plan updated — your own edits were kept." (1× por revisão) |
+| `frontend/src/lib/history.js` `effectiveRoutineId()` / `api/server.js:136` | `dayPlan[data]` manda; sem ele, cai no `week[weekday]` — por isso a publicação escreve os dois |
+
+## Detalhe de Implementação (nível código)
+
+### 1. `api/plan-micro.js` (novo)
+
+```js
+// api/plan-micro.js — publicação do micro: N rotinas, cada uma com os dias em que cai, numa
+// gravação só.
+//
+// Especificado em docs/specs/spec_publicacao_micro.md (v2); operação e nomenclatura em docs/MICRO.md.
+// Par do lado agente: ~/.hermes/workout/scripts/opengym_writer.py (Api.publish_micro).
+//
+// Sem política e sem autoria: a operação sobrescreve os dias que o payload declara, relata o que
+// estava lá e aplica o que vier em `autorizar`. Não há regra "rotina do agente".
+//
+// Não escreve no socket: devolve {code, body} e quem responde é o server.js.
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  canon, sha256, parseIfMatch, checkIfMatch, withState,
+  validateRoutineBody, validateExEntry, defaultExFields, stripCrossModeFields, loadCatalog
+} from './routines.js';
+
+export const AGENT_ID_RE = /^r_([a-z0-9]+)_S(\d{1,2})_([0-9a-z]{4})$/;   // A5
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;      // igual ao PATTERNS de server.js (PATCH/DELETE)
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MESO_RE = /^meso-\d{4}-\d{2}-\d{2}(-[0-9a-z]{1,12}){0,2}$/;
+const MAX_ROUTINES = 10, MAX_DIAS = 7;
+const TZ = 'America/Sao_Paulo';
+const IDEM_FILE = 'micro-idem.json', IDEM_TTL_MS = 24 * 3600 * 1000, IDEM_MAX = 200;
+
+/** `getDay()` do JS: domingo = 0. É a chave de `S.week` e de `grade`. */
+const weekdayOf = iso => String(new Date(iso + 'T12:00:00').getDay());
+const addDays = (iso, n) => {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+/** Segunda da semana ISO de `iso`. */
+function weekStart(iso) {
+  const wd = new Date(iso + 'T12:00:00Z').getUTCDay();     // 0=dom
+  return addDays(iso, wd === 0 ? -6 : 1 - wd);
+}
+/** Hoje em São Paulo, sem depender do TZ do container. */
+function todaySP() {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date());
+  const g = t => p.find(x => x.type === t)?.value;
+  return `${g('year')}-${g('month')}-${g('day')}`;
+}
+export function agentIdParts(id) {
+  const m = AGENT_ID_RE.exec(String(id || ''));
+  return m ? { slug: m[1], semana: +m[2], hash4: m[3] } : null;
+}
+export function expectedHash4(mesoId, semana, slug) {
+  return sha256(String(mesoId) + String(semana) + String(slug)).slice(0, 4);
+}
+
+/* ---------------------------------------------------------------- idempotência (A3, RF-3) */
+
+function readIdem(dir) {
+  try {
+    const arr = JSON.parse(fs.readFileSync(path.join(dir, IDEM_FILE), 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function writeIdem(dir, rec) {
+  const now = Date.now();
+  const keep = readIdem(dir).filter(x => x && now - (x.at || 0) < IDEM_TTL_MS && x.key !== rec.key);
+  keep.push(rec);
+  const f = path.join(dir, IDEM_FILE), tmp = f + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(keep.slice(-IDEM_MAX)), { mode: 0o600 });
+  fs.renameSync(tmp, f);          // falha aqui é propagada: a resposta diz que a chave não ficou
+}
+/** null | {replay} | {mismatch:true} — TTL aplicada na LEITURA (v2, achado B6). */
+export function idemLookup(dir, key, bodyHash, uid) {
+  const rec = readIdem(dir).find(x => x.key === key);
+  if (!rec) return null;
+  if (Date.now() - (rec.at || 0) > IDEM_TTL_MS) return null;
+  if (rec.bodyHash !== bodyHash || rec.uid !== uid) return { mismatch: true };
+  return { replay: rec };
+}
+/** Alguma rotina publicada sumiu do estado? (avisa o agente que o replay não é mais verdade) */
+const stillIntact = (S, ids) => (ids || []).every(id => (S.routines || []).some(r => r.id === id));
+
+/* ---------------------------------------------------------------- validação (RF-5..RF-9) */
+
+export function validatePublish(body, catalog, custom, S) {
+  const bad = (code, field, message, allowed) => ({ code, field, message, ...(allowed ? { allowed } : {}) });
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return bad('BAD_BODY', null, 'body must be an object');
+  if (typeof body.meso_id !== 'string' || !MESO_RE.test(body.meso_id)) return bad('BAD_MESO_ID', 'meso_id', 'meso_id must look like meso-YYYY-MM-DD[-hash]');
+  if (!Number.isInteger(body.semana) || body.semana < 1 || body.semana > 52) return bad('BAD_SEMANA', 'semana', 'semana must be an integer 1..52');
+  if (body.report_id !== undefined && (typeof body.report_id !== 'string' || body.report_id.length > 120)) {
+    return bad('BAD_BODY', 'report_id', 'report_id must be a string of at most 120 chars');
+  }
+  if (!Array.isArray(body.routines) || body.routines.length < 1 || body.routines.length > MAX_ROUTINES) {
+    return bad('BAD_ROUTINES', 'routines', `routines must be an array of 1..${MAX_ROUTINES}`);
+  }
+  const ids = new Set(), dates = [];
+  for (let i = 0; i < body.routines.length; i++) {
+    const r = body.routines[i], where = `routines[${i}]`;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return bad('BAD_ROUTINE', where, `${where} must be an object`);
+    const parts = agentIdParts(r.id);
+    if (typeof r.id !== 'string' || !ID_RE.test(r.id) || !parts) {
+      return bad('BAD_ROUTINE_ID', `${where}.id`, `${where}.id must be r_<slug>_S<n>_<hash4>`);
+    }
+    if (parts.hash4 !== expectedHash4(body.meso_id, body.semana, parts.slug)) {
+      return bad('BAD_ROUTINE_ID_HASH', `${where}.id`,
+        `${where}.id hash does not match sha256(meso_id + semana + slug)[0..4]`);
+    }
+    if (ids.has(r.id)) return bad('DUPLICATE_ROUTINE_ID', `${where}.id`, `duplicate id "${r.id}"`);
+    ids.add(r.id);
+    if (typeof r.name !== 'string' || !r.name.trim()) return bad('BAD_NAME', `${where}.name`, 'name is required');
+    if (typeof r.emoji !== 'string' || !r.emoji) return bad('BAD_EMOJI', `${where}.emoji`, 'emoji is required');
+    const rb = validateRoutineBody({ name: r.name, emoji: r.emoji, prog: r.prog });
+    if (rb) return { ...rb, field: `${where}.${rb.field || 'name'}` };
+    if (!Array.isArray(r.ex) || r.ex.length < 1) return bad('BAD_EX', `${where}.ex`, 'ex must be a non-empty array');
+    const exIds = new Set();
+    for (let j = 0; j < r.ex.length; j++) {
+      const raw = r.ex[j], exWhere = `${where}.ex.${raw && raw.id ? raw.id : j}`;
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.id !== 'string' || !raw.id) {
+        return bad('EX_ID_REQUIRED', `${where}.ex[${j}].id`, 'ex.id required');
+      }
+      if (exIds.has(raw.id)) return bad('DUPLICATE_EX', exWhere, `duplicate exercise "${raw.id}"`);
+      exIds.add(raw.id);
+      if (catalog && !catalog.has(raw.id) && !custom.has(raw.id)) {
+        return bad('CATALOG_UNKNOWN_EX', `${exWhere}.id`, `unknown exercise id "${raw.id}"`);
+      }
+      // RF-5: os MESMOS defaults do app antes de validar — o payload que o PATCH aceita passa aqui.
+      const meta = catalog ? (catalog.get(raw.id) || {}) : {};
+      const mode = raw.mode || (meta.eq === 'cardio' ? 'cardio' : 'reps');
+      const filled = stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...raw, id: raw.id, mode }, mode);
+      const v = validateExEntry(filled, { catalog, custom, where: exWhere, modeChanged: true, isNewEntry: true });
+      if (v) return { ...v, error: v.message };
+    }
+    if (r.dias !== undefined) {
+      if (!Array.isArray(r.dias) || r.dias.length > MAX_DIAS) return bad('BAD_DATE', `${where}.dias`, `dias must be an array of at most ${MAX_DIAS}`);
+      for (const d of r.dias) {
+        if (typeof d !== 'string' || !DATE_RE.test(d)) return bad('BAD_DATE', `${where}.dias`, `"${d}" must be YYYY-MM-DD`);
+        if (dates.some(x => x.date === d && x.routineId !== r.id)) return bad('DUPLICATE_DATE', `${where}.dias`, `date "${d}" appears twice`);
+        dates.push({ date: d, routineId: r.id });
+      }
+    }
+  }
+  // RF-9: uma janela só (semana ISO), e o mesmo weekday não pode aparecer duas vezes.
+  if (dates.length) {
+    const ws = new Set(dates.map(d => weekStart(d.date)));
+    if (ws.size > 1) return bad('DATE_OUT_OF_WINDOW', 'routines[].dias', 'all dates must fall in the same ISO week (Mon..Sun)');
+    const seenWd = new Set();
+    for (const d of dates) {
+      const wd = weekdayOf(d.date);
+      if (seenWd.has(wd)) return bad('DUPLICATE_WEEKDAY', 'routines[].dias', `two dates fall on weekday ${wd}`);
+      seenWd.add(wd);
+    }
+  }
+  if (body.grade !== undefined) {
+    const g = body.grade;
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return bad('BAD_GRADE', 'grade', 'grade must be an object');
+    const keys = Object.keys(g);
+    if (keys.length !== 7 || !['0','1','2','3','4','5','6'].every(k => k in g)) {
+      return bad('BAD_GRADE', 'grade', 'grade must declare all seven weekdays ("0".."6")');
+    }
+    for (const [wd, rid] of Object.entries(g)) {
+      if (rid === null) continue;
+      const known = ids.has(rid) || (S.routines || []).some(x => x.id === rid);
+      if (typeof rid !== 'string' || !known) return bad('BAD_GRADE', `grade.${wd}`, `grade.${wd} must be null or a known routine id`);
+    }
+  }
+  const az = body.autorizar;
+  if (az !== undefined) {
+    if (!az || typeof az !== 'object' || Array.isArray(az)) return bad('BAD_AUTORIZAR', 'autorizar', 'autorizar must be an object');
+    for (const d of az.datas || []) if (typeof d !== 'string' || !DATE_RE.test(d)) return bad('BAD_AUTORIZAR', 'autorizar.datas', `"${d}" must be YYYY-MM-DD`);
+    for (const w of az.grade || []) if (!/^[0-6]$/.test(String(w))) return bad('BAD_AUTORIZAR', 'autorizar.grade', `"${w}" must be a weekday 0..6`);
+    for (const rid of az.routines || []) if (!ids.has(rid)) return bad('BAD_AUTORIZAR', 'autorizar.routines', `"${rid}" is not in this payload`);
+  }
+  return null;
+}
+
+/** Materializa a rotina publicada (defaults do app, modo explícito, sem legado) — igual ao PATCH. */
+export function materializeRoutine(r, catalog) {
+  const ex = r.ex.map(raw => {
+    const meta = catalog ? (catalog.get(raw.id) || {}) : {};
+    const mode = raw.mode || (meta.eq === 'cardio' ? 'cardio' : 'reps');
+    return stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...raw, id: raw.id, mode }, mode);
+  });
+  return { id: r.id, name: String(r.name).trim(), emoji: String(r.emoji).slice(0, 32), prog: r.prog || 'off', ex };
+}
+
+/* ---------------------------------------------------------------- conflito (RF-13) */
+
+export function findConflicts(S, body) {
+  const az = body.autorizar || {};
+  const authDatas = new Set(az.datas || []), authGrade = new Set((az.grade || []).map(String));
+  const dayPlan = S.dayPlan || {}, week = S.week || {};
+  const trained = new Set((S.workouts || []).map(w => w.d).filter(Boolean));
+  const datas = [], grade = [];
+  for (const r of body.routines) {
+    for (const d of r.dias || []) {
+      const cur = dayPlan[d];
+      const occupied = (cur !== undefined && cur !== r.id) || trained.has(d);
+      if (occupied && !authDatas.has(d)) {
+        datas.push({ date: d, current: cur === undefined ? null : cur,
+                     kind: cur === undefined ? 'free' : (cur === 'rest' ? 'rest' : 'routine'),
+                     trained: trained.has(d), wanted: r.id });
+      }
+    }
+  }
+  if (body.grade) {
+    for (const [wd, next] of Object.entries(body.grade)) {
+      const cur = week[wd];
+      const curN = cur === undefined ? null : cur;
+      if (curN !== next && !authGrade.has(wd)) grade.push({ weekday: wd, current: curN, next });
+    }
+  }
+  if (datas.length || grade.length) {
+    return { error: 'the published week collides with what is already there', code: 'PLAN_CONFLICT', code_http: 409,
+             datas, grade, hint: 'decide with the user, then retry with autorizar.datas / autorizar.grade' };
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------- aplicação (RF-8, RF-10..RF-12) */
+
+export function applyPublish(S, body, novas, hoje) {
+  const datas = [];
+  for (const r of body.routines) for (const d of r.dias || []) datas.push({ date: d, routineId: r.id });
+  const ws = datas.length ? weekStart(datas[0].date) : null;
+  const we = ws ? addDays(ws, 6) : null;
+  const dp = { ...(S.dayPlan || {}) }, wk = { ...(S.week || {}) };
+  const congeladas = [], limpas = [];
+
+  // RF-12: o passado não muda. Fixa o que essas datas resolviam antes de a grade mudar.
+  if (ws) for (let d = hoje; d < ws; d = addDays(d, 1)) {
+    if (dp[d] !== undefined) continue;
+    const before = wk[weekdayOf(d)];
+    dp[d] = before === undefined ? 'rest' : before;
+    congeladas.push(d);
+  }
+  // RF-11: dentro da janela, o que não foi declarado volta para a grade.
+  if (ws) for (const d of Object.keys(dp)) {
+    if (d >= ws && d <= we && !datas.some(x => x.date === d)) { delete dp[d]; limpas.push(d); }
+  }
+  // RF-10: os dias declarados vencem.
+  for (const { date, routineId } of datas) { dp[date] = routineId; wk[weekdayOf(date)] = routineId; }
+  if (body.grade) for (const [wd, rid] of Object.entries(body.grade)) {
+    if (rid === null) delete wk[wd]; else wk[wd] = rid;
+  }
+  S.dayPlan = dp; S.week = wk;
+  // RF-8: substituição autorizada (mesmo id, conteúdo novo) ou acréscimo.
+  const sub = new Set(body.autorizar?.routines || []);
+  const trocadas = [], criadas = [];
+  for (const nova of novas) {
+    const i = (S.routines || []).findIndex(x => x.id === nova.id);
+    if (i >= 0 && sub.has(nova.id)) { S.routines[i] = nova; trocadas.push(nova.id); }
+    else { (S.routines = S.routines || []).push(nova); criadas.push(nova.id); }
+  }
+  return { routines: novas.map(r => r.id), criadas, trocadas, dias: datas.map(d => d.date),
+           grade: body.grade ? Object.fromEntries(Object.entries(wk).filter(([, rid]) => novas.some(r => r.id === rid))) : null,
+           congeladas, limpas };
+}
+
+/* ---------------------------------------------------------------- handler (A11: ordem canônica) */
+
+export function makeHandlers(deps) {
+  const { readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, catalogPath, livePresence } = deps;
+
+  async function publishMicro(req, res) {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in', code: 'UNAUTH' });
+    let raw;
+    try { raw = await readRawBody(req); }
+    catch (e) { return json(res, 413, { error: e.message === 'body too large' ? 'body too large' : 'bad json' }); }
+    let body;
+    try { body = raw.length ? JSON.parse(raw) : {}; } catch { return json(res, 400, { error: 'bad json', code: 'BAD_JSON' }); }
+    // 1. identidade
+    const actor = readActor(req, user.id, raw, req.method, '/api/plan/micro');
+    if (actor.err) return json(res, 401, { error: 'actor signature invalid', code: actor.err });
+    if (!actor.actor || actor.verified !== 'signature') {
+      return json(res, 401, { error: 'signed agent identity required', code: 'ACTOR_SIGNATURE_REQUIRED' });
+    }
+    // 2. chave de idempotência — e o REPLAY vem ANTES do If-Match (A11): um retry pós-queda traz o rev velho.
+    const idemKey = String(req.headers['idempotency-key'] || '').trim();
+    if (!idemKey) return json(res, 400, { error: 'Idempotency-Key required', code: 'IDEMPOTENCY_REQUIRED' });
+    if (idemKey.length > 128) return json(res, 400, { error: 'Idempotency-Key too long', code: 'IDEMPOTENCY_KEY_TOO_LONG' });
+    const bodyHash = sha256(canon(body));
+    const idem = idemLookup(DATA, idemKey, bodyHash, user.id);
+    if (idem && idem.mismatch) return json(res, 409, { error: 'Idempotency-Key reused with a different body or owner', code: 'IDEMPOTENCY_MISMATCH' });
+    const S0 = readState(user.id);
+    if (!S0 || typeof S0 !== 'object') return json(res, 409, { error: 'no state for this profile', code: 'NO_STATE' });
+    if (idem && idem.replay) {
+      return json(res, 200, { ok: true, replayed: true, rev: idem.replay.rev, currentRev: Number.isInteger(S0.rev) ? S0.rev : 0,
+                              intact: stillIntact(S0, idem.replay.meta?.routines), meta: idem.replay.meta });
+    }
+    // 3. base declarada
+    const ifMatch = parseIfMatch(req.headers['if-match']);
+    if (ifMatch === '*') return json(res, 412, { error: 'If-Match: * is not accepted here', code: 'IF_MATCH_WILDCARD' });
+    const pre = checkIfMatch(S0, ifMatch);
+    if (pre) return json(res, pre.code, pre.body);
+    // 4. catálogo (defensivo) 5. forma
+    const catalog = loadCatalog(catalogPath);
+    if (!catalog) return json(res, 503, { error: 'exercise catalog unavailable', code: 'CATALOG_UNAVAILABLE' });
+    const custom = new Set((S0.customEx || []).map(c => c.id));
+    const bad = validatePublish(body, catalog, custom, S0);
+    if (bad) return json(res, 400, bad);
+    const novas = body.routines.map(r => materializeRoutine(r, catalog));
+    const sub = new Set(body.autorizar?.routines || []);
+    const colidem = novas.filter(r => (S0.routines || []).some(x => x.id === r.id) && !sub.has(r.id));
+    if (colidem.length) return json(res, 409, { error: 'routine already exists', code: 'ROUTINE_EXISTS', routines: colidem.map(r => r.id), hint: 'authorize the replacement in autorizar.routines' });
+    // 6. treino em andamento + 7. conflito + 8. gravação (tudo na MESMA leitura do withState)
+    const out = withState(deps, user.id, { ifMatch, actor, action: 'publish-micro', uid: user.id, dropActive: false }, S => {
+      const tocaHoje = (body.routines || []).some(r => (r.dias || []).includes(todaySP()));
+      if (tocaHoje && typeof livePresence === 'function' && livePresence(user.id)) {
+        return { error: 'a workout is in progress on a device right now', code: 'WORKOUT_IN_PROGRESS', code_http: 409 };
+      }
+      const conflict = findConflicts(S, body);
+      if (conflict) return conflict;
+      return { _meta: { meso_id: body.meso_id, semana: body.semana, report_id: body.report_id || null,
+                        autorizar: body.autorizar || null, ifMatch: ifMatch || null,
+                        ...applyPublish(S, body, novas, todaySP()) } };
+    });
+    if (out.code !== 200) return json(res, out.code, out.body);
+    try {
+      writeIdem(DATA, { key: idemKey, bodyHash, uid: user.id, at: Date.now(), rev: out.body.rev, meta: out.body.meta });
+    } catch (e) {
+      console.error('[og-micro] idem write failed', e.message);
+      out.body.meta.idempotency = 'not-persisted';     // a publicação valeu, mas o retry não terá replay
+    }
+    return json(res, 201, { ok: true, rev: out.body.rev, meta: out.body.meta });
+  }
+
+  return { publishMicro };
+}
+```
+
+### 2. `api/server.js` — rota e injeção
+
+```js
+// ANTES (linha 15)
+import * as routines from './routines.js';
+// DEPOIS
+import * as routines from './routines.js';
+import * as planMicro from './plan-micro.js';
+```
+
+```js
+// ANTES (tabela `routes`, junto das rotas de rotina)
+  'GET /api/routines': (req, res) => ROUTINE_HANDLERS.list(req, res),
+  'GET /api/audit': (req, res) => ROUTINE_HANDLERS.audit(req, res),
+// DEPOIS
+  'GET /api/routines': (req, res) => ROUTINE_HANDLERS.list(req, res),
+  'GET /api/audit': (req, res) => ROUTINE_HANDLERS.audit(req, res),
+
+  // Publicação do micro (spec_publicacao_micro). Path exato: a assinatura do ator cobre esta
+  // string, então ela não pode variar (barra final, query) sem quebrar o cliente.
+  'POST /api/plan/micro': (req, res) => ROUTINE_HANDLERS.publishMicro(req, res),
+```
+
+```js
+// ANTES (linha 764, depois do Object.assign das rotinas)
+Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH
+}));
+// DEPOIS
+Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH
+}));
+Object.assign(ROUTINE_HANDLERS, planMicro.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor,
+  catalogPath: CATALOG_PATH, livePresence            // A17: mapa `presence` (TTL 70 s) já existe neste módulo
+}));
+```
+
+### 3. `web/nginx.conf` — limite de corpo
+
+```nginx
+# ANTES (location /api/ ou server block, sem client_max_body_size)
+# DEPOIS
+  client_max_body_size 8m;    # o default (1m) não comporta o estado: 275.945 B em 12/09/2026 e crescendo
+```
+
+### 4. `api/plan-micro.test.js` (novo — harness igual ao `routines.test.js`, roda no HOST)
+
+| # | Caso | Esperado |
+|---|---|---|
+| 1 | publicação válida (2 rotinas, 2 datas da mesma semana ISO, `grade` completo) | `201`, `rev` +1, rotinas no estado, `dayPlan` e `week` escritos |
+| 2 | mesmo corpo + mesma chave, depois de gravar | `200 replayed:true`, `rev` **não** muda, `intact:true` |
+| 3 | mesmo corpo + mesma chave, mas a rotina publicada foi apagada antes do retry | `200 replayed:true` com `intact:false` |
+| 4 | chave de outro perfil (uid diferente, mesmo corpo) | `409 IDEMPOTENCY_MISMATCH` |
+| 5 | chave com 2 h de idade e TTL de teste de 1 h (injetada) | não é replay: grava de novo (ou `ROUTINE_EXISTS`) |
+| 6 | chave fixa escolhida à mão + corpo diferente (testa o guarda, não o fluxo do agente) | `409 IDEMPOTENCY_MISMATCH` |
+| 7 | sem `Idempotency-Key` / chave de 200 chars | `400 IDEMPOTENCY_REQUIRED` / `400 IDEMPOTENCY_KEY_TOO_LONG` |
+| 8 | **retry verbatim com o `rev` VELHO** (o caso que a idempotência existe para cobrir) | `200 replayed:true` (não `409`) |
+| 9 | sem `If-Match` / `If-Match` velho / `If-Match: *` | `428` / `409 STALE_STATE` / `412 IF_MATCH_WILDCARD` |
+| 10 | sem assinatura (`claimed`) / assinatura de outro corpo | `401 ACTOR_SIGNATURE_REQUIRED` / `401 BAD_ACTOR_SIG` |
+| 11 | id fora do padrão / **hash4 errado** | `400 BAD_ROUTINE_ID` / `400 BAD_ROUTINE_ID_HASH` |
+| 12 | id já existente, sem `autorizar.routines` | `409 ROUTINE_EXISTS` com `routines:[id]` |
+| 13 | id já existente **com** `autorizar.routines` | `201`, conteúdo trocado, mesmo id, `dayPlan`/`week` intactos apontando para ele |
+| 14 | datas em duas semanas ISO diferentes | `400 DATE_OUT_OF_WINDOW` |
+| 15 | duas datas no mesmo weekday | `400 DUPLICATE_WEEKDAY` |
+| 16 | exercício com `mode:"normal"`/`sg:0` | `400 BAD_MODE` |
+| 17 | exercício sem `sets` (o `PATCH` aceitaria, preenchendo default) | `201` com `sets: 3` materializado |
+| 18 | `restSec: 10` / exercício fora do catálogo | `400 BAD_REST` / `400 CATALOG_UNKNOWN_EX` |
+| 19 | data ocupada por rotina, sem `autorizar.datas` | `409 PLAN_CONFLICT` com `datas[0] = {kind:"routine", wanted:…}` |
+| 20 | data só com treino registrado (sem `dayPlan`) | `409 PLAN_CONFLICT` com `kind:"free"`, `trained:true` |
+| 21 | a mesma data com `autorizar.datas` | `201` e `dayPlan` trocado |
+| 22 | `grade` mudando weekday ocupado, sem `autorizar.grade` | `409 PLAN_CONFLICT` com `grade[]` |
+| 23 | `grade` substituindo a grade inteira (incluindo `null`) | `week` fica exatamente igual ao mapa |
+| 24 | publicação com data a 3 dias da janela | `meta.congeladas` cobre hoje → véspera, com o valor anterior |
+| 25 | republicação da mesma semana sem uma das datas | a data não declarada sai de `dayPlan` e entra em `meta.limpas` |
+| 26 | publicação que não toca hoje, com `presence` ativo / que toca hoje, com `presence` ativo | `201` / `409 WORKOUT_IN_PROGRESS` |
+| 27 | qualquer recusa | estado em disco byte a byte igual ao de antes; `rev` intacto |
+| 28 | depois da publicação | `workouts[]`, `customEx[]`, `exWeights` e `active` intactos |
+| 29 | auditoria | última linha com `action`, `meso_id`, `semana`, `routines`, `dias`, `grade`, `autorizar`, a chave e `report_id` |
+
+### 5. `~/.hermes/workout/scripts/opengym_writer.py` — cliente
+
+```python
+    def publish_micro(self, payload: dict, rev: int, idem_key: str):
+        """Publica a semana: N rotinas com os dias de cada uma, numa gravacao so.
+
+        Codigos de recusa (spec_publicacao_micro v2, tabela de recusas):
+          400/401 -> payload ou credencial (codigo 1 / 3)
+          409 PLAN_CONFLICT -> decisao do usuario (codigo 2)
+          409 STALE_STATE   -> reler (codigo 4)
+          409 ROUTINE_EXISTS -> corrigir com autorizar.routines (codigo 8)
+          412 IF_MATCH_WILDCARD, 428 IF_MATCH_REQUIRED -> reler (codigo 4)
+          5xx / URLError / timeout -> codigo 5
+        """
+        path = "/api/plan/micro"
+        body = publish_body_bytes(payload)          # A14: os MESMOS bytes que geram a chave
+        hdrs = actor_headers(self.secret, "POST", path, self.uid, body, self.run_id)
+        hdrs["Cookie"] = self.cookie
+        hdrs["If-Match"] = str(rev)
+        hdrs["Idempotency-Key"] = idem_key
+        req = urllib.request.Request(self.base + path, data=body, headers=hdrs, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                return r.status, json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", "replace")
+            try:
+                return e.code, json.loads(raw)
+            except ValueError:
+                return e.code, {"error": raw[:200], "code": "HTTP_" + str(e.code)}
+        except (urllib.error.URLError, TimeoutError, ssl.SSLError, OSError) as e:
+            # v2, achado B4: erro de rede TEM codigo proprio. Sem isto o script morre com
+            # traceback e o agente nao sabe se a publicacao entrou (ela pode ter entrado).
+            die(5, f"[5] rede: {e} — confira o estado antes de repetir (a chave e a mesma)")
+
+
+def publish_body_bytes(payload: dict) -> bytes:
+    """Bytes do corpo. UMA fonte: a chave de idempotencia e o hash da assinatura saem daqui."""
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def micro_idem_key(uid: str, body: bytes) -> str:
+    """sha256 dos MESMOS bytes enviados, amarrado ao uid (v2, B1/adendo 1: a v1 dizia 'sha256 do
+    corpo canonico' e calculava outra coisa)."""
+    return sha256_hex(uid.encode() + b"\\n" + body)
+```
+
+CLI (`build_parser()`): subcomando `publish` com `--intent` / `--json`, `--uid` **obrigatório**
+(nunca herdar `$OPENGYM_UID`: o `db.json` tem 5 perfis e a publicação iria para outro em silêncio),
+`--yes`, `--dry-run`, `--target-live` (exigido quando a URL é de produção — a trava de alvo do
+`apply`, medida no incidente de 11/09/2026) e validador próprio (`validate_publish_payload`), porque
+`validate_intent` exige `op ∈ {patch,unfreeze,noop}` e recusaria este payload. `--dry-run`: faz os
+GETs, **não** faz o POST, imprime corpo canônico + chave + `rev` lido e sai `7` sem `--yes`.
+
+### 6. `docs/MICRO.md` e `docs/backlog.md`
+
+- `docs/MICRO.md` (já escrito nesta sessão; 182 linhas): atualizar §2 (remover a regra de posse: não
+  existe "dia do agente"), §4 invariantes (id formatado **e conferido pelo servidor**; correção por
+  substituição autorizada; publicação vive numa semana ISO; a API não muda o passado), §5 contrato
+  (`grade` com as 7 chaves, `autorizar.routines`), §7 (comandos: `--uid` e `--target-live`), §8
+  (deploy, `agent.key`, o que é política do assistente e não da API).
+- `docs/backlog.md`: nota no item BACKLOG-02 dizendo que o passo 6 mudou (quem grava é o Hermes, pelo
+  `POST /api/plan/micro`, e o app só lê).
+
+## Deploy e rollback
+
+```bash
+cd /mnt/drivebackup/apps/openGym/openGym
+
+# 1. testes no HOST (a imagem da API apaga os *.test.js: `RUN rm -f ./*.test.js`)
+node --test api/routines.test.js api/plan-micro.test.js
+
+# 2. anotar a imagem viva, para o rollback
+docker inspect --format '{{.Image}}' opengym-api-1
+
+# 3. build local + recriação forçada
+docker compose build api
+docker compose up -d --force-recreate api
+
+# 4. provar que a rota subiu: 401 (sem credencial) NÃO é 404
+docker exec opengym-api-1 grep -c "plan/micro" /app/api/server.js
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://opengym.edsc.fun/api/plan/micro
+```
+
+- **Nunca `docker compose pull`.** A imagem em uso é `ghcr.io/duartesantos8/opengym-api:latest`, de
+  outro namespace: o `pull` troca o artefato e **some** com esta rota e com o `readActor` (a
+  autenticação de agente só existe na imagem construída localmente). `docker compose up -d` sozinho
+  também não recompila: sem `build` antes, a rota continua ausente e a resposta é `404 {error:"not
+  found"}`, que a tabela de recusas agora nomeia.
+- **Rollback:** `docker tag <image-id-anotado> ghcr.io/duartesantos8/opengym-api:latest && docker compose up -d --force-recreate api`.
+- **Backup antes de publicar de verdade:** `cp data/state-<uid>.json{,.bak.$(date +%Y%m%d-%H%M%S)}`.
+  O snapshot das 06:00 cobre `state-*.json` e `db.json`; **não** cobre `audit.jsonl` nem
+  `micro-idem.json` (Riscos).
+
+## Comportamento Visual/UX
+
+Nada de tela nova. O que o usuário vê, em ordem:
+
+```
+ANTES (hoje)                                DEPOIS (publicado)
+┌─ Plan ────────────────────────┐           ┌─ Plan ────────────────────────┐
+│ Week schedule                 │           │ Week schedule                 │
+│  Mon  Rest                    │           │  Mon  Rest                    │
+│  Tue  🔺 Push C - Shoulder 3D │           │  Tue  🔺 Push S2              │  <- dia declarado
+│  Wed  🦵 Legs 1               │           │  Wed  🦵 Legs S2              │     vence
+│  Thu  🔺 Upper C - Shoulder 3D│           │  Thu  🔺 Upper S2             │
+│  Fri  Rest                    │           │  Fri  Rest                    │
+│  Sat  🔺 Pull C - Shoulder 3D │           │  Sat  🔻 Pull S2              │
+│  Sun  🍑 Legs2                │           │  Sun  🍑 Legs S2              │
+│ Routines (6)                  │           │ Routines (6 + 5 = 11)         │  <- U3: nada sai
+└───────────────────────────────┘           └───────────────────────────────┘
+```
+
+Os dias desta semana que **não** foram declarados continuam iguais (RF-12): o usuário abre o app hoje
+e vê o mesmo treino de hoje.
+
+Com o app aberto na hora da publicação, o aviso que a BACKLOG-09 já publica aparece uma vez:
+
+```
+┌────────────────────────────────────────────┐
+│ Plan updated — your own edits were kept.   │
+└────────────────────────────────────────────┘
+```
+
+O conflito (RF-13) é **informação**, não comportamento: a API devolve a lista e a decisão de
+perguntar, o texto e a política são do assistente (U6), definidos com o usuário fora desta spec.
+
+Preview interativo: `micro_publicacao_ux_preview.html` (mesa de design do projeto: `--bg:#000`,
+`--surface:#1c1c1e`, `--acc:#30d158`).
+
+## Testes manuais
+
+1. `cd /mnt/drivebackup/apps/openGym/openGym && node --test api/routines.test.js api/plan-micro.test.js` — tudo verde (eram 252 testes).
+2. Backup datado do estado (comando em Deploy).
+3. `opengym_writer.py publish --uid <uid> --intent semana_S2.json --dry-run` — imprime corpo canônico, chave e `rev` lido; **não** faz POST; sai `7` sem `--yes`.
+4. Publicar **uma** rotina com `dias: []` (reserva) e sem `grade`: a lista cresce, `week` e `dayPlan` **não** mudam.
+5. Publicar a semana: `week`/`dayPlan`/`rev` conferem com o payload e com `meta`; `congeladas` cobre hoje → véspera; `GET /api/audit?limit=1` mostra a linha `publish-micro`.
+6. Repetir o passo 5 com a mesma chave **e o `rev` velho**: `200 replayed:true` (é o caso que a idempotência existe para cobrir).
+7. Republicar a mesma semana mudando uma data: a data antiga sai de `dayPlan`, aparece em `meta.limpas`, e o dia volta à grade.
+8. Corrigir uma rotina publicada: republicar com `autorizar.routines` e conferir que o id e o dia continuam os mesmos, com o conteúdo novo.
+9. Abrir o app: a aba Plan mostra a semana publicada, a lista tem as antigas e as novas, e a contagem de `workouts` é a mesma do backup.
+10. Forçar conflito (marcar uma data à mão no app e publicar naquela data): `409 PLAN_CONFLICT` com `datas[]`; repetir com `autorizar.datas` → `201`.
+11. `docker logs opengym-api-1 --tail 20` mostra `[og-routine] op=publish-micro uid=… actor=hermes verified=signature rev=85->86`.
+12. Rollback ensaiado (Deploy), com a rota respondendo `401` no lugar de `404` depois do retag.
+
+## Riscos e limites
+
+- **U4 não tem guarda no servidor.** O app fica intocado e o `PUT /api/data` continua aceitando o
+  estado inteiro; um bundle anterior à BACKLOG-09 (sem `If-Match`) cai no guard por relógio `_ts` e
+  pode reverter `week`/`dayPlan` publicados. Critério de saída já existente: **7 dias sem
+  `ifMatch: "none"`** no log `[og-state] op=put`. Recuperação: republicar (mesma chave = replay;
+  conteúdo novo = publicação nova).
+- **Rotação do `SECRET` quebra a assinatura.** O cliente assina com `HMAC(SECRET,"opengym-agent-v1")`
+  e o servidor confere com `/data/agent.key`, que **só é regenerado se o arquivo sumir**. Apagar
+  `data/secret` (a API o recria no boot) gira a chave do cliente e o servidor passa a responder
+  `401 BAD_ACTOR_SIG` para sempre. Procedimento: apagar `data/agent.key` junto, ou copiar o valor
+  derivado para o cliente. Não é só "prova de posse do SECRET": é prova de posse de uma chave que
+  sobrevive à rotação.
+- **A auditoria e as chaves de idempotência não estão em backup.** O snapshot das 06:00 copia
+  `state-*.json` e `db.json`; `audit.jsonl` (47.139 B, 0600 root) e `micro-idem.json` ficam de fora, e
+  a rotação de 5.000 linhas do `appendAudit` corta a cabeça da cadeia (quebra `chainIntact`). É a
+  família da BACKLOG-13.
+- **Diretório de dados é do usuário `pi`** (o mesmo do SSH do agente) e o estado é 0644: quem tem a
+  conta local pode apagar `audit.jsonl`, `secret` e `agent.key`. Identidade de máquina não protege
+  contra compromisso local da conta.
+- **`agent` no header não é assinado** (`agent=hermes` é texto; só `run` vai na assinatura) e não há
+  nonce: uma assinatura capturada vale 300 s para o mesmo corpo. Sem rate limit no nginx.
+- **Sem `fsync`** no `atomicWrite` (nem aqui nem no resto da API): queda de energia pode perder a
+  última gravação. O destino é HD, não SSD.
+- **Janela entre gravar e registrar a chave:** se o processo morrer no meio, o retry cai em
+  `ROUTINE_EXISTS` em vez de replay — o agente confere o estado e trata como sucesso se as rotinas
+  estiverem lá. Fechar a janela exigiria gravar a chave antes do estado, o que trocaria um erro por
+  outro pior (replay de publicação que não aconteceu).
+- **Data fora da semana declarada é recusada, mas a janela não é validada contra o meso**: o servidor
+  não conhece o meso, então coerência entre `meso_id`, `semana` e o `hash4` é do motor (o `hash4` ele
+  confere; o resto, não).
+
+## Sequência completa
+
+```
+[app] botão "Gerar micro S2" ──POST /api/hermes/micro──▶ [hermes_api.py :8091]
+                                                              │ job em disco, poll do app
+                                                              ├─ análise fresca + executado S1
+                                                              ├─ persona Low Volume → rotinas + dias
+                                                              ├─ relatório com os porquês (fica no Hermes)
+                                                              └─ opengym_writer.py publish --uid … --yes
+                                                                     │ POST /api/plan/micro (esta spec)
+                                                                     ▼
+                                                          [openGym api] valida → 1 gravação → rev+1
+                                                                     │ 409 PLAN_CONFLICT?
+                                                                     ├─ sim → o assistente decide com o
+                                                                     │        usuário e reenvia autorizando
+                                                                     ▼
+[app] pullOnReturn (visibilitychange) ──GET /api/data──▶ adota week/dayPlan + rotinas novas
+                                                          toast "Plan updated — your own edits were kept."
+```

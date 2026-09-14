@@ -9,9 +9,9 @@
 > - O micro (a semana publicada, que é outra coisa): `docs/MICRO.md`
 > - A API de rotinas: `docs/ROTINAS_API.md`
 
-Última conferência contra o código: **13/09/2026** — `emerson-custom`.
-Suítes: `api/meso.test.js` (35 testes) e `frontend/src/lib/meso.test.js` + `meso-file.test.js`
-(37 testes), rodando pelo alvo `test` da imagem da API e pelo `vitest` no frontend.
+Última conferência contra o código: **14/09/2026** — `emerson-custom`.
+Suítes: `api/meso.test.js` (46 testes) e `frontend/src/lib/meso.test.js` + `meso-file.test.js`
+(45 testes), rodando pelo alvo `test` da imagem da API e pelo `vitest` no frontend.
 
 ---
 
@@ -29,6 +29,7 @@ Quem escreve o quê:
 | Biblioteca e ponteiro do ativo | **o app** (o usuário) | `update()` no store → `PUT /api/data` |
 | Mesociclo publicado pelo agente | **o assistente** | `PUT /api/plan/meso` (rota própria, validada e auditada) |
 | Ponteiro do ativo movido pelo agente | **o assistente** | `activate: "now"` no `PUT` ou `POST /api/plan/meso/:id/activate` |
+| Mesociclo apagado | **o app** (o usuário) e o assistente | lixeira na lista → `PUT /api/data`; ou `DELETE /api/plan/meso/:id` |
 | Semana e rotinas | **o assistente** | `POST /api/plan/micro` (BACKLOG-02) |
 
 **A API é overwrite total.** `PUT /api/plan/meso` substitui o mesociclo daquele `id`, inteiro, sem
@@ -124,29 +125,50 @@ quando vem, é **verificada** — é ela que faz `activatedBy` virar `"assistant
 
 Ativa o mesociclo (o atalho que só mexe no ponteiro). `409 MESO_NOT_FOUND` devolve `mesos: [ids]`.
 
-**Não existe `Idempotency-Key` aqui**: o `PUT` é um upsert por `id`, idempotente por construção.
+### `DELETE /api/plan/meso/:id`
+
+Sem corpo: o id vai no caminho e a base no `If-Match` (obrigatório, como no `PUT`). `200` com
+`meta: { mesoId, deleted, wasActive }`.
+
+- Apagar o mesociclo **ativo** deixa o ponteiro vazio (`activeMeso = null`) e **não** promove o
+  anterior — promover outro seria uma ativação que ninguém pediu. O `mesoPrev` só é limpo quando ele
+  próprio foi o apagado.
+- Recusas: `404 MESO_NOT_FOUND` (com `mesos: [ids]`), `400 BAD_MESO_ID`, `409 NO_STATE`, `401 UNAUTH`,
+  `428 IF_MATCH_REQUIRED`, `409 STALE_STATE`.
+- **O app não usa esta rota** no botão de apagar da lista: ele apaga pelo caminho de sempre
+  (`update()` → `PUT /api/data`), o mesmo da criação e da edição. A rota existe para o assistente e
+  para o escritor.
+
+**Não existe `Idempotency-Key` aqui**: o `PUT` é um upsert por `id`, idempotente por construção; no
+`DELETE`, apagar o que já não existe responde `404 MESO_NOT_FOUND` em vez de fingir sucesso.
 
 ### Auditoria
 
-Toda escrita entra no `audit.jsonl` (`action: put-meso` / `activate-meso`, com `uid`, `mesoId`,
-`created`, `activated`, `actor`, `verified`, `rev` antes/depois) e sai uma linha no stdout:
+Toda escrita entra no `audit.jsonl` (`action: put-meso` / `activate-meso` / `delete-meso`, com `uid`,
+`mesoId`, `created`, `activated`, `wasActive`, `actor`, `verified`, `rev` antes/depois) e sai uma
+linha no stdout:
 
 ```
 [og-meso] op=put-meso uid=… meso=meso-2026-09-02 created=true activated=false rev=3->4
+[og-meso] op=delete-meso uid=… meso=meso-2026-08-01 wasActive=false rev=4->5
 ```
 
 ---
 
 ## 4. No app
 
-- **Biblioteca e ponteiro:** `S.mesos[]`, `S.activeMeso`, `S.mesoPrev`. Nada é apagado: trocar de
-  ativo só move o ponteiro, e "voltar ao anterior" é a mesma ativação.
+- **Biblioteca e ponteiro:** `S.mesos[]`, `S.activeMeso`, `S.mesoPrev`. Trocar de ativo só move o
+  ponteiro, e "voltar ao anterior" é a mesma ativação. Apagar (14/09/2026) é o único gesto
+  destrutivo: tira o mesociclo da biblioteca e, se era o ativo, deixa o app **sem nenhum em uso**.
 - **Painel na aba Plan:** nome, `semana N de M` e a fase da semana atual. Mesociclo vencido continua
   ativo, marcado `terminado`, com a oferta do próximo (criar ou importar).
 - **Tela do mesociclo** (`/plan/meso/:id`): trilha das semanas, o que foi planejado e registrado,
   objetivo, prioridades, regras (três + "ver todas"), evidência, histórico do coach e **extras** —
   cada seção só renderiza quando tem dado.
-- **Lista** (folha "Mesocycles"): tocar **ativa**, o `>` abre a tela.
+- **Lista** (folha "Mesocycles"): tocar **ativa**, o `>` abre a tela, a lixeira **apaga** — com uma
+  folha de confirmação que diz o nome e, quando é o ativo, avisa que nada fica ativo depois. O aviso
+  de sucesso muda nos dois casos (`{nome} eliminado` / `{nome} eliminado. Ficaste sem mesociclo
+  ativo.`), porque o efeito é diferente.
 - **Import/export:** JSON (round-trip fiel, extras incluídos) e CSV (subconjunto declarado: leva
   semanas, objetivo, focos, evidência e regras; **não** leva `log[]`, carimbos de ativação nem
   extras do mesociclo). O import aceita um objeto, uma lista ou `{ "mesos": [...] }`, deriva o que

@@ -1,4 +1,4 @@
-// api/meso.js — mesociclo: validação do núcleo, upsert e ativação.
+// api/meso.js — mesociclo: validação do núcleo, upsert, ativação e remoção.
 //
 // Regra que manda aqui (decisão do usuário 13/09/2026): a API valida FORMA, nunca conteúdo, e a
 // operação é **overwrite total** — substitui o mesociclo daquele id, inteiro, sem comparar com o
@@ -254,5 +254,45 @@ export function makeHandlers(deps) {
     return json(res, r.code, r.body);
   }
 
-  return { putMeso, getMeso, activateMeso };
+  /**
+   * Apagar um mesociclo da biblioteca. Sem corpo: o caminho diz qual e o `If-Match` diz sobre qual
+   * base, então o `open()` já cobriu sessão e assinatura, e o `withState` cobre a concorrência.
+   *
+   * Apagar o mesociclo ATIVO não promove o anterior: o ponteiro fica vazio e a aba Plan volta ao
+   * estado "nenhum em uso". Promover outro seria uma ativação que ninguém pediu — e o app não faz
+   * sozinho o que ele oferece como gesto ("voltar ao anterior").
+   */
+  async function deleteMeso(req, res, params) {
+    const mid = params[0];
+    if (!MESO_ID_RE.test(String(mid || ''))) {
+      return json(res, 400, { error: 'id must be meso-YYYY-MM-DD', code: 'BAD_MESO_ID', field: 'id' });
+    }
+    const o = await open(req, '/api/plan/meso/' + mid);
+    if (o.code) return json(res, o.code, o.body);
+    const { user, actor } = o;
+
+    const r = withState(deps, user.id,
+      { ifMatch: parseIfMatch(req.headers['if-match']), actor, action: 'delete-meso', uid: user.id, dropActive: false },
+      S => {
+        const list = Array.isArray(S.mesos) ? S.mesos : (S.mesos = []);
+        const i = list.findIndex(m => m.id === mid);
+        if (i < 0) {
+          return { error: `mesocycle "${mid}" not found`, code: 'MESO_NOT_FOUND', code_http: 404,
+                   mesos: list.map(m => m.id) };
+        }
+        const wasActive = S.activeMeso === mid;
+        list.splice(i, 1);
+        if (wasActive) S.activeMeso = null;
+        if (S.mesoPrev === mid) S.mesoPrev = null;
+        return { _meta: { mesoId: mid, deleted: true, wasActive } };
+      });
+
+    if (r.code === 200) {
+      console.log(`[og-meso] op=delete-meso uid=${user.id} meso=${mid} `
+        + `wasActive=${!!r.body.meta.wasActive} rev=${r.body.meta.revBefore}->${r.body.meta.revAfter}`);
+    }
+    return json(res, r.code, r.body);
+  }
+
+  return { putMeso, getMeso, activateMeso, deleteMeso };
 }

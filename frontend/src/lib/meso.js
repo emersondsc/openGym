@@ -234,6 +234,22 @@ export function fixMesoPointers(S) {
 }
 
 /**
+ * Apagar um mesociclo da biblioteca, num lugar só (a folha "All" e o `⋯` da tela usam o mesmo).
+ *
+ * Apagar o ATIVO não promove o anterior: o app fica sem mesociclo em uso e a aba Plan volta ao
+ * estado vazio. Promover outro seria uma ativação que ninguém pediu. Devolve o mesociclo removido
+ * (o aviso usa o nome) ou null quando o id não existe — quem chama não inventa um toast de sucesso.
+ */
+export function removeMesoState(S, id) {
+  const list = Array.isArray(S.mesos) ? S.mesos : []
+  const i = list.findIndex(m => m.id === id)
+  if (i < 0) return null
+  const [gone] = list.splice(i, 1)
+  fixMesoPointers(S)
+  return gone
+}
+
+/**
  * Qual mesociclo mostrar quando a tela pergunta por um id: o do id, senão o ATIVO, senão o
  * primeiro da biblioteca, senão nenhum. Pura de propósito — a escolha é o que a visão crua e o
  * Plan Tools decidem, e isso entra no teste sem DOM.

@@ -1,5 +1,9 @@
 # Spec: API de rotinas no servidor + ajuste no cliente — v4 (final)
 
+> **Retrato do que está no ar (não é spec):** `docs/ROTINAS_API.md` — contrato, códigos de erro,
+> invariantes e furos conhecidos, conferido contra o código em 13/09/2026. Esta spec continua sendo
+> o registro das **decisões** e das alternativas descartadas.
+>
 > Implementa a **BACKLOG-07** (`docs/backlog.md:74-94`) e resolve o satélite **BACKLOG-09**
 > (`docs/backlog.md:121-133`) no que toca ao token de concorrência e ao destino do
 > `If-Match-State`. **Par:** `docs/specs/spec_escritor_rotinas.md`. Ver "Relação com a outra spec".

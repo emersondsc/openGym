@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   LIMITS, addDays, spanDays, realISO, mesoBytes, todayInMeso, phaseFor, buildWeeks, weeksFromRange,
   shiftWeeks, resolveWeeks, normalizeMeso, extrasOf, weekAt, mesoState, activateMesoState,
-  mergeMesos, fixMesoPointers, pickMeso, uniqueMesoId, MESO_ID_RE
+  mergeMesos, fixMesoPointers, removeMesoState, pickMeso, uniqueMesoId, MESO_ID_RE
 } from './meso.js'
 
 const M = (over = {}) => ({
@@ -210,5 +210,38 @@ describe('mescla e ponteiros', () => {
     expect(MESO_ID_RE.test('meso-2026-09-13-2')).toBe(true)
     expect(MESO_ID_RE.test('meso-2026-09-13')).toBe(true)
     expect(MESO_ID_RE.test('meso-2026-09-13-AB')).toBe(false)
+  })
+})
+
+describe('apagar um mesociclo', () => {
+  it('remove só o pedido e devolve o que saiu', () => {
+    const S = { mesos: [{ id: 'a' }, { id: 'b' }], activeMeso: 'b', mesoPrev: null }
+    const gone = removeMesoState(S, 'a')
+    expect(gone.id).toBe('a')
+    expect(S.mesos.map(m => m.id)).toEqual(['b'])
+    expect(S.activeMeso).toBe('b')          // o ativo não era o apagado: o ponteiro fica
+  })
+  it('apagar o ATIVO deixa o app sem nenhum ativo (não promove o anterior)', () => {
+    const S = { mesos: [{ id: 'a' }, { id: 'b' }], activeMeso: 'b', mesoPrev: 'a' }
+    removeMesoState(S, 'b')
+    expect(S.activeMeso).toBe(null)
+    expect(S.mesoPrev).toBe('a')            // continua guardado, só não é ativado sozinho
+  })
+  it('apagar o anterior limpa o mesoPrev', () => {
+    const S = { mesos: [{ id: 'a' }, { id: 'b' }], activeMeso: 'b', mesoPrev: 'a' }
+    removeMesoState(S, 'a')
+    expect(S.mesoPrev).toBe(null)
+    expect(S.activeMeso).toBe('b')
+  })
+  it('id que não existe devolve null e não mexe em nada (quem chama não mente no aviso)', () => {
+    const S = { mesos: [{ id: 'a' }], activeMeso: 'a', mesoPrev: null }
+    expect(removeMesoState(S, 'sumiu')).toBe(null)
+    expect(S.mesos).toHaveLength(1)
+    expect(S.activeMeso).toBe('a')
+  })
+  it('biblioteca ausente não estoura', () => {
+    const S = {}
+    expect(removeMesoState(S, 'a')).toBe(null)
+    expect(S.activeMeso).toBeUndefined()
   })
 })
