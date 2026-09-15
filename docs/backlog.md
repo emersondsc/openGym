@@ -42,6 +42,17 @@
   o agente desfazer uma publicação sem reescrever o estado inteiro. O `POST /api/plan/micro` continua
   sendo o alvo do micro (spec `spec_publicacao_micro.md`).
 
+- **Decisão do usuário (14/09/2026): a metade "app como interface" está FORA.** Não haverá botão no
+  app pedindo plano ao assistente, nem stepper de Fase 2 dentro do app, nem proxy `/api/hermes/*`
+  para um serviço HTTP no Hermes. O micro continua saindo como sai hoje: o job
+  `treino-planejamento-semanal` (domingo 18h, ativo) gera e o assistente publica pelo
+  `opengym_writer.py`, uma escrita por rotina via `PATCH /api/routines/:id` (rota que já existe,
+  validada e auditada). **O que sobra deste item é só a pergunta de mecanismo:** se a semana passa a
+  ser publicada numa rota própria (`POST /api/plan/micro`, uma escrita só, com assinatura de agente e
+  `Idempotency-Key`) ou se continua saindo por `PATCH` por rotina. A rota **não existe** (conferido em
+  14/09: `POST /api/plan/micro` → `404`), assim como não existe `/api/hermes/*` no nginx do web nem
+  nada escutando na 8091 no Pi.
+
 - **Critérios (como testar quando revisitar):**
   - [ ] Com `meso-2026-09-08` S1 e 299 sessões, `Gerar micro S2` bloqueado sem `motivo>=10`, libera após 3 respostas, `POST 202` + poll `pronto` + `PUT 200`, `S.routines` tem `S1+S2` (10) sem duplicar em retry (Idempotency-Key com hash de answers), `S.dayPlan` tem `2026-09-08` e `2026-09-15` sem sobrescrita
   - [ ] `POST` sem `gymsid` `401`, sem `answers` `400`, stale `409`, `truncated:true` → `state:error` com `ANALYSIS_TRUNCATED` no polling (não `413` síncrono)
@@ -49,9 +60,17 @@
 
 ---
 
-## BACKLOG-03 — Meso: Criar novo mesociclo via app (app como interface, Hermes como motor) — PARCIAL (14/09/2026): o app já tem o meso; faltam o gatilho e o motor
+## BACKLOG-03 — Meso: Criar novo mesociclo via app (app como interface, Hermes como motor) — ENCERRADO POR DECISÃO (14/09/2026): não faremos
 
-- **Status (14/09/2026): PARCIAL.** A metade "app" está entregue e no ar (v1.3.0/v1.3.1): o mesociclo
+- **Decisão do usuário (14/09/2026): NÃO FAREMOS.** Duas coisas ficam fora, por escolha explícita:
+  (1) **botão no app** pedindo mesociclo ao Hermes; (2) **cron criando mesociclo**. O mesociclo
+  continua sendo criado quando o usuário pede na conversa com o assistente e publicado por
+  `PUT /api/plan/meso` (script `~/.hermes/workout/scripts/meso_para_app.py`) — o caminho já provado
+  em 13/09 com o meso real. Tudo o que vem abaixo (form de objetivo no app, `POST /api/hermes/meso`,
+  `hermes_api.py` na 8091, arquivamento em `plans/historico/`) fica registrado como **desenho não
+  implementado e fora de escopo**, e não deve ser retomado sem uma decisão nova do usuário.
+
+- **Status (histórico, 14/09/2026): PARCIAL.** A metade "app" está entregue e no ar (v1.3.0/v1.3.1): o mesociclo
   é objeto do perfil, com biblioteca + ativo, tela, criação à mão (4 campos), import/export CSV e
   JSON, visão crua e as rotas `PUT`/`GET /api/plan/meso`, `POST /api/plan/meso/:id/activate` e
   `DELETE /api/plan/meso/:id` — tudo em **`docs/MESO.md`**. O que falta é a metade **"app como
@@ -516,4 +535,6 @@ Ficaram registrados na spec o que **não** foi exercitado ao vivo (a releitura a
 
 *Atualizado 14/09/2026 (21): **receita de push do Pi, sem clone.** O Pi não tem credencial de GitHub, e o repositório tem 127 MB (mídia versionada), então clonar só para empurrar 9 commits é caro. O que funcionou, e fica registrado: no Pi, `git bundle create /tmp/og.bundle $(git ls-remote origin refs/heads/emerson-custom | cut -f1)..emerson-custom` (bundle **fino**, 246 KB); nesta máquina, `git init` num diretório temporário, `git fetch --depth=1 --filter=blob:none --no-tags origin emerson-custom` (traz a base **sem os blobs**, que o GitHub já tem), `git fetch <bundle> emerson-custom:refs/heads/from-pi` (ref separado — o git recusa buscar por cima da branch em uso) e `git push origin from-pi:refs/heads/emerson-custom`. A credencial é a do Gerenciador de Credenciais do Windows, com `GIT_TERMINAL_PROMPT=0` para falhar em vez de abrir prompt. Conferir sempre lendo o GitHub (`git ls-remote origin refs/heads/emerson-custom`), não o cache local.*
 
-*Atualizado 14/09/2026 (22): **medição do "gatilho e motor" — o que existe é do Hermes, não do app.** Pergunta do usuário, respondida com medição nos dois lados. **Existe (agendador do próprio agente, `~/.hermes/cron/jobs.json`):** `treino-planejamento-semanal` (`0 18 * * 0`, ativo, última execução 13/09 18:00→18:09 `ok`, próxima 20/09) — é o gatilho do **micro** semanal: fecha a semana, faz Fase 1-3, o micro da Fase 4, o ROTINA SYNC das 5 rotinas por `PUT /api/data` e o e-mail; `analise-diaria-pos-treino` (23:30, ativo, rodou 14/09); `sync-treino-diario-23h` (23:00, ativo). O **motor** por trás é a skill `treino-coach` (37 KB) + `opengym_writer.py` (63 KB, `--dry-run`, portões, snapshot) + `meso_para_app.py`; o próprio meso real registra "S3 prescrita e SINCRONIZADA (cron dom 18h) … 5 escritas em 4 rotinas, API==DISK". **Não existe:** nenhum job que crie ou renove **mesociclo** (o meso é gerado a pedido, na conversa, e publicado à mão pelo `meso_para_app.py`); nenhum serviço HTTP no Hermes (`hermes_api.py` não existe em `~/.hermes`, nada escutando em 8091/8000/5000 — o único systemd além do túnel é o dashboard do agente); e, no app, `POST /api/plan/micro` → **404**, `POST/GET /api/hermes/*` → **404** e `GET /api/hermes/health` → 404, com o nginx do web só com `location /api/ → http://api:3000` (sem proxy para o assistente). Ou seja: **o desenho "app como interface, Hermes como motor" (BACKLOG-02/03) não tem nenhuma das duas pontas construída** — o que roda hoje é o cron do agente escrevendo pelo `PUT /api/data`.*
+*Atualizado 14/09/2026 (22): **medição do "gatilho e motor" — o que existe é do Hermes, não do app.** Pergunta do usuário, respondida com medição nos dois lados. **Existe (agendador do próprio agente, `~/.hermes/cron/jobs.json`):** `treino-planejamento-semanal` (`0 18 * * 0`, ativo, última execução 13/09 18:00→18:09 `ok`, próxima 20/09) — é o gatilho do **micro** semanal: fecha a semana, faz Fase 1-3, o micro da Fase 4, o ROTINA SYNC das rotinas e o e-mail; `analise-diaria-pos-treino` (23:30, ativo, rodou 14/09); `sync-treino-diario-23h` (23:00, ativo). O **motor** por trás é a skill `treino-coach` (37 KB) + `opengym_writer.py` (63 KB, `--dry-run`, portões, snapshot) + `meso_para_app.py`; o próprio meso real registra "S3 prescrita e SINCRONIZADA (cron dom 18h) … 5 escritas em 4 rotinas, API==DISK" — e as escritas saem pelo `patch_routine` do escritor (`PATCH /api/routines/:id`), com o `put_state` (`PUT /api/data`) como caminho de exceção. **Não existe:** nenhum job que crie ou renove **mesociclo** (o meso é gerado a pedido, na conversa, e publicado à mão pelo `meso_para_app.py`); nenhum serviço HTTP no Hermes (`hermes_api.py` não existe em `~/.hermes`, nada escutando em 8091/8000/5000 — o único systemd além do túnel é o dashboard do agente); e, no app, `POST /api/plan/micro` → **404**, `POST/GET /api/hermes/*` → **404** e `GET /api/hermes/health` → 404, com o nginx do web só com `location /api/ → http://api:3000` (sem proxy para o assistente). Ou seja: **o desenho "app como interface, Hermes como motor" (BACKLOG-02/03) não tem nenhuma das duas pontas construída** — o que roda hoje é o cron do agente publicando pelas rotas que já existem.*
+
+*Atualizado 14/09/2026 (23): **duas decisões do usuário fecham o desenho "app como interface".** Por escolha explícita, **não haverá** (1) botão no app pedindo mesociclo ao Hermes nem (2) cron criando mesociclo. Com isso a **BACKLOG-03 fica ENCERRADA** (o meso continua nascendo na conversa e sendo publicado por `PUT /api/plan/meso` via `meso_para_app.py`) e a **BACKLOG-02 perde a metade "app"**: nada de stepper de Fase 2 no app, nada de `POST /api/hermes/meso`, nada de `/api/hermes/*` no nginx. O micro continua como está: job `treino-planejamento-semanal` (dom 18h) + `opengym_writer.py` publicando rotina por rotina por `PATCH /api/routines/:id`. A única pergunta que sobrevive na BACKLOG-02 é de **mecanismo**: o assistente publica a semana por uma rota própria (`POST /api/plan/micro`, uma escrita assinada e auditada, que **não existe** — `404`) ou continua publicando `PATCH` a `PATCH`, que é o que roda hoje.*
