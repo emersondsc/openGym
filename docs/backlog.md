@@ -29,6 +29,19 @@
   `Idempotency-Key`; o app só lê, e o merge + `PUT /api/data` do PWA saem do desenho. Conflito de
   dia é informação da API (a política de perguntar ao usuário é do assistente).
 
+- **Atualizado 14/09/2026 (o meso passou a existir no app):** o mesociclo deixou de ser só o arquivo
+  do Hermes: virou objeto do perfil (`S.mesos[]` + `S.activeMeso` + `S.mesoPrev`), com biblioteca,
+  tela, criação à mão, import/export e visão crua — `docs/MESO.md`, v1.3.0/v1.3.1. Para este item
+  muda o seguinte: (a) o micro publica em cima de um **objeto que já está no app**, então `meso_id` é
+  o id da biblioteca (`meso-YYYY-MM-DD`, com sufixo curto quando dois começam no mesmo dia) e **não**
+  o `-HHmmss-rand4` do desenho de 23/09; (b) o caminho de publicação já está **provado de ponta a
+  ponta** — o assistente publicou o mesociclo real em 13/09 com `PUT /api/plan/meso`
+  (`activate: "now"`, `actor=hermes`, `verified=signature`, auditoria `put-meso`), e para isso o
+  `opengym_writer.py` ganhou o parâmetro `extra` no `_request` (para mandar `If-Match`) e um script
+  novo, `~/.hermes/workout/scripts/meso_para_app.py`; (c) `DELETE /api/plan/meso/:id` já existe, para
+  o agente desfazer uma publicação sem reescrever o estado inteiro. O `POST /api/plan/micro` continua
+  sendo o alvo do micro (spec `spec_publicacao_micro.md`).
+
 - **Critérios (como testar quando revisitar):**
   - [ ] Com `meso-2026-09-08` S1 e 299 sessões, `Gerar micro S2` bloqueado sem `motivo>=10`, libera após 3 respostas, `POST 202` + poll `pronto` + `PUT 200`, `S.routines` tem `S1+S2` (10) sem duplicar em retry (Idempotency-Key com hash de answers), `S.dayPlan` tem `2026-09-08` e `2026-09-15` sem sobrescrita
   - [ ] `POST` sem `gymsid` `401`, sem `answers` `400`, stale `409`, `truncated:true` → `state:error` com `ANALYSIS_TRUNCATED` no polling (não `413` síncrono)
@@ -36,9 +49,20 @@
 
 ---
 
-## BACKLOG-03 — Meso: Criar novo mesociclo via app (app como interface, Hermes como motor) — PRONTO PARA IMPLEMENTAR
+## BACKLOG-03 — Meso: Criar novo mesociclo via app (app como interface, Hermes como motor) — PARCIAL (14/09/2026): o app já tem o meso; faltam o gatilho e o motor
 
-- **Status:** Spec v4 detalhada em `docs/specs/spec_micro_meso_via_app.md` (131 linhas, 2026-09-23) — mesma base do Micro, mas para meso.
+- **Status (14/09/2026): PARCIAL.** A metade "app" está entregue e no ar (v1.3.0/v1.3.1): o mesociclo
+  é objeto do perfil, com biblioteca + ativo, tela, criação à mão (4 campos), import/export CSV e
+  JSON, visão crua e as rotas `PUT`/`GET /api/plan/meso`, `POST /api/plan/meso/:id/activate` e
+  `DELETE /api/plan/meso/:id` — tudo em **`docs/MESO.md`**. O que falta é a metade **"motor"**: o
+  formulário de objetivo no app, o `POST /api/hermes/meso` (8091) e o Hermes arquivando o meso
+  anterior para gerar o novo. **Do desenho abaixo, o que já mudou:** o objeto vive em `S.mesos[]` com
+  `S.activeMeso` (o `mesociclo_ativo.json` é fonte do assistente, não do app), o id é
+  `meso-YYYY-MM-DD` com sufixo curto em vez de `-HHmmss-rand4`, e o assistente **já publica o meso por
+  `PUT /api/plan/meso`** (provado em 13/09 com o mesociclo real, 9,2 KB). O resto do fluxo (form,
+  `POST /api/hermes/meso`, arquivo em `plans/historico/`) continua de pé.
+
+- **Status (desenho de 23/09, mantido como histórico):** Spec v4 detalhada em `docs/specs/spec_micro_meso_via_app.md` (131 linhas, 2026-09-23) — mesma base do Micro, mas para meso.
 
 - **Objetivo:** trazer a **criação do mesociclo** (estratégia de 4-8 semanas, 20|25 sessões com `12=checkpoint`) para o app, mantendo o **Hermes como motor**. O app coleta o desejo de evolução e pede ao Hermes para elaborar o novo meso; o Hermes arquiva o meso anterior e cria o novo.
 
@@ -160,12 +184,52 @@
   teto de um mesociclo é 64 KB (`LIMITS.meso`), e o caso normal tem 1-2 KB.
 - **O que falta decidir:** rolar tudo de uma vez (o teto é exceção e o tamanho já aparece no subtítulo)
   ou mostrar o começo com um "mostrar tudo".
+- **Medição nova (14/09/2026):** o maior mesociclo que existe hoje é o do assistente, com **9,2 KB**
+  (4 semanas, 10 regras, 5 entradas de log e 6 extras) — o teto de 64 KB segue sendo caso de exceção,
+  não o normal. Isso não decide a pergunta, mas tira a urgência dela.
 - **Refs:** `frontend/src/views/PlanRaw.jsx` · `frontend/src/lib/meso.js` (`LIMITS`) ·
   `docs/specs/spec_visao_json_meso.md` (§5, item adiado)
 
 ## Concluídos
 
 > Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
+
+### MESO no app — biblioteca, tela, import/export, visão crua, rotas do assistente e apagar — **ENTREGUE em 13-14/09/2026 (v1.3.0 / v1.3.1)**
+
+- **O que era:** o mesociclo existia só como `~/.hermes/workout/plans/mesociclo_ativo.json`, fora do
+  app. O pedido foi trazê-lo para dentro, na aba Plan, ao lado de "Week schedule" e "Routines".
+- **Entrou em 13/09 (v1.3.0, commits `3aaaa29`, `e0efb7b`, `0850441`, `e8c5a78`, `fe468b8`, `53fe783`,
+  `ba844fa`, `eafd060`):** objeto do perfil (`S.mesos[]` + `S.activeMeso` + `S.mesoPrev`); painel
+  enxuto na aba Plan (nome, `semana N de M`, fase); tela do mesociclo com todas as seções, cada uma
+  só quando tem dado; folha "All" com a biblioteca (tocar ativa, `>` abre, `New` e import no pé);
+  criação à mão com 4 campos; import CSV/JSON que valida **forma**, deriva o que falta **anotando**,
+  preserva campo desconhecido em qualquer nível e pergunta antes de substituir um id; export JSON
+  (round-trip fiel) e CSV (subconjunto declarado); visão crua **só do mesociclo** (`/plan/raw`); e as
+  rotas `PUT`/`GET /api/plan/meso` + `POST /api/plan/meso/:id/activate`, com assinatura de agente
+  verificada, `If-Match`, auditoria e a linha `[og-meso]` no log.
+- **Entrou em 14/09 (v1.3.1, commit `e276b40`):** `DELETE /api/plan/meso/:id` (sem corpo, `If-Match`
+  obrigatório, `404 MESO_NOT_FOUND`) e a **lixeira na lista**, com confirmação pelo nome. Apagar o
+  mesociclo **ativo** deixa o app sem nenhum em uso: promover o anterior seria uma ativação que
+  ninguém pediu.
+- **Decisões de produto que valem para o futuro:** a API é **overwrite total** (nenhuma regra sobre
+  quem escreveu — quem coordena é o assistente, lendo antes de escrever); o painel é enxuto de
+  propósito; mesociclo vencido continua ativo, marcado `terminado`, com a oferta do próximo; a lista
+  ativa no toque; o app apaga pelo caminho de sempre (`update()` → `PUT /api/data`), e a rota
+  `DELETE` é do assistente; a visão crua é só leitura e **só do mesociclo** (os escopos de plano e de
+  estado inteiro foram retirados a pedido do usuário).
+- **Prova de ponta a ponta:** o assistente publicou o mesociclo real em 13/09 às 23:06 e 23:08
+  (`put-meso`, `actor=hermes`, `verified=signature`, rev 164→166). Ele está no perfil
+  `ZPJbmYUfHlfbAYzi` como `meso-2026-09-02`, `origin: assistant`, 4 semanas, **9,2 KB**, 10 regras em
+  português, 5 entradas de log e 6 extras preservados (`cargas_prescritas`, `estrutura_atual`,
+  `status_semanas`, `fonte`, `criado_em`, `atualizado_em`). Do lado do Hermes isso exigiu o parâmetro
+  `extra` no `_request` do `opengym_writer.py` (para mandar `If-Match`) e o script
+  `~/.hermes/workout/scripts/meso_para_app.py`.
+- **Docs:** `docs/MESO.md` (documento permanente) · `docs/specs/spec_meso_no_app.md` (v3) ·
+  `docs/specs/spec_visao_json_meso.md` (v2) · `CHANGELOG.md` v1.3.0 e v1.3.1. Suítes: 46 testes em
+  `api/meso.test.js` e 45 no frontend (`meso.test.js` + `meso-file.test.js`).
+- **Ficou de fora, de propósito:** **BACKLOG-17** (aviso de "ainda não enviado" na visão crua) e
+  **BACKLOG-18** (regra para mesociclo grande), adiados por decisão do usuário em 13/09; e a
+  integração "gerar meso pelo app" (BACKLOG-03), que é a metade que falta daquele item.
 
 ### BACKLOG-10 — O snapshot ainda era agendado pelo próprio agente — **RESOLVIDO em 12/09/2026**
 
@@ -443,3 +507,7 @@
 
 Ficaram registrados na spec o que **não** foi exercitado ao vivo (a releitura ao voltar, que depende de trocar de aba e voltar — coberta por invariantes de teste) e um **satélite novo, sem número**: um ajuste de configuração que perde a corrida é descartado em silêncio (a mescla do `409` monta o estado a partir do servidor; medido ao vivo, o `keepAwake` terminou no valor do servidor). É pré-existente e não afeta plano, rotina nem treino.*
 *Atualizado 12/09/2026 (19): **BACKLOG-10 RESOLVIDA e movida para Concluídos.** O snapshot diário saiu do agendador do próprio agente (job `Hermes Snapshot`, `c75628767d63`, agora **pausado** — reversível) e passou para o `/etc/cron.d/island-ops`, o mesmo arquivo que já roda o sensor da ilha como `pi`, com o **mesmo horário** (06:00) para não deslocar o carimbo que o sensor lê. **O achado que quase repetiu o silêncio:** em crontab de sistema o `HOME` não vem do login, e o `snapshot.sh` monta o caminho do clone com `$HOME` — medido com `env -i`, sem a linha `HOME=/home/pi` o caminho vira `/hermes-snapshot` e o job morre no primeiro `mkdir`, em silêncio. Com a linha, o script rodou em ambiente limpo e fechou o ciclo inteiro (commit `632aa92`, push aceito, carimbo atualizado), provando que nada nele depende do gateway. Seguem abertos, fora desta família: **BACKLOG-12** (protocolo de mutação em dois lugares), **BACKLOG-13** (cobertura do L1), **BACKLOG-14** (ensaio de restauração num Pi limpo) e **BACKLOG-15** (segredo real no `config.yaml`). A **BACKLOG-09** segue esperando a janela de 7 dias.*
+
+*Atualizado 14/09/2026 (20): **MESO ENTROU NO APP — v1.3.0 (13/09) e v1.3.1 (14/09), no GitHub até `e276b40`.** O mesociclo deixou de viver só em `~/.hermes/workout/plans/mesociclo_ativo.json`: virou objeto do perfil (`S.mesos[]` + `S.activeMeso` + `S.mesoPrev`) com painel na aba Plan, tela completa, folha "All", criação à mão com 4 campos, import CSV/JSON que valida forma e nunca limita arquivo mais rico, export, visão crua só do mesociclo e as rotas do assistente (`PUT`/`GET /api/plan/meso`, `POST …/:id/activate`, e `DELETE …/:id` desde 14/09). O registro completo, com decisões e prova, está no item novo de **Concluídos**. Três consequências para os itens abertos: a **BACKLOG-03** passou a **PARCIAL** (a metade "app" está entregue; faltam o formulário de objetivo, o `POST /api/hermes/meso` e o motor), a **BACKLOG-02** ganhou a nota de que o `meso_id` do micro agora é o id da biblioteca e que o caminho `PUT /api/plan/meso` já está provado de ponta a ponta (o assistente publicou o meso real em 13/09 23:06, `actor=hermes`, `verified=signature`, e para isso o `opengym_writer.py` ganhou `extra` no `_request` e o script `meso_para_app.py`), e a **BACKLOG-18** ganhou a medição que tira a urgência dela (o maior mesociclo real tem 9,2 KB, não 64 KB). Seguem abertos: BACKLOG-02, 03 (parcial), 09 (implementado, esperando a janela de 7 dias sem escrita com `ifMatch: "none"`), 12, 13, 14, 15, 17 e 18.*
+
+*Atualizado 14/09/2026 (21): **receita de push do Pi, sem clone.** O Pi não tem credencial de GitHub, e o repositório tem 127 MB (mídia versionada), então clonar só para empurrar 9 commits é caro. O que funcionou, e fica registrado: no Pi, `git bundle create /tmp/og.bundle $(git ls-remote origin refs/heads/emerson-custom | cut -f1)..emerson-custom` (bundle **fino**, 246 KB); nesta máquina, `git init` num diretório temporário, `git fetch --depth=1 --filter=blob:none --no-tags origin emerson-custom` (traz a base **sem os blobs**, que o GitHub já tem), `git fetch <bundle> emerson-custom:refs/heads/from-pi` (ref separado — o git recusa buscar por cima da branch em uso) e `git push origin from-pi:refs/heads/emerson-custom`. A credencial é a do Gerenciador de Credenciais do Windows, com `GIT_TERMINAL_PROMPT=0` para falhar em vez de abrir prompt. Conferir sempre lendo o GitHub (`git ls-remote origin refs/heads/emerson-custom`), não o cache local.*
