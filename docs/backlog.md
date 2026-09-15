@@ -221,6 +221,22 @@
 - **Refs:** `frontend/src/views/PlanRaw.jsx` · `frontend/src/lib/meso.js` (`LIMITS`) ·
   `docs/specs/spec_visao_json_meso.md` (§5, item adiado)
 
+## BACKLOG-19 — `If-Match: *` é aceito onde deveria ser `412` — criado em 15/09/2026
+
+- **O que é:** o `checkIfMatch` (`api/routines.js:303-319`) trata `If-Match: *` como válido — o teste
+  é `ifMatch !== '*' && ifMatch !== String(cur.rev)` —, então nenhuma rota que dependa dele recusa o
+  curinga: `PUT /api/plan/meso` (`api/meso.js:171`) responde `200` e grava com `If-Match: *`. Não é
+  furo de segurança (sessão e assinatura continuam obrigatórias); é buraco na promessa de concorrência:
+  `*` significa "qualquer base", e uma publicação sobre base desconhecida não tem como ser conferida.
+- **Onde dói:** toda escrita que faça read-modify-write esperando base conhecida. Medido em 15/09/2026:
+  a rota do meso aceita; a rota nova `POST /api/plan/micro` **não** (confere o wildcard à mão antes do
+  helper — decisão A18 da spec v6, que é a única que hoje devolve `412 IF_MATCH_WILDCARD`).
+- **O que fazer:** conferir `parseIfMatch(req.headers['if-match']) === '*'` antes de chamar o helper e
+  responder `412 IF_MATCH_WILDCARD` nas rotas que exigem base conhecida (`PUT /api/plan/meso`,
+  `PATCH /api/routines/:id`), com um teste por rota; e decidir explicitamente o que vale para o
+  `PUT /api/data` do PWA (o cliente nunca manda `*`, mas hoje a API aceita).
+- **Refs:** `api/routines.js:303-319` · `api/meso.js:171` · `docs/specs/spec_publicacao_micro.md` v6 (A18)
+
 ## Concluídos
 
 > Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
