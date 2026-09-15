@@ -68,54 +68,6 @@
 
 ---
 
-## BACKLOG-03 — Meso: Criar novo mesociclo via app (app como interface, Hermes como motor) — ENCERRADO POR DECISÃO (14/09/2026): não faremos
-
-- **Decisão do usuário (14/09/2026): NÃO FAREMOS.** Duas coisas ficam fora, por escolha explícita:
-  (1) **botão no app** pedindo mesociclo ao Hermes; (2) **cron criando mesociclo**. O mesociclo
-  continua sendo criado quando o usuário pede na conversa com o assistente e publicado por
-  `PUT /api/plan/meso` (script `~/.hermes/workout/scripts/meso_para_app.py`) — o caminho já provado
-  em 13/09 com o meso real. Tudo o que vem abaixo (form de objetivo no app, `POST /api/hermes/meso`,
-  `hermes_api.py` na 8091, arquivamento em `plans/historico/`) fica registrado como **desenho não
-  implementado e fora de escopo**, e não deve ser retomado sem uma decisão nova do usuário.
-
-- **Status (histórico, 14/09/2026): PARCIAL.** A metade "app" está entregue e no ar (v1.3.0/v1.3.1): o mesociclo
-  é objeto do perfil, com biblioteca + ativo, tela, criação à mão (4 campos), import/export CSV e
-  JSON, visão crua e as rotas `PUT`/`GET /api/plan/meso`, `POST /api/plan/meso/:id/activate` e
-  `DELETE /api/plan/meso/:id` — tudo em **`docs/MESO.md`**. O que falta é a metade **"app como
-  interface"**: o formulário de objetivo no app, o serviço HTTP no Hermes (`POST /api/hermes/meso`,
-  o `hermes_api.py` da 8091 — **não existe**, conferido em 14/09) e o Hermes arquivando o meso
-  anterior para gerar o novo. **O motor em si já existe** (skill `treino-coach` + `opengym_writer.py`
-  + `meso_para_app.py`, e o meso real foi gerado por ele): o que não existe é gatilho automático para
-  o meso — nenhum job do agente cria ou renova mesociclo, só o micro semanal tem cron. **Do desenho
-  abaixo, o que já mudou:** o objeto vive em `S.mesos[]` com
-  `S.activeMeso` (o `mesociclo_ativo.json` é fonte do assistente, não do app), o id é
-  `meso-YYYY-MM-DD` com sufixo curto em vez de `-HHmmss-rand4`, e o assistente **já publica o meso por
-  `PUT /api/plan/meso`** (provado em 13/09 com o mesociclo real, 9,2 KB). O resto do fluxo (form,
-  `POST /api/hermes/meso`, arquivo em `plans/historico/`) continua de pé.
-
-- **Status (desenho de 23/09, mantido como histórico):** Spec v4 detalhada em `docs/specs/spec_micro_meso_via_app.md` (131 linhas, 2026-09-23) — mesma base do Micro, mas para meso.
-
-- **Objetivo:** trazer a **criação do mesociclo** (estratégia de 4-8 semanas, 20|25 sessões com `12=checkpoint`) para o app, mantendo o **Hermes como motor**. O app coleta o desejo de evolução e pede ao Hermes para elaborar o novo meso; o Hermes arquiva o meso anterior e cria o novo.
-
-- **Fluxo completo (estratégico, a cada 4-8 semanas):**
-  1. Gatilho no app: botão `Criar novo mesociclo` em `Plan` (ou automático quando o meso atual termina: 12 sessões checkpoint ou `performance < -10%` por 2 sessões → deload + arquiva).
-  2. App abre **form de objetivo** com `t()` keys: `Foco para os próximos meses?` (ex: `glúteos P1`, `ombro 3D`), `Duração?` (`12|20|25` com `12=checkpoint` e `semanas[2].fase="checkpoint"`), `Dias?` (`["Tue","Wed","Thu","Sat","Sun"]` 3..6, sort por `weekdayOrder`).
-  3. App faz `POST https://hermes/api/meso` com `{objetivo, duracao_sessoes, dias, analysis: GET /api/coach/analysis, historico_meso: GET /api/hermes/meso/historico}` + `Idempotency-Key: hex(sha256(uid:objetivo:duracao:hash(dias)))` + `gymsid`.
-  4. Hermes valida `regras_globais` (`reps 6-8`, `deload -40% séries`), arquiva `mesociclo_ativo.json` atual em `plans/historico/meso-2026-09-08-142233-a1b2.json` (id único `meso-YYYY-MM-DD-HHmmss-rand4`, retenção 10 via `ls -t | tail -n +11 | xargs rm`), cria novo `mesociclo_ativo.json` com `id: meso-2026-10-07-091500-c3d4`, `periodo`, `objetivo`, `semanas[]` com `fase: calibração→progressão→deload` e `progressao_planejada` calculada pelo LLM (não hardcoded `+2,5-5%`), e retorna `200 {mesociclo}`.
-  5. App mostra `Seu novo mesociclo: 12 sessões, foco glúteo, 5x/semana` e já deixa o próximo `Gerar micro S1` liberado (com `meso_id` novo).
-
-- **Arquivos que tocam:**
-  - App: `Plan.jsx` (form), `hermes.js` (`postMeso`), `web/nginx.conf`
-  - Hermes: `hermes_api.py` (`POST /api/hermes/meso` + `GET /api/hermes/meso/historico`), `treino-coach/SKILL.md` (FLUXO meso), `mesociclo_ativo.json` + `plans/historico/`
-
-- **Critérios:**
-  - [ ] Com meso atual `meso-2026-09-08` (12 sessões, foco ombro) e pedido `foco glúteo, 12 sessões` no app → novo `meso-2026-10-07-...` criado com `objetivo: foco glúteo`, `semanas: 12 sessões` (com `checkpoint` em `semanas[2]`), e o micro seguinte (`S1`) já usa o novo meso (não o antigo) — `POST /micro` sem `meso_id` ativo → `400 {code:"NO_MESO"}`, com `meso` ativo e `force:false` → `409 {code:"MESO_ACTIVE"}` a menos que `force:true`
-  - [ ] `POST /meso` sem `objetivo` → `400`; sem `gymsid` → `401`; `duracao_sessoes` fora `12|20|25` → `400`
-
----
-
----
-
 ## BACKLOG-09 — Concorrência real no sync do app: `_ts` é relógio, não token — satélite da análise de 11/09/2026
 
 - **Status (atualizado 12/09/2026): IMPLEMENTADO E MEDIDO — falta só a janela de 7 dias.** O token de verdade (`S.rev` + `If-Match` por igualdade) veio da BACKLOG-07. Esta rodada fechou o que faltava, com a `spec_concorrencia_sync.md` (v4, 2 revisões por subagente + a medição): o app **relê o plano quando volta para a frente**, **avisa** quando o plano guardado mudou (uma vez por revisão, sem separar quem escreveu), **guarda a revisão confirmada** em cada escrita — o defeito que fazia todo salvamento depois do primeiro pagar `409` e reenviar — e a mescla da releitura passou a **preservar a edição local**. A pergunta que o item deixou em aberto ("o caminho de `useStore.js:169/176/183/220` cobre o caso aberto e sujo?") foi respondida no código: **não cobria** — o `pullState` só rodava no boot. Afeta **toda** escrita de estado (treino, peso, ajustes), não só rotina.
@@ -237,11 +189,68 @@
   `PUT /api/data` do PWA (o cliente nunca manda `*`, mas hoje a API aceita).
 - **Refs:** `api/routines.js:303-319` · `api/meso.js:171` · `docs/specs/spec_publicacao_micro.md` v6 (A18)
 
-*Atualizado 15/09/2026 (25): **a publicação da semana está IMPLEMENTADA e no ar (`v1.4.0`, commit do dia).** `POST /api/plan/micro` responde `401` sem credencial (era `404`), com `api/micro.js` + 46 testes no `api/micro.test.js` (168 no total, verdes no alvo `test` da imagem). A prova ponta a ponta foi feita em produção, republicando o conteúdo que já estava no perfil: `HTTP 200`, rev 261→263, auditoria `publish-micro` com `idemKey`, `[og-micro]` no log do container, `week`, `dayPlan` e os 303 treinos intocados, `prog` preservado e o legado normalizado. As recusas foram exercitadas ao vivo: `401 ACTOR_SIGNATURE_REQUIRED`, `412 IF_MATCH_WILDCARD`, `409 STALE_STATE`, `400 IDEMPOTENCY_REQUIRED`/`BAD_DATE`/`WINDOW_TOO_FAR`/`BAD_ROUTINES`/`IF_MATCH_MALFORMED`. Do lado do agente: subcomando `publish` no `opengym_writer.py` (uid obrigatório, ensaio que roda o portão P1, snapshot, verificação e recibo) e a trava de alvo valendo também no modo `put`. As instruções foram reescritas com o texto da spec (passo 6 da skill `treino-coach`, bloco de mutação do pipeline e o passo 6 do prompt do cron, que mandava a receita aposentada). **Achado durante a prova:** o portão P4e bloqueou a republicação do `0326` (9 sobre último executado 8, +12,5%) até o payload trazer `justify` — o `publish` ganhou o mesmo campo de justificativa que o `apply` já tinha, e ele é removido do corpo antes de enviar (senão iria para o estado). **Aberto:** BACKLOG-19 (o `If-Match: *` do `PUT /api/plan/meso`).*
-
 ## Concluídos
 
 > Itens encerrados. Ficam aqui como registro do **porquê**: a evidência que motivou a mudança e as opções que foram recusadas. Itens abertos continuam acima.
+
+### BACKLOG-03 — Meso: Criar novo mesociclo via app (app como interface, Hermes como motor) — **RESOLVIDO em 15/09/2026, por outro caminho**
+
+- **Resolução (15/09/2026): o objetivo está entregue; o desenho, cancelado.** O que este item
+  queria — o mesociclo existindo no app — está no ar desde 13/09 (v1.3.0): objeto do perfil,
+  biblioteca com um ativo, tela completa, criação à mão, import/export e visão crua. O **caminho**
+  desenhado abaixo (form no app, `POST /api/hermes/meso`, `hermes_api.py` na 8091, cron criando
+  meso) foi **cancelado por decisão do usuário em 14/09/2026**: o meso nasce quando ele pede — na
+  conversa, na criação à mão ou por import — e o assistente publica por `PUT /api/plan/meso`
+  (`meso_para_app.py`, provado com o meso real em 13/09, 4 semanas e 9,2 KB). Nada do desenho
+  abaixo deve ser retomado sem decisão nova: fica como histórico.
+- **O que ficou no lugar:** criação à mão no app (quatro campos), import de arquivo (CSV/JSON) e a
+  publicação pelo assistente. Os critérios abaixo são do desenho cancelado.
+
+- **Decisão do usuário (14/09/2026): NÃO FAREMOS.** Duas coisas ficam fora, por escolha explícita:
+  (1) **botão no app** pedindo mesociclo ao Hermes; (2) **cron criando mesociclo**. O mesociclo
+  continua sendo criado quando o usuário pede na conversa com o assistente e publicado por
+  `PUT /api/plan/meso` (script `~/.hermes/workout/scripts/meso_para_app.py`) — o caminho já provado
+  em 13/09 com o meso real. Tudo o que vem abaixo (form de objetivo no app, `POST /api/hermes/meso`,
+  `hermes_api.py` na 8091, arquivamento em `plans/historico/`) fica registrado como **desenho não
+  implementado e fora de escopo**, e não deve ser retomado sem uma decisão nova do usuário.
+
+- **Status (histórico, 14/09/2026): PARCIAL.** A metade "app" está entregue e no ar (v1.3.0/v1.3.1): o mesociclo
+  é objeto do perfil, com biblioteca + ativo, tela, criação à mão (4 campos), import/export CSV e
+  JSON, visão crua e as rotas `PUT`/`GET /api/plan/meso`, `POST /api/plan/meso/:id/activate` e
+  `DELETE /api/plan/meso/:id` — tudo em **`docs/MESO.md`**. O que falta é a metade **"app como
+  interface"**: o formulário de objetivo no app, o serviço HTTP no Hermes (`POST /api/hermes/meso`,
+  o `hermes_api.py` da 8091 — **não existe**, conferido em 14/09) e o Hermes arquivando o meso
+  anterior para gerar o novo. **O motor em si já existe** (skill `treino-coach` + `opengym_writer.py`
+  + `meso_para_app.py`, e o meso real foi gerado por ele): o que não existe é gatilho automático para
+  o meso — nenhum job do agente cria ou renova mesociclo, só o micro semanal tem cron. **Do desenho
+  abaixo, o que já mudou:** o objeto vive em `S.mesos[]` com
+  `S.activeMeso` (o `mesociclo_ativo.json` é fonte do assistente, não do app), o id é
+  `meso-YYYY-MM-DD` com sufixo curto em vez de `-HHmmss-rand4`, e o assistente **já publica o meso por
+  `PUT /api/plan/meso`** (provado em 13/09 com o mesociclo real, 9,2 KB). O resto do fluxo (form,
+  `POST /api/hermes/meso`, arquivo em `plans/historico/`) continua de pé.
+
+- **Status (desenho de 23/09, mantido como histórico):** Spec v4 detalhada em `docs/specs/spec_micro_meso_via_app.md` (131 linhas, 2026-09-23) — mesma base do Micro, mas para meso.
+
+- **Objetivo:** trazer a **criação do mesociclo** (estratégia de 4-8 semanas, 20|25 sessões com `12=checkpoint`) para o app, mantendo o **Hermes como motor**. O app coleta o desejo de evolução e pede ao Hermes para elaborar o novo meso; o Hermes arquiva o meso anterior e cria o novo.
+
+- **Fluxo completo (estratégico, a cada 4-8 semanas):**
+  1. Gatilho no app: botão `Criar novo mesociclo` em `Plan` (ou automático quando o meso atual termina: 12 sessões checkpoint ou `performance < -10%` por 2 sessões → deload + arquiva).
+  2. App abre **form de objetivo** com `t()` keys: `Foco para os próximos meses?` (ex: `glúteos P1`, `ombro 3D`), `Duração?` (`12|20|25` com `12=checkpoint` e `semanas[2].fase="checkpoint"`), `Dias?` (`["Tue","Wed","Thu","Sat","Sun"]` 3..6, sort por `weekdayOrder`).
+  3. App faz `POST https://hermes/api/meso` com `{objetivo, duracao_sessoes, dias, analysis: GET /api/coach/analysis, historico_meso: GET /api/hermes/meso/historico}` + `Idempotency-Key: hex(sha256(uid:objetivo:duracao:hash(dias)))` + `gymsid`.
+  4. Hermes valida `regras_globais` (`reps 6-8`, `deload -40% séries`), arquiva `mesociclo_ativo.json` atual em `plans/historico/meso-2026-09-08-142233-a1b2.json` (id único `meso-YYYY-MM-DD-HHmmss-rand4`, retenção 10 via `ls -t | tail -n +11 | xargs rm`), cria novo `mesociclo_ativo.json` com `id: meso-2026-10-07-091500-c3d4`, `periodo`, `objetivo`, `semanas[]` com `fase: calibração→progressão→deload` e `progressao_planejada` calculada pelo LLM (não hardcoded `+2,5-5%`), e retorna `200 {mesociclo}`.
+  5. App mostra `Seu novo mesociclo: 12 sessões, foco glúteo, 5x/semana` e já deixa o próximo `Gerar micro S1` liberado (com `meso_id` novo).
+
+- **Arquivos que tocam:**
+  - App: `Plan.jsx` (form), `hermes.js` (`postMeso`), `web/nginx.conf`
+  - Hermes: `hermes_api.py` (`POST /api/hermes/meso` + `GET /api/hermes/meso/historico`), `treino-coach/SKILL.md` (FLUXO meso), `mesociclo_ativo.json` + `plans/historico/`
+
+- **Critérios:**
+  - [ ] Com meso atual `meso-2026-09-08` (12 sessões, foco ombro) e pedido `foco glúteo, 12 sessões` no app → novo `meso-2026-10-07-...` criado com `objetivo: foco glúteo`, `semanas: 12 sessões` (com `checkpoint` em `semanas[2]`), e o micro seguinte (`S1`) já usa o novo meso (não o antigo) — `POST /micro` sem `meso_id` ativo → `400 {code:"NO_MESO"}`, com `meso` ativo e `force:false` → `409 {code:"MESO_ACTIVE"}` a menos que `force:true`
+  - [ ] `POST /meso` sem `objetivo` → `400`; sem `gymsid` → `401`; `duracao_sessoes` fora `12|20|25` → `400`
+
+---
+
+---
 
 ### MESO no app — biblioteca, tela, import/export, visão crua, rotas do assistente e apagar — **ENTREGUE em 13-14/09/2026 (v1.3.0 / v1.3.1)**
 
@@ -566,3 +575,7 @@ Ficaram registrados na spec o que **não** foi exercitado ao vivo (a releitura a
 *Atualizado 14/09/2026 (23): **duas decisões do usuário fecham o desenho "app como interface".** Por escolha explícita, **não haverá** (1) botão no app pedindo mesociclo ao Hermes nem (2) cron criando mesociclo. Com isso a **BACKLOG-03 fica ENCERRADA** (o meso continua nascendo na conversa e sendo publicado por `PUT /api/plan/meso` via `meso_para_app.py`) e a **BACKLOG-02 perde a metade "app"**: nada de stepper de Fase 2 no app, nada de `POST /api/hermes/meso`, nada de `/api/hermes/*` no nginx. O micro continua como está: job `treino-planejamento-semanal` (dom 18h) + `opengym_writer.py` publicando rotina por rotina por `PATCH /api/routines/:id`. A única pergunta que sobrevive na BACKLOG-02 é de **mecanismo**: o assistente publica a semana por uma rota própria (`POST /api/plan/micro`, uma escrita assinada e auditada, que **não existe** — `404`) ou continua publicando `PATCH` a `PATCH`, que é o que roda hoje.*
 
 *Atualizado 15/09/2026 (24): **a publicação da semana tem spec v6, pronta para implementar.** `docs/specs/spec_publicacao_micro.md` foi reescrita — a v5 (12/09) descrevia outro contrato (treinos novos por semana, `grade` de sete chaves, congelamento, `ROUTINE_EXISTS`) e **nunca foi implementada** — com as três decisões do usuário de 14/09: os **mesmos treinos** são atualizados (upsert por id, a lista do app não cresce), **os dias são do usuário** (a rota só escreve data depois do sim dele, e nunca escreve a faixa da semana) e a publicação da semana passa a ser por essa rota, com o ajuste pontual continuando por `PATCH` por rotina. A v6 carrega também o texto novo das instruções do Hermes: passo 6 do `treino-coach`, bloco de mutação do `opengym-workout-pipeline` e o passo 6 do prompt do cron de domingo — que hoje manda a receita aposentada e aponta para o arquivo que se declara histórico. Duas revisões adversariais por subagente, contra o código real, levantaram **53 achados (19 bloqueantes), todos aplicados**; os que mais mudaram o desenho: o `checkIfMatch` aceita `If-Match: *` (a rota nova confere à mão), o `readActor` devolve `verified:"claimed"` sem erro quando não há assinatura, os 35 exercícios vivos estão em `mode:"normal"`/`sg:0` (o publicador normaliza o legado), o `validateRoutineBody` é validador de merge e recusaria o array da publicação, a janela "mesma semana ISO" recusava o caso normal do cron de domingo, e o `data/` do repo não é o diretório vivo (o backup apontava para o lugar errado). **Achado novo, item próprio:** o `PUT /api/plan/meso` aceita `If-Match: *` pelo mesmo motivo; a rota do meso fica como está nesta entrega. **Nada foi implementado ainda:** `POST /api/plan/micro` responde `404` e `api/micro.js` não existe.*
+
+*Atualizado 15/09/2026 (25): **a publicação da semana está IMPLEMENTADA e no ar (`v1.4.0`, commit do dia).** `POST /api/plan/micro` responde `401` sem credencial (era `404`), com `api/micro.js` + 46 testes no `api/micro.test.js` (168 no total, verdes no alvo `test` da imagem). A prova ponta a ponta foi feita em produção, republicando o conteúdo que já estava no perfil: `HTTP 200`, rev 261→263, auditoria `publish-micro` com `idemKey`, `[og-micro]` no log do container, `week`, `dayPlan` e os 303 treinos intocados, `prog` preservado e o legado normalizado. As recusas foram exercitadas ao vivo: `401 ACTOR_SIGNATURE_REQUIRED`, `412 IF_MATCH_WILDCARD`, `409 STALE_STATE`, `400 IDEMPOTENCY_REQUIRED`/`BAD_DATE`/`WINDOW_TOO_FAR`/`BAD_ROUTINES`/`IF_MATCH_MALFORMED`. Do lado do agente: subcomando `publish` no `opengym_writer.py` (uid obrigatório, ensaio que roda o portão P1, snapshot, verificação e recibo) e a trava de alvo valendo também no modo `put`. As instruções foram reescritas com o texto da spec (passo 6 da skill `treino-coach`, bloco de mutação do pipeline e o passo 6 do prompt do cron, que mandava a receita aposentada). **Achado durante a prova:** o portão P4e bloqueou a republicação do `0326` (9 sobre último executado 8, +12,5%) até o payload trazer `justify` — o `publish` ganhou o mesmo campo de justificativa que o `apply` já tinha, e ele é removido do corpo antes de enviar (senão iria para o estado). **Aberto:** BACKLOG-19 (o `If-Match: *` do `PUT /api/plan/meso`).*
+
+*Atualizado 15/09/2026 (26): **BACKLOG-03 encerrada e movida para Concluídos**, a pedido do usuário. O **objetivo** do item está entregue: o mesociclo vive no app desde 13/09 (v1.3.0: objeto, biblioteca com ativo, tela, criação à mão, import/export, visão crua) e o assistente o publica por rota própria (`PUT /api/plan/meso`, provado com o meso real). O que foi **cancelado** em 14/09 foi o *caminho* desenhado (formulário no app, `hermes_api.py` na 8091, proxy `/api/hermes/*`, cron criando meso) — o texto do desenho fica em Concluídos como histórico, com o registro da decisão. **Abertos hoje:** BACKLOG-02 (o desenho "app como interface" está cancelado; a parte que sobreviveu — a publicação da semana — foi implementada e está no ar desde 15/09, então falta só a decisão de fechar o item), **09** (janela de 7 dias sem escrita sem `If-Match`), **13** (cobertura do L1), **14** (ensaio de restauração num Pi limpo), **15** (segredo no `config.yaml`), **17** (aviso de "ainda não enviado" na visão crua), **18** (mesociclo grande na visão crua) e **19** (`If-Match: *` aceito na rota do meso).*
