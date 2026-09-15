@@ -761,7 +761,8 @@ publicação**, sem embrulho, e é **substituição total** (o oposto do intent 
   "report_id": "relatorio_S3_2026-09-15_a_21",
   "routines": [
     { "id": "r_push_C_20260829", "name": "Push C - Shoulder 3D", "emoji": "🔺",
-      "ex": [ { "id": "0326", "sets": 3, "reps": "6-8", "weight": 9, "restSec": 90 },
+      "ex": [ { "id": "0326", "sets": 3, "reps": "6-8", "weight": 9, "restSec": 90,
+                "justify": "9 por carga demonstrada (opcional; NAO vai no corpo)" },
               { "id": "0584", "sets": 3, "reps": "6-8", "weight": 45 } ] },
     { "id": "r_pull_C_20260829", "name": "Pull C - Shoulder 3D", "emoji": "🔻",
       "ex": [ { "id": "0585", "sets": 3, "reps": "6-8", "weight": 200, "unit": "lb" } ],
@@ -776,7 +777,12 @@ escrever): cada rotina é a rotina **inteira** (o que não estiver no arquivo n�
 publicação — `restSec`, `unit`, `mode`, `sg` incluídos); `mode` pode ser omitido (o servidor
 normaliza o legado `normal`→`reps`) e `ex` é **array**; `prog` omitido **preserva** o que está no app;
 `dias` só entra com autorização do usuário; `autorizar` só é preenchido **depois** de um
-`409 PLAN_CONFLICT` (e aí a chave de idempotência muda, porque o corpo mudou — A14).
+`409 PLAN_CONFLICT` (e aí a chave de idempotência muda, porque o corpo mudou — A14). `justify`
+(opcional, por exercício) é do **portão P1** do escritor, não do servidor: o `publish` usa o campo no
+ensaio do portão e **tira antes de montar o corpo** — sem isso o servidor gravaria `justify` no estado,
+porque a materialização preserva o que vem no payload. Achado da implementação (15/09/2026): sem esse
+campo, o P4e bloqueia a republicação de uma carga legitimamente maior (`0326` em 9 sobre último
+executado 8, +12,5%) e o cron não teria como publicar.
 
 `cmd_publish`: valida o payload (`validate_publish_payload`, próprio — A20), exige `--uid`, checa a
 trava de alvo, lê o `rev` com `GET /api/data`, monta o corpo canônico e a chave

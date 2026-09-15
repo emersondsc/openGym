@@ -15,6 +15,7 @@ import * as catalog from './catalog.js';
 import * as routines from './routines.js';
 import * as meso from './meso.js';
 import { checkMesos } from './meso.js';
+import * as micro from './micro.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -93,7 +94,7 @@ function readState(uid) {
 // Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
          readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
-         ROUTINE_HANDLERS, meso };
+         ROUTINE_HANDLERS, meso, micro, livePresence };
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -434,6 +435,10 @@ const routes = {
   // O DELETE é a exceção que não tem corpo: o id vai no caminho (`PATTERNS`) e a base no If-Match.
   'PUT /api/plan/meso': (req, res) => ROUTINE_HANDLERS.putMeso(req, res),
   'GET /api/plan/meso': (req, res) => ROUTINE_HANDLERS.getMeso(req, res),
+  // Publicação da semana: N rotinas numa escrita só, upsert por id, dia só com autorização do
+  // usuário (docs/specs/spec_publicacao_micro.md v6). Mesmo mapa de handlers: o matchRoute procura
+  // handler de padrão só em ROUTINE_HANDLERS.
+  'POST /api/plan/micro': (req, res) => ROUTINE_HANDLERS.publishMicro(req, res),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -786,6 +791,11 @@ Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
 // registrar num mapa próprio deixaria a rota de ativação respondendo 404.
 Object.assign(ROUTINE_HANDLERS, meso.makeHandlers({
   readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor
+}));
+// Publicação da semana: mesmo mapa (ver acima). Recebe o `livePresence` — o acessor com TTL, não o
+// Map cru: a checagem de treino em andamento não pode ler entrada velha de até ~100 s (A17).
+Object.assign(ROUTINE_HANDLERS, micro.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, livePresence, CATALOG_PATH
 }));
 
 // Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo

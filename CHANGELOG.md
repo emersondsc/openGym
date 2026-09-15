@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.4.0 — 2026-09-15
+
+O plano da semana passa a chegar ao app **numa publicação só**, e o agente deixa de escrever o estado
+inteiro para mudar cinco treinos. A semana **atualiza os treinos que já existem** (a lista não cresce),
+o dia continua sendo seu, e a rota recusa em vez de sobrescrever.
+
+- 📅 **`POST /api/plan/micro`** (`api/micro.js`, novo): as rotinas da semana numa gravação só, por
+  **upsert no mesmo id** — o dia que apontava para o treino continua valendo e o que muda é o conteúdo.
+  Exige sessão, **assinatura de agente verificada**, `If-Match` (com `If-Match: *` recusado com `412`) e
+  `Idempotency-Key` com replay de 24 h (`200 replayed`, com `intact`).
+- 🧭 **O dia é do usuário.** Sem `dias` no payload a agenda não é tocada; com uma data declarada (e
+  autorizada) a rota escreve só aquele dia em `dayPlan` e **nunca** a faixa da semana. Data que já
+  resolve para outro treino, ou que já tem treino registrado, vira `409 PLAN_CONFLICT` com a lista do
+  que está lá — nada é sobrescrito em silêncio.
+- 🧬 **Rotina que já existia mantém o `prog`** que você ligou no app, e o legado do estado antigo
+  (`mode:"normal"`, `sg:0`) é normalizado em vez de recusado.
+- 🔒 **Recusas com nome:** `401 ACTOR_SIGNATURE_REQUIRED` sem assinatura (o `readActor` devolvia
+  "claimed" sem erro), `412 IF_MATCH_WILDCARD`, `409 WORKOUT_IN_PROGRESS` com treino em andamento,
+  `400 DATE_IN_PAST`/`WINDOW_TOO_FAR` na janela de hoje até 14 dias.
+- 🛠️ **Agente:** subcomando `publish` no `opengym_writer.py` (uid obrigatório, `--dry-run` que roda o
+  portão P1 e não escreve, snapshot antes, verificação campo a campo e recibo), e a trava de alvo
+  (`--target-live`) passou a valer também no modo `put`.
+- 📚 **Instruções do Hermes reescritas:** o passo 6 da skill `treino-coach`, o bloco de mutação da
+  skill do pipeline e o **prompt do cron de domingo** — que ainda mandava a receita manual aposentada e
+  apontava para o arquivo que se declara histórico — passam a dizer quando usar cada caminho.
+- 🧪 **Testes:** 46 novos no servidor (168 no total, verdes no alvo `test` da imagem). Spec:
+  `docs/specs/spec_publicacao_micro.md` v6 (53 achados de duas revisões adversariais, todos aplicados).
+
 ## v1.3.1 — 2026-09-14
 
 O mesociclo passa a poder ser apagado: a biblioteca deixa de ser só crescente. O botão está na lista
