@@ -240,6 +240,29 @@ bash /usr/local/bin/sync_og_credentials.sh               # forcar a sincronizaca
 `docker compose down` **não** apaga o dado: o `data/` e a mídia são volumes amarrados a caminhos
 absolutos do host, não volumes nomeados do Docker. Recriar os containers é seguro.
 
+### Como uma mudança de código anda (o fluxo oficial)
+
+A **VPS é a fonte de verdade do código**: é onde o app roda e é o clone de onde o trabalho sai.
+O GitHub é a cópia publicada. Não existe terceira via.
+
+```
+editar na VPS  ->  git commit  ->  git push  ->  docker compose up -d --build
+/mnt/drivebackup/apps/openGym/openGym          (GitHub: emersondsc/openGym, ramo emerson-custom)
+```
+
+- **A VPS empurra com uma deploy key própria:** `~/.ssh/id_ed25519_opengym`, com o alias
+  `github-opengym` no `~/.ssh/config` e cadastrada no repo como **read-write**, título
+  "VPS openGym (push)". O alias é separado do `Host github.com` de propósito: deploy key do
+  GitHub vale para **um** repositório só, e a `id_ed25519_github` é a do repo de backup.
+- **A identidade dos commits está configurada na VPS**, a mesma dos commits anteriores, para o
+  histórico não ficar com dois autores.
+- **O clone do Pi é dormente.** Ele existe, está parado e não recebe push: depois da migração,
+  trabalhar nele é trabalhar numa cópia velha.
+- **Não mantenha cópia deste projeto fora da VPS.** Duas árvores são duas verdades, e foi assim
+  que apareceram, numa máquina de trabalho, três `server.js` de datas diferentes. Precisa ler
+  código? Leia pelo ssh, na VPS. Não copie.
+- **Push não é deploy.** O que está no ar só muda com `docker compose up -d --build`.
+
 ## 8. Limites do free tier
 
 A VM é Always Free **numa conta Pay As You Go**, e aí a conta é por mês, não permanente:
