@@ -380,6 +380,41 @@ dois casos e não diz nada).
 obriga todo mundo a registrar passkey de novo. Por isso o `.env` passou a ir no backup do GitHub
 e o pacote do R2 leva também `og.crt` e `og.key`.
 
+### 9.9 Cloudflare bloqueia o user-agent padrão do Python (erro 1010)
+
+Esta zona responde **`403 error code: 1010`** a qualquer requisição cujo `User-Agent` seja o
+padrão do `urllib` do Python (`Python-urllib/3.12`). O bloqueio acontece **na borda, antes de
+chegar na API**: a requisição nem aparece no log do nginx da VPS, então do lado do servidor não
+há sinal nenhum de que alguém tentou.
+
+Medido em 17/09/2026, com o **mesmo token válido**, variando só o cabeçalho:
+
+| User-Agent | Resposta |
+|---|---|
+| (nenhum; padrão do urllib) | `403 error code: 1010` |
+| `curl/8.5.0` | 200 |
+| `opengym-pipeline/1.0` | 200 |
+| user-agent de navegador | 200 |
+| `python-requests/2.31.0` | 200 |
+
+Ou seja: não é a credencial, é o crachá do cliente. **Qualquer user-agent passa; só o padrão do
+urllib não.**
+
+**Por que isso só apareceu depois do corte:** enquanto o app rodava no Pi, o pipeline e o escritor
+falavam com `http://localhost:8081` (a primeira URL da cadeia), que **não passa pela Cloudflare**.
+Com o app atrás do túnel, *todas* as URLs passam por ela. O `opengym_writer.py` já registrava esse
+403 num comentário desde 11/09/2026, mas a "solução" dele era cair para a URL local — que deixou de
+existir no corte. O sintoma era o pior possível: a rodada diária falhava inteira (`exit 2`) e o
+alerta do Telegram dizia apenas que o pipeline falhou.
+
+**Corrigido em 17/09/2026**, cada script no seu ponto único: `process_workout.py` (o `Request` da
+leitura, com a constante `OG_UA`) e `opengym_writer.py` (a função `actor_headers`, por onde passam
+`_request`, `put_state`, `patch_routine` e `publish_micro`). Os dois mandam
+`User-Agent: opengym-pipeline/1.0`.
+
+**Regra para qualquer cliente novo deste domínio:** script em Python que use `urllib` **precisa**
+mandar `User-Agent`, senão toma 403 sem deixar rastro no servidor. `curl` não sofre disso.
+
 ## 10. O que NÃO fazer
 
 - **Não rotacione o `data/secret` sem motivo.** Ele deriva o `agent.key` e assina as sessões;
