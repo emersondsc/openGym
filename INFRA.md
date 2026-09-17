@@ -313,7 +313,7 @@ A chave da VM **não tem nome padrão**, então sem `-i` o resultado é
 `~/.ssh/config`:
 
 ```
-Host opengym opengym-vm
+Host vps_oracle
     HostName <ip-da-vm>
     User ubuntu
     IdentityFile ~/.ssh/id_ed25519_oracle
@@ -321,7 +321,8 @@ Host opengym opengym-vm
     ConnectTimeout 10
 ```
 
-Com esse bloco, `ssh opengym` (ou `ssh opengym-vm`) basta e o `-i` some do caminho. O
+Com esse bloco, `ssh vps_oracle` basta e o `-i` some do caminho. O nome é genérico de propósito:
+o alias aponta para a máquina, não para o projeto, já que ela pode hospedar outra coisa depois. O
 `IdentitiesOnly yes` é o que impede o `ssh` de ficar oferecendo outras chaves antes da certa, e o
 `HostName` real não está neste documento de propósito (o repo é público).
 
