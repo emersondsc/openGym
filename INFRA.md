@@ -309,7 +309,23 @@ dentro do `data/`**.
 ### 9.5 `ssh` precisa de `-i` e de `-n`
 
 A chave da VM **não tem nome padrão**, então sem `-i` o resultado é
-`Permission denied (publickey)`. E dentro de um script enviado por `bash -s < arquivo>`, todo
+`Permission denied (publickey)`. Na máquina de operação isso está resolvido com um alias no
+`~/.ssh/config`:
+
+```
+Host opengym opengym-vm
+    HostName <ip-da-vm>
+    User ubuntu
+    IdentityFile ~/.ssh/id_ed25519_oracle
+    IdentitiesOnly yes
+    ConnectTimeout 10
+```
+
+Com esse bloco, `ssh opengym` (ou `ssh opengym-vm`) basta e o `-i` some do caminho. O
+`IdentitiesOnly yes` é o que impede o `ssh` de ficar oferecendo outras chaves antes da certa, e o
+`HostName` real não está neste documento de propósito (o repo é público).
+
+E dentro de um script enviado por `bash -s < arquivo>`, todo
 `ssh` precisa de **`-n`**: sem isso ele lê o próprio arquivo como stdin, engole o resto do script,
 e a execução **para no meio com código 0**, parecendo sucesso.
 
