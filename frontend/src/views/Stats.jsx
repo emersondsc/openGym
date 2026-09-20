@@ -273,6 +273,14 @@ export default function Stats() {
       <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
     </div>
 
+    {S.workouts.length > 0 && <>
+      <div className="row between" style={{ marginBottom: 10 }}>
+        <h4 className="sec" style={{ margin: 0 }}>{t('Recent workouts')}</h4>
+        <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={() => nav('/history')}>{t('All')} {S.workouts.length}</Button>
+      </div>
+      <div className="list">{[...S.workouts].reverse().slice(0, 6).map(w => <WorkoutRow key={w.id} w={w} onClick={() => workoutDetailSheet(w)} />)}</div>
+    </>}
+
     <CoachAnalysisCard />
 
     {S.workouts.length > 0 && <MuscleBalance S={S} />}
@@ -320,13 +328,5 @@ export default function Stats() {
         </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
       </div>
     </div>
-
-    {S.workouts.length > 0 && <>
-      <div className="row between" style={{ marginBottom: 10 }}>
-        <h4 className="sec" style={{ margin: 0 }}>{t('Recent workouts')}</h4>
-        <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={() => nav('/history')}>{t('All')} {S.workouts.length}</Button>
-      </div>
-      <div className="list">{[...S.workouts].reverse().slice(0, 6).map(w => <WorkoutRow key={w.id} w={w} onClick={() => workoutDetailSheet(w)} />)}</div>
-    </>}
   </>
 }
