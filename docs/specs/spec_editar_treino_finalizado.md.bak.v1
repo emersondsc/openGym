@@ -1,0 +1,829 @@
+# Spec: editar um treino já finalizado — v1
+
+> **Pedido do usuário (25/09/2026):** *"eu quero uma capacidade de editar uma rotina completamente… podemos fazer isso no card do Recent workouts, o usuário clica em uma rotina e abre a opção de deletar ou editar. Aí a partir da edição teremos que montar uma tela intuitiva para o usuário fazer."*
+> **Repo/branch:** `emersondsc/openGym`, `emerson-custom`. Frontend React 19 + Vite (`frontend/`), API Node sem framework (`api/server.js`), servido pelo nginx do container `opengym-web-1` (porta 8081).
+> **Base medida (25/09/2026), na VPS `/mnt/drivebackup/apps/openGym/openGym`, HEAD `3fcbab5`, árvore limpa:** `frontend/src/sheets.jsx` 1350 linhas · `frontend/src/views/Workout.jsx` 426 · `frontend/src/views/Stats.jsx` 332 · `frontend/src/views/History.jsx` 16 · `frontend/src/store/useStore.js` 363 · `frontend/src/lib/history.js` 300 · `frontend/src/lib/onerm.js` 82 · `frontend/src/components/ui.jsx` 296 · `frontend/src/index.css` 928 · `frontend/src/App.jsx` 100 · `frontend/src/locales/pt.js` 45.129 bytes · 11 arquivos `lib/*.test.js`.
+> **Estado hoje:** um treino finalizado é **somente leitura** na UI. O detalhe (`WorkoutDetail`, `sheets.jsx:806-822`) mostra as séries e oferece **só** `Delete workout`. Não existe rota, tela, nem função de edição; a única escrita em `S.workouts` depois do fim do treino é o filtro que remove o treino apagado (`sheets.jsx:819`).
+
+---
+
+## Contexto e Objetivo
+
+Um treino finalizado é o **registro** do que aconteceu, e dele saem cinco coisas derivadas: o volume do treino (`w.vol`), os recordes de peso que ele bateu (`w.prs`), o melhor peso registrado de cada exercício (`S.exWeights`, usado quando a rotina não prescreve carga), os gráficos do Stats (volume semanal, curva por exercício, mapa de calor, sequência de semanas) e a **análise do coach** (`api/coach.js: buildAnalysis(state)`, lida pelo assistente para planejar a próxima semana).
+
+Hoje, um número digitado errado (o caso real: `160×8 · 200×8 · 160×6` no lugar de `160×8 · 200×8 · 200×6`) é **permanente**: ou se convive com ele, ou se apaga o treino inteiro (perdendo data, hora, duração e as outras séries) e se registra de novo — o que ainda joga o treino para a data de hoje. O erro contamina a curva daquele exercício e a prescrição seguinte.
+
+**Objetivo:** dar ao usuário uma tela para corrigir um treino já finalizado — números, séries, exercícios e o dia — com os derivados recalculados na mesma escrita, sem nunca tocar na rotina (que é o plano, não o registro).
+
+---
+
+## Escopo
+
+**Inclui**
+- botão `Edit workout` no detalhe do treino, ao lado do `Delete workout`, valendo nos três caminhos que abrem esse detalhe: card **Recent workouts** (Stats), tela **History** e o **calendário/mapa de calor**;
+- rota e tela novas de edição, em tela cheia, com rascunho (nada muda no histórico antes de salvar);
+- edição de: nome do treino, dia do treino, peso/reps (ou duração/velocidade/segundos, conforme o modo) de cada série, esforço (RIR/RPE) quando o perfil registra, marcação de série (a série desmarcada deixa de contar), adicionar série, remover série, trocar exercício, remover exercício, mover exercício para cima/baixo, ajustar a prescrição do exercício (a mesma folha do treino/rotina) e a unidade do exercício (kg/lb);
+- adicionar um exercício que não foi registrado;
+- recálculo, na mesma escrita: `vol`, `prs`, `exWeights` dos exercícios mexidos e a ordem de `S.workouts` quando o dia muda;
+- proteção do resultado contra o conflito de sincronização (`409` e a mescla da releitura ao voltar);
+- strings novas em `pt.js`;
+- testes unitários da lógica pura (arquivo novo) e roteiro de verificação manual.
+
+**Não inclui (explícito)**
+- editar o treino **em andamento** (`S.active`) — a tela de treino continua sendo a única forma, e ela já permite tudo isso durante a sessão;
+- editar o peso corporal do dia (`w.bw`) nem a duração (`w.start`/`w.end` continuam sendo o carimbo do treino, apenas deslocados quando o dia muda);
+- escrever na rotina de origem, no `S.week` ou no `S.dayPlan` — editar histórico **nunca** muda o plano;
+- criar um treino do zero pela tela nova (o caminho para isso é começar e finalizar um treino);
+- juntar ou dividir treinos, e mover séries entre exercícios;
+- reescrever histórico antigo em massa (importação/CSV/migração de unidade continuam como estão);
+- a análise do coach no servidor: ela é derivada de `state.workouts` e passa a refletir a edição sozinha na próxima leitura — nada a implementar lá.
+
+---
+
+## Decisões do usuário
+
+| # | Decisão | Data | O que muda para ele |
+|---|---|---|---|
+| U1 | **Edição completa, incluindo o dia do treino** | 25/09/2026 | Dá para consertar desde um número digitado errado até um treino registrado no dia errado, sem apagar e refazer |
+| U2 | **Correção recalcula tudo, inclusive o recorde** | 25/09/2026 | Se a correção derruba um recorde, o troféu sai daquele treino e o melhor peso do exercício acompanha — o número errado não volta a valer na próxima prescrição |
+| U3 | **Editar aparece nos três lugares que abrem o treino** | 25/09/2026 | Chegar no treino pelo card de recentes, pelo histórico ou pelo calendário leva à mesma tela de edição |
+
+---
+
+## Decisões assumidas
+
+Detalhe de implementação, decidido por mim porque não muda o que o usuário vê — exceto onde está dito o contrário.
+
+- **Rascunho com Salvar/Cancelar, em vez de escrita a cada toque** (como faz o editor de rotina). Efeito visível: **nada no histórico muda até o check do cabeçalho**; sair com mudanças pendentes pede confirmação. É o que permite recalcular os derivados **uma vez**, no fim, em vez de a cada tecla.
+- **A tela é uma rota nova (`/history/w/:id`), não uma folha.** Efeito visível: ocupa a tela inteira, tem voltar no cabeçalho, e a aba **Stats** continua acesa na barra de baixo (o destaque da barra olha o primeiro segmento do caminho).
+- **A edição é oferecida como dois botões explícitos no detalhe** (`Edit workout` e `Delete workout`), não como um menu de opções. Efeito visível: um toque em vez de dois; a ordem põe o destrutivo por último.
+- **Salvar volta para onde o usuário estava** (`nav(-1)`), porque o detalhe abre por cima da tela atual (Stats, History ou o calendário) sem mudar a rota.
+- **Trocar exercício mantém as séries** quando o tipo de série é o mesmo (`reps`↔`reps`, `time`↔`time`, `cardio`↔`cardio`): o caso real é ter registrado o exercício errado com os números certos. Quando o tipo muda (uma prancha no lugar de um supino), as séries são **recriadas no padrão do exercício novo, desmarcadas**, com um aviso — carregar segundos para dentro de um exercício de reps produziria um registro sem sentido.
+- **`topW` (o peso de trabalho confirmado no fim do exercício) só é recalculado nos exercícios cujas séries foram mexidas** — vira a maior série marcada daquele exercício, ou deixa de existir se não houver série com carga. Num exercício intocado o valor confirmado continua valendo. Efeito visível: nenhum, exceto que corrigir as séries de um exercício também corrige o peso de trabalho dele.
+- **Um exercício cujas séries ficaram todas desmarcadas sai do treino ao salvar** — a mesma regra do fim do treino (`doFinishWorkout` filtra `e.sets.some(s => s.done)`).
+- **A unidade do exercício (kg/lb) é editável e não converte o número** — a regra que o app já fixou na BACKLOG-01 (`200` continua `200`). Está aqui porque é exatamente o acidente que o backlog registrou: um número de mostrador em libras lido como kg.
+- **Data futura é recusada** com aviso: um treino que ainda não aconteceu entraria no mapa de calor e na semana corrente.
+- **O seletor de dia é um calendário do próprio app** (reusa `.cal-grid`/`.cal-d`), não um `<input type="date">`: o app não tem `color-scheme` declarado, e o controle nativo apareceria com o visual claro do sistema no meio de uma tela escura. Efeito visível: o seletor parece com o calendário que ele já conhece.
+- **Um treino com nenhuma série marcada não pode ser salvo** — o app avisa e aponta o `Delete workout` da própria tela.
+- **`S.workouts` é reordenado por data quando o dia muda**: `sessionsFor`/`lastEntryFor` varrem o array de trás para frente e param na primeira ocorrência, então a ordem do array **é** a cronologia do app.
+- **Nome novo de arquivo `lib/workout-edit.js`** para a lógica pura, em vez de engordar `lib/history.js`: é o que deixa o recálculo testável sem React, no padrão do projeto (11 arquivos `lib/*.test.js`).
+
+---
+
+## Requisitos Funcionais
+
+**RF-1.** O detalhe de um treino finalizado passa a mostrar `Edit workout` acima de `Delete workout`, e o botão leva para a tela de edição daquele treino. Vale para os três caminhos que abrem o detalhe (card de recentes, History, calendário/mapa de calor), porque os três abrem a mesma folha.
+
+**RF-2.** A tela de edição vive na rota `/history/w/:id`, em tela cheia, com: voltar à esquerda, nome do treino editável no centro, check de salvar à direita (na cor de destaque). Um id que não existe mais redireciona para `/history`.
+
+**RF-3.** A tela edita uma **cópia** do treino. Nenhuma escrita acontece em `S.workouts` antes do check de salvar; sair com mudanças pendentes pede confirmação (`Discard changes?`) e, confirmando, o treino fica exatamente como estava.
+
+**RF-4.** A linha `Date` mostra o dia atual do treino e abre o seletor de dia. O seletor oferece `Today`, `Yesterday`, um calendário de mês com navegação, e recusa dias futuros. Quando o dia muda, `d`, `start` e `end` se deslocam juntos (a hora do dia e a duração são preservadas) e a tela mostra de qual dia o treino veio.
+
+**RF-5.** Cada exercício do treino mostra as séries com os mesmos controles da tela de treino (stepper de `+/-` e campo digitável) para peso e reps — ou duração e velocidade no cardio, segundos e peso no modo tempo — mais o esforço (RIR/RPE) quando o perfil registra esforço, e a marcação de cada série. Editar um número escreve no rascunho, não no histórico.
+
+**RF-6.** Cada exercício oferece: `Add set`, remover **uma série específica** (o `×` da própria linha), `Swap exercise`, `Sets & reps` (a folha de configuração já existente, com a prescrição daquele exercício no treino), mover para cima/baixo e `Remove exercise`.
+
+**RF-7.** `Add exercise` no fim da tela abre o seletor de exercícios e, em seguida, a folha de configuração. O exercício entra no fim, com as séries no padrão da configuração e **desmarcadas** — o usuário digita o que fez e marca.
+
+**RF-8.** A unidade de um exercício (`kg`/`lb`) é editável no próprio bloco e **não converte os números**: muda só como eles são lidos (volume, rótulos e gráficos).
+
+**RF-9.** Salvar recalcula, na mesma escrita: `w.vol` (volume do treino), `w.prs` (recordes daquele treino, julgados contra o histórico **sem** ele), `S.exWeights` dos exercícios mexidos, e reordena `S.workouts` por data quando o dia mudou.
+
+**RF-10.** Exercícios cujas séries ficaram todas desmarcadas saem do treino ao salvar. Se **nenhuma** série do treino ficar marcada, o app recusa salvar com um aviso e não escreve nada.
+
+**RF-11.** Editar um treino não escreve em `S.routines`, `S.week` nem `S.dayPlan`, e não toca em `S.active`.
+
+**RF-12.** A edição não pode ser descartada em silêncio por um conflito de sincronização. Quando o envio do estado colide (HTTP `409`) ou quando a releitura ao voltar para o app mescla estados, a versão **editada** daquele treino vence sobre a cópia do servidor para o mesmo id, dentro de uma janela curta. Fora dessa janela, a regra atual continua: o servidor vence por id (é o que preserva o que o assistente escreveu).
+
+**RF-13.** O nome do treino é editável e aparece nas listas (card de recentes, History, calendário) depois de salvar.
+
+**RF-14.** As strings novas têm tradução em `pt.js`; os outros idiomas caem no inglês, como já acontece com strings novas do app.
+
+---
+
+## Detalhe de Implementação (nível código)
+
+### 1. `frontend/src/lib/history.js` — o melhor peso com data, e com exclusão
+
+`bestWeightFor` (linhas 170-179) varre o histórico inteiro e devolve só o número. A edição precisa de duas coisas que ele não dá: a **data** em que aquele melhor peso aconteceu (para reescrever `exWeights`) e a possibilidade de **excluir o próprio treino editado** do julgamento (senão o número antigo, ainda gravado nele, vence a correção).
+
+**1.1 `bestWeightFor` → `bestEntryFor` + delegado (linhas 170-179):**
+
+```js
+// ANTES
+export function bestWeightFor(S, exId) {
+  let best = 0
+  S.workouts.forEach(w => w.entries.forEach(e => {
+    if (e.id === exId) {
+      e.sets.forEach(s => { if (s.done && s.w > best) best = s.w })
+      if (e.topW && e.topW > best) best = e.topW
+    }
+  }))
+  return best
+}
+```
+
+```js
+// DEPOIS
+// O melhor peso de um exercício em todo o histórico, com a data em que ele aconteceu.
+// `topW` entra: é o peso de trabalho que o usuário confirmou no fim do exercício, e pode ser
+// maior que a maior série registrada. `exclude` existe para a edição de um treino — os
+// recordes daquele treino têm de ser julgados contra o histórico SEM ele, senão o número
+// antigo, ainda gravado nele, venceria a correção.
+export function bestEntryFor(S, exId, exclude) {
+  let w = 0, d = null
+  ;(S.workouts || []).forEach(x => {
+    if (exclude && x.id === exclude) return
+    x.entries.forEach(e => {
+      if (e.id !== exId) return
+      e.sets.forEach(s => { if (s.done && s.w > w) { w = s.w; d = x.d } })
+      if (e.topW && e.topW > w) { w = e.topW; d = x.d }
+    })
+  })
+  return { w, d }
+}
+export function bestWeightFor(S, exId, exclude) { return bestEntryFor(S, exId, exclude).w }
+```
+
+Os dois chamadores de produção (`sheets.jsx:914` e `Workout.jsx:113`) continuam válidos sem mudança — o segundo parâmetro é opcional.
+
+### 2. `frontend/src/lib/workout-edit.js` — arquivo novo (lógica pura)
+
+```js
+// Edição de um treino JÁ FINALIZADO. Um treino é um registro, e o que ele alimenta é
+// derivado: volume, recordes, o melhor peso de cada exercício e a ordem cronológica do
+// histórico. Corrigir um número tem de recalcular tudo isso na MESMA escrita, ou o gráfico
+// e a próxima prescrição passam a mentir. Estas funções são puras de propósito: quem escreve
+// no store é a tela, e o comportamento fica testável sem React.
+import { bestEntryFor, workoutVolume } from './history.js'
+
+const clone = o => JSON.parse(JSON.stringify(o))
+
+// Chave ausente em vez de null — a mesma regra do resto do app (só o que foi registrado).
+const cleanSet = s => {
+  const o = {}
+  for (const k in s) if (s[k] !== null && s[k] !== undefined) o[k] = s[k]
+  return o
+}
+
+// O dia mudou: `start`/`end` acompanham, para a duração continuar a mesma e o treino não
+// ficar com carimbo de um dia e data de outro. Meio-dia como âncora: atravessar um horário
+// de verão não pode empurrar o treino para o dia anterior.
+export function shiftWorkoutDate(w, iso) {
+  const delta = new Date(iso + 'T12:00:00').getTime() - new Date(w.d + 'T12:00:00').getTime()
+  return { ...w, d: iso, start: w.start + delta, end: w.end + delta }
+}
+
+// Ordem por data: `sessionsFor` e `lastEntryFor` varrem `S.workouts` de trás para frente e
+// param na primeira ocorrência — a ordem do array É a cronologia do app. Sort estável, então
+// dois treinos do mesmo dia mantêm a ordem em que foram registrados.
+export const sortWorkouts = ws => [...ws].sort((a, b) => (a.d < b.d ? -1 : 1))
+
+// Aplica o rascunho sobre o histórico. Devolve `null` quando não há nada a salvar (treino
+// inexistente ou nenhuma série marcada) — quem chama avisa e não escreve nada.
+export function applyWorkoutEdit(S, id, draft) {
+  const before = (S.workouts || []).find(w => w.id === id)
+  if (!before) return null
+
+  // Exercícios cujas séries foram mexidas: só eles têm o peso de trabalho recalculado. Um
+  // exercício intocado mantém o `topW` confirmado na hora do treino, que pode ser maior que
+  // qualquer série registrada.
+  const beforeById = new Map(before.entries.map(e => [e.id, e]))
+  const touched = new Set()
+  draft.entries.forEach(e => {
+    const b = beforeById.get(e.id)
+    if (!b || JSON.stringify(b.sets) !== JSON.stringify(e.sets)) touched.add(e.id)
+  })
+
+  const entries = draft.entries
+    .filter(e => e.sets.some(s => s.done))
+    .map(e => ({
+      id: e.id,
+      sets: e.sets.map(cleanSet),
+      topW: touched.has(e.id)
+        ? (Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0)) || null)
+        : (e.topW ?? null),
+      target: e.target || null
+    }))
+  if (!entries.length) return null
+
+  const w = {
+    ...clone(before),
+    name: draft.name, d: draft.d, start: draft.start, end: draft.end, entries
+  }
+  w.vol = workoutVolume(w, S)
+
+  // Recorde é do treino, não do exercício: `prs` é a lista dos exercícios em que ESTE treino
+  // passou de tudo o que veio antes. O julgamento exclui o próprio treino editado.
+  const others = { ...S, workouts: (S.workouts || []).filter(x => x.id !== id) }
+  w.prs = entries
+    .filter(e => {
+      const mx = Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0))
+      return mx > 0 && mx > bestEntryFor(others, e.id).w
+    })
+    .map(e => e.id)
+
+  const workouts = sortWorkouts((S.workouts || []).map(x => (x.id === id ? w : x)))
+
+  // Melhor peso registrado por exercício (`exWeights`): é o que o app usa quando a rotina não
+  // prescreve carga. Sobe sempre; desce só quando o valor guardado podia vir DESTE treino —
+  // um peso confirmado à mão, maior que tudo o que foi registrado, não pode ser apagado por
+  // uma edição que não tem nada a ver com ele.
+  const exWeights = { ...(S.exWeights || {}) }
+  entries.forEach(e => {
+    if (!touched.has(e.id)) return
+    const mx = Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0), e.topW || 0)
+    if (mx <= 0) return
+    const cur = exWeights[e.id]
+    if (!cur || mx > cur.w) { exWeights[e.id] = { w: mx, d: w.d }; return }
+    const oldE = beforeById.get(e.id)
+    const oldMx = Math.max(0, ...((oldE && oldE.sets) || []).filter(s => s.done).map(s => s.w || 0), (oldE && oldE.topW) || 0)
+    if (cur.w !== oldMx && cur.d !== before.d) return      // veio de outro treino: fica como está
+    const best = bestEntryFor({ ...S, workouts }, e.id)
+    if (best.w > 0) exWeights[e.id] = best
+    else delete exWeights[e.id]
+  })
+
+  return { workout: w, workouts, exWeights }
+}
+```
+
+### 3. `frontend/src/views/WorkoutEdit.jsx` — arquivo novo (a tela)
+
+```jsx
+// Edição de um treino JÁ FINALIZADO. A tela edita um rascunho: nada no histórico muda até o
+// check do cabeçalho, e sair sem salvar descarta. A escrita é uma só, e quem recalcula o que
+// é derivado (volume, recordes, melhor peso por exercício, ordem por data) é
+// lib/workout-edit.js. Aqui só mora a edição e a aparência.
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useStore } from '../store/useStore.js'
+import { useUI } from '../store/useUI.js'
+import { exOr } from '../lib/exercises.js'
+import { fmtDate, todayISO } from '../lib/format.js'
+import { t } from '../lib/i18n.js'
+import {
+  modeOf, isBw, repStep, defaultConfig, cleanupSg,
+  EFFORT, effortOf, stepEffort, capEffort
+} from '../lib/history.js'
+import { applyWorkoutEdit, shiftWorkoutDate } from '../lib/workout-edit.js'
+import { normUnit } from '../lib/units.js'
+import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet } from '../sheets.jsx'
+import { Button, Check, NumberField, Row } from '../components/ui.jsx'
+import Icon from '../components/Icon.jsx'
+import { Thumb } from '../components/Media.jsx'
+
+const clone = o => JSON.parse(JSON.stringify(o))
+
+/* ---------- um exercício do treino, em modo edição ---------- */
+function EditBlock({ entry, S, onField, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onConfig, onRemove, onUnit, isFirst, isLast }) {
+  const ex = exOr(entry.id)
+  const cfg = { ...(entry.target || {}), id: entry.id }
+  const mode = modeOf(cfg)
+  const cardio = mode === 'cardio'
+  const timed = mode === 'time'
+  const bw = !cardio && isBw(cfg)
+  const added = bw && entry.sets.some(s => s.w > 0)
+  const unit = normUnit(cfg.unit != null ? cfg.unit : S.unit)
+  const loadCol = { f: 'w', step: 2.5, dec: true, hd: bw ? t('Added ({0})', unit) : t('Weight ({0})', unit) }
+  const repCol = { f: 'r', step: repStep(cfg), dec: false, hd: t('Reps') }
+  const col1 = cardio ? { f: 'min', step: 1, dec: false, hd: t('Duration (min)') }
+    : timed ? { f: 'sec', step: 5, dec: false, hd: t('Seconds') }
+      : (bw && !added) ? repCol : loadCol
+  const col2 = cardio ? { f: 'speed', step: 0.5, dec: true, hd: t('Speed (km/h)') }
+    : timed ? ((bw && !added) ? null : loadCol)
+      : (bw && !added) ? null : repCol
+  const eff = EFFORT[effortOf(S)]
+  const col3 = mode === 'reps' && eff ? { ...eff, eff: effortOf(S), dec: true, opt: true, hd: t(eff.hd) } : null
+
+  const bump = (s, i, col, dir) => {
+    if (col.eff) return onField(i, col.f, stepEffort(col.eff, s[col.f], dir))
+    onField(i, col.f, Math.max(0, Math.round(((s[col.f] || 0) + dir * col.step) * 100) / 100))
+  }
+  const cell = (s, i, col, cls) => (
+    <div className={'stp ' + cls}>
+      <button aria-label="Decrease" onClick={() => bump(s, i, col, -1)}><Icon name="minus" /></button>
+      <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''}
+        onChange={v => onField(i, col.f, col.eff ? capEffort(col.eff, v) : v)} /></span>
+      <button aria-label="Increase" onClick={() => bump(s, i, col, 1)}><Icon name="plus" /></button>
+    </div>
+  )
+
+  return <div className="card" style={{ marginBottom: 12 }}>
+    <div className="row" style={{ gap: 10, marginBottom: 8 }}>
+      <Thumb ex={ex} />
+      <div className="grow" style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 17, textTransform: 'capitalize' }}>{ex.n}</div>
+        <div className="small dim">{t('{0} sets', entry.sets.length)}</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <button className="iconbtn" disabled={isFirst} aria-label="Move up"
+          style={{ width: 28, height: 24, borderRadius: 7, fontSize: 12 }} onClick={() => onMove(-1)}><Icon name="chevronUp" /></button>
+        <button className="iconbtn" disabled={isLast} aria-label="Move down"
+          style={{ width: 28, height: 24, borderRadius: 7, fontSize: 12 }} onClick={() => onMove(1)}><Icon name="chevronDown" /></button>
+      </div>
+    </div>
+
+    <div className={'sethead' + (col3 ? ' eff3' : '')}>
+      <span className="n-sp" /><span className="w-sp">{col1.hd}</span>
+      {col2 && <span className="r-sp">{col2.hd}</span>}
+      {col3 && <span className="eff-sp">{col3.hd}</span>}
+      <span className="ck-sp" /><span style={{ width: 26, flex: 'none' }} />
+    </div>
+    {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
+      <div className="n">{i + 1}</div>
+      {cell(s, i, col1, 'w')}
+      {col2 && cell(s, i, col2, 'r')}
+      {col3 && cell(s, i, col3, 'eff')}
+      <Check checked={s.done} onChange={() => onToggle(i)} />
+      {/* O × por série é o que a tela de treino não tem: lá a série acabou de ser feita e
+          "Remove set" tira a última; aqui você está corrigindo um registro, e a série errada
+          pode ser a do meio. */}
+      <button className="iconbtn" aria-label={t('Remove this set')}
+        style={{ width: 26, height: 26, borderRadius: 7, fontSize: 13, color: 'var(--red)' }}
+        onClick={() => onRemoveSet(i)}><Icon name="xmark" /></button>
+    </div>)}
+    <div style={{ height: 8 }} />
+    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+      <Button size="sm" icon="plus" onClick={onAddSet}>{t('Add set')}</Button>
+      <Button size="sm" variant="ghost" icon="shuffle" onClick={onSwap}>{t('Swap exercise')}</Button>
+      <Button size="sm" variant="ghost" icon="wrench" onClick={onConfig}>{t('Sets & reps')}</Button>
+      {!cardio && <Button size="sm" variant="ghost" icon="scale" onClick={onUnit}>{unit}</Button>}
+      <Button size="sm" variant="ghost" icon="trash" style={{ color: 'var(--red)' }} onClick={onRemove}>{t('Remove exercise')}</Button>
+    </div>
+  </div>
+}
+```
+
+> **Nota de implementação do `onUnit`:** o botão `kg`/`lb` abre a mesma folha de unidade usada no treino (`Segmented` kg/lb), mas escrevendo em `entry.target.unit` do **rascunho**, sem tocar na rotina — a folha do treino grava em `S.active` e na rotina de origem, e nenhum dos dois é o alvo aqui. São ~12 linhas de folha nova em `sheets.jsx` (`workoutUnitSheet`), no mesmo desenho do `UnitChip`.
+
+E o corpo da tela:
+
+```jsx
+export default function WorkoutEdit() {
+  const nav = useNavigate()
+  const { id } = useParams()
+  const S = useStore(s => s.S)
+  const update = useStore(s => s.update)
+  const toast = useUI(s => s.toast)
+  const w = S.workouts.find(x => x.id === id)
+  const [draft, setDraft] = useState(() => (w ? clone(w) : null))
+  const dirty = useRef(false)
+
+  useEffect(() => { if (!w) nav('/history') }, [!!w])
+  if (!w || !draft) return null
+
+  const mut = fn => { dirty.current = true; setDraft(d => { const c = clone(d); fn(c); return c }) }
+  const mutEntry = (i, fn) => mut(d => fn(d.entries[i]))
+
+  const back = () => {
+    if (!dirty.current) { nav(-1); return }
+    confirmSheet({
+      title: t('Discard changes?'),
+      message: t('The workout keeps what it had before you started editing.'),
+      confirmText: t('Discard'), danger: true, onConfirm: () => nav(-1)
+    })
+  }
+
+  const save = () => {
+    if (!draft.entries.some(e => e.sets.some(s => s.done))) {
+      toast(t('A workout with no sets logged cannot be saved — delete it instead.'))
+      return
+    }
+    const res = applyWorkoutEdit(S, id, draft)
+    if (!res) { toast(t('Nothing to save')); return }
+    update(s => { s.workouts = res.workouts; s.exWeights = res.exWeights })
+    useStore.getState().markLocalWin(id)          // RF-12: o 409 não pode descartar esta edição
+    toast(t('Workout updated'))
+    nav(-1)
+  }
+
+  const setDate = iso => {
+    if (iso > todayISO()) { toast(t('A workout cannot be dated in the future')); return }
+    mut(d => { const sh = shiftWorkoutDate(d, iso); d.d = sh.d; d.start = sh.start; d.end = sh.end })
+  }
+
+  const removeEx = i => mut(d => { d.entries.splice(i, 1); cleanupSg(d.entries) })
+  const moveEx = (i, dir) => mut(d => {
+    const j = i + dir
+    if (j < 0 || j >= d.entries.length) return
+    ;[d.entries[i], d.entries[j]] = [d.entries[j], d.entries[i]]
+    cleanupSg(d.entries)
+  })
+  const swapEx = i => exercisePicker(ex => mut(d => {
+    const e = d.entries[i]
+    const sameKind = modeOf({ ...(e.target || {}), id: e.id }) === modeOf({ id: ex.id })
+    const base = defaultConfig(ex.id)
+    e.id = ex.id
+    if (sameKind) {
+      e.target = { ...base, ...(e.target || {}), id: ex.id }
+      e.sets = e.sets.map(s => ({ ...s }))
+    } else {
+      // Tipo de série diferente: carregar segundos para dentro de um exercício de reps daria
+      // um registro sem sentido — as séries nascem de novo, desmarcadas, e o usuário avisa.
+      e.target = { ...base, id: ex.id }
+      e.sets = Array.from({ length: Math.max(1, base.sets || 1) }, () => ({ ...base, sets: undefined, done: false }))
+      toast(t('The new exercise uses another kind of set — the sets were rebuilt.'))
+    }
+  }))
+
+  const addEx = () => exercisePicker(ex => exConfigSheet(ex, null, cfg => mut(d => {
+    d.entries.push({
+      id: ex.id, target: { ...cfg },
+      sets: Array.from({ length: Math.max(1, cfg.sets || 1) }, () => ({ ...defaultConfig(ex.id, modeOf({ ...cfg, id: ex.id })), sets: undefined, done: false }))
+    })
+  }), null, S.routines.find(r => r.id === w.routineId)))
+
+  const del = () => confirmSheet({
+    title: t('Delete workout?'), message: t('This removes it from your history for good.'),
+    confirmText: t('Delete'), danger: true,
+    onConfirm: () => { update(s => { s.workouts = s.workouts.filter(x => x.id !== id) }); toast(t('Workout deleted')); nav('/history') }
+  })
+
+  const ticked = draft.entries.reduce((n, e) => n + e.sets.filter(s => s.done).length, 0)
+
+  return <div className="narrow">
+    <div className="hdr">
+      <button className="iconbtn" onClick={back} aria-label={t('Back')}><Icon name="chevronLeft" /></button>
+      <div style={{ flex: 1, margin: '0 12px' }}>
+        <input className="input" defaultValue={draft.name} style={{ fontWeight: 600, fontSize: 20, letterSpacing: '-.021em' }}
+          onChange={e => mut(d => { d.name = e.target.value })} />
+      </div>
+      <button className="iconbtn" style={{ color: 'var(--acc)' }} aria-label={t('Save')} onClick={save}><Icon name="check" /></button>
+    </div>
+
+    <div className="sect-b" style={{ marginBottom: 16 }}>
+      <Row icon="calendar" iconTint="var(--blue)" title={t('Date')} value={fmtDate(draft.d, true)}
+        accessory="chevron" onClick={() => workoutDateSheet(draft.d, setDate)} />
+    </div>
+    {draft.d !== w.d && <div className="small dim" style={{ margin: '-10px 2px 16px' }}>
+      {t('Was {0} — the workout moves to the new day, keeping the time and duration.', fmtDate(w.d, true))}
+    </div>}
+
+    {draft.entries.length
+      ? draft.entries.map((e, i) => <EditBlock key={i} entry={e} S={S}
+          isFirst={i === 0} isLast={i === draft.entries.length - 1}
+          onField={(k, f, v) => mutEntry(i, en => { if (v == null) delete en.sets[k][f]; else en.sets[k][f] = v })}
+          onToggle={k => mutEntry(i, en => { en.sets[k].done = !en.sets[k].done })}
+          onAddSet={() => mutEntry(i, en => {
+            const last = en.sets[en.sets.length - 1]
+            const base = defaultConfig(en.id, modeOf({ ...(en.target || {}), id: en.id }))
+            en.sets.push({ ...base, sets: undefined, done: false, ...(last ? Object.fromEntries(Object.keys(base).filter(x => x !== 'sets' && last[x] != null).map(x => [x, last[x]])) : {}) })
+          })}
+          onRemoveSet={k => mutEntry(i, en => { if (en.sets.length > 1) en.sets.splice(k, 1) })}
+          onMove={dir => moveEx(i, dir)}
+          onSwap={() => swapEx(i)}
+          onConfig={() => exConfigSheet(exOr(e.id), { ...(e.target || {}), id: e.id }, cfg => mutEntry(i, en => { en.target = { ...cfg, id: en.id } }), null, S.routines.find(r => r.id === w.routineId))}
+          onRemove={() => removeEx(i)}
+          onUnit={() => workoutUnitSheet(e.target && e.target.unit != null ? e.target.unit : null, v => mutEntry(i, en => { if (v == null) delete en.target.unit; else en.target.unit = v }))}
+        />)
+      : <div className="empty"><div className="ico"><Icon name="dumbbell" /></div>{t('No exercises in this workout.')}</div>}
+
+    <Button icon="plus" onClick={addEx}>{t('Add exercise')}</Button>
+    <div style={{ height: 14 }} />
+    <div className="small dim" style={{ textAlign: 'center', marginBottom: 14 }}>
+      {t('{0} sets logged — saving recalculates the volume, the records and your best weight for the exercises you touched.', ticked)}
+    </div>
+    <Button variant="danger" icon="trash" onClick={del}>{t('Delete workout')}</Button>
+    <div style={{ height: 40 }} />
+  </div>
+}
+```
+
+### 4. `frontend/src/sheets.jsx` — o botão no detalhe, o seletor de dia e a folha de unidade
+
+**4.1 `WorkoutDetail` (linhas 806-822) — `Edit workout` acima do `Delete`:**
+
+```jsx
+// ANTES (final do componente)
+    <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), ... })}>{t('Delete workout')}</Button>
+  </>
+}
+```
+
+```jsx
+// DEPOIS
+    <Button variant="tinted" icon="pencil" onClick={() => { close(); nav('/history/w/' + w.id) }}>{t('Edit workout')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), ... })}>{t('Delete workout')}</Button>
+  </>
+}
+```
+
+`nav` já está importado em `sheets.jsx` (linha 9, `import { nav } from './lib/nav.js'`), usado por `beginWorkout`.
+
+**4.2 `WorkoutDate` + `workoutDateSheet` (novo, junto do bloco do calendário):**
+
+```jsx
+/* Seletor do dia do treino. Calendário do próprio app, e não `<input type="date">`: o app não
+   declara `color-scheme`, então o controle nativo apareceria com o visual claro do sistema no
+   meio de uma tela escura. Dias futuros ficam desabilitados — um treino que ainda não
+   aconteceu entraria no mapa de calor e na semana corrente. */
+function WorkoutDate({ iso, onPick, close }) {
+  const [cur, setCur] = useState(() => { const d = new Date(iso + 'T12:00:00'); d.setDate(1); return d })
+  const [sel, setSel] = useState(iso)
+  const y = cur.getFullYear(), mo = cur.getMonth()
+  const today = todayISO()
+  const startOffset = (new Date(y, mo, 1).getDay() + 6) % 7
+  const daysIn = new Date(y, mo + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startOffset; i++) cells.push(<div key={'e' + i} />)
+  for (let d = 1; d <= daysIn; d++) {
+    const dayIso = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0')
+    const future = dayIso > today
+    cells.push(<button key={d} disabled={future}
+      className={'cal-d' + (dayIso === sel ? ' has' : '') + (dayIso === today ? ' today' : '')}
+      style={future ? { opacity: .3 } : null}
+      onClick={() => setSel(dayIso)}><span>{d}</span><i /></button>)
+  }
+  const ago = n => { const d = new Date(); d.setDate(d.getDate() - n); return isoOf(d) }
+  return <>
+    <h3>{t('Workout date')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Pick the day this workout happened — today or earlier.')}</div>
+    <div className="chips" style={{ marginBottom: 12 }}>
+      <button className={'chip' + (sel === today ? ' on' : '')} onClick={() => setSel(today)}>{t('Today')}</button>
+      <button className={'chip' + (sel === ago(1) ? ' on' : '')} onClick={() => setSel(ago(1))}>{t('Yesterday')}</button>
+      <button className={'chip' + (sel === ago(2) ? ' on' : '')} onClick={() => setSel(ago(2))}>{t('{0} days ago', 2)}</button>
+    </div>
+    <div className="row between" style={{ marginBottom: 2 }}>
+      <button className="iconbtn" onClick={() => setCur(new Date(y, mo - 1, 1))} aria-label="Previous month"><Icon name="chevronLeft" /></button>
+      <h3 style={{ margin: 0 }}>{t(MONTHS_LONG[mo])} {y}</h3>
+      <button className="iconbtn" onClick={() => setCur(new Date(y, mo + 1, 1))} aria-label="Next month"><Icon name="chevronRight" /></button>
+    </div>
+    <div className="cal-grid">{['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(l => <div key={l} className="cal-h">{t(l)}</div>)}{cells}</div>
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={() => { close(); onPick(sel) }}>{t('Save date')}</Button>
+  </>
+}
+export const workoutDateSheet = (iso, onPick) => ui().openSheet(close => <WorkoutDate iso={iso} onPick={onPick} close={close} />)
+```
+
+**4.3 `workoutUnitSheet` (novo) — a unidade do exercício no treino, sem tocar na rotina:**
+
+```jsx
+/* A folha de unidade do treino grava em `S.active` E na rotina de origem; aqui o alvo é o
+   rascunho de um treino já finalizado, e a rotina não pode ser tocada (RF-11). O número não
+   é convertido: `200` continua `200` — a regra da BACKLOG-01. */
+function WorkoutUnit({ value, onPick, close }) {
+  const [v, setV] = useState(value)
+  return <>
+    <h3>{t('Weight unit')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Changes how these numbers are read. The numbers themselves stay as they are.')}</div>
+    <Segmented value={v || ''} onChange={setV}
+      options={[{ value: '', label: t('Profile default') }, { value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={() => { close(); onPick(v || null) }}>{t('Save')}</Button>
+  </>
+}
+export const workoutUnitSheet = (value, onPick) => ui().openSheet(close => <WorkoutUnit value={value} onPick={onPick} close={close} />)
+```
+
+### 5. `frontend/src/App.jsx` — a rota
+
+```jsx
+// ANTES
+              <Route path="/history" element={<History />} />
+// DEPOIS
+              <Route path="/history" element={<History />} />
+              <Route path="/history/w/:id" element={<WorkoutEdit />} />
+```
+
+Mais o import (`import WorkoutEdit from './views/WorkoutEdit.jsx'`) junto dos outros. O destaque da barra de baixo não muda: `TabBar` compara o **primeiro** segmento do caminho, então `/history/w/:id` mantém **Stats** aceso (`TabBar.jsx:15-16`).
+
+### 6. `frontend/src/store/useStore.js` — a edição não pode ser descartada por um conflito (RF-12)
+
+Hoje a mescla por id deixa a cópia do **servidor** vencer — é o que preserva o que o assistente escreveu. Um treino editado tem o **mesmo id** de um que já está no servidor, então a edição sumiria em silêncio. São **dois** lugares de mescla (`pushState` no caminho do `409`, e `pullState` no caminho da releitura ao voltar — que é o caminho normal de "aberto e sujo", conforme a `spec_concorrencia_sync.md`).
+
+**6.1 helpers, antes do `return {` do store (junto de `persist`/`adoptRev`):**
+
+```js
+// Um treino editado tem o MESMO id de um que já está no servidor, e a mescla por id deixa a
+// cópia do servidor vencer (é o que preserva o que o assistente escreveu). Para uma edição
+// recém-feita, isso descartaria o trabalho em silêncio. Esta marca diz que, para aquele id e
+// por um minuto, quem manda é o local — tempo suficiente para o push seguinte, curto demais
+// para mascarar a edição de outro aparelho.
+const LOCAL_WIN_MS = 60000
+const keepLocal = w => {
+  const lw = get().localWin
+  return !!lw && w.id === lw.id && Date.now() - lw.at < LOCAL_WIN_MS
+}
+const mergeWorkouts = (serverWs, localWs) => {
+  const byId = new Map()
+  ;(serverWs || []).forEach(w => byId.set(w.id, w))
+  ;(localWs || []).forEach(w => { if (!byId.has(w.id) || keepLocal(w)) byId.set(w.id, w) })
+  return [...byId.values()]
+}
+```
+
+**6.2 estado e ação:**
+
+```js
+// no estado inicial, junto de `S`
+    localWin: null,          // { id, at } — treino editado agora; ver mergeWorkouts
+// entre as ações
+    markLocalWin(id) { set({ localWin: { id, at: Date.now() } }) },
+```
+
+**6.3 os dois pontos de mescla:**
+
+```js
+// ANTES (pushState, caminho do 409)
+              const byId = new Map()
+              ;(srv.workouts || []).forEach(w => byId.set(w.id, w))
+              ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
+              const merged = Object.assign(clone(DEF), srv)
+              merged.workouts = [...byId.values()]
+// DEPOIS
+              const merged = Object.assign(clone(DEF), srv)
+              merged.workouts = mergeWorkouts(srv.workouts, S.workouts)
+```
+
+```js
+// ANTES (pullState, ramo de mescla)
+          const byId = new Map()
+          ;(state.workouts || []).forEach(w => byId.set(w.id, w))
+          ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
+          const merged = Object.assign(clone(DEF), state)
+          merged.workouts = [...byId.values()]
+// DEPOIS
+          const merged = Object.assign(clone(DEF), state)
+          merged.workouts = mergeWorkouts(state.workouts, S.workouts)
+```
+
+**6.4 limpar a marca quando o envio dá certo** (dentro do `try` do `pushState`, junto do `localStorage.removeItem('gym_dirty')`, nos dois pontos de sucesso):
+
+```js
+        if (get().localWin) set({ localWin: null })
+```
+
+### 7. `frontend/src/locales/pt.js` — strings novas
+
+```js
+  'Edit workout': 'Editar treino',
+  'Workout updated': 'Treino atualizado',
+  'Nothing to save': 'Nada para salvar',
+  'Workout date': 'Data do treino',
+  'Pick the day this workout happened — today or earlier.': 'Escolha o dia em que o treino aconteceu — hoje ou antes.',
+  'Save date': 'Salvar data',
+  'Today': 'Hoje',
+  'Yesterday': 'Ontem',
+  '{0} days ago': '{0} dias atrás',
+  'Was {0} — the workout moves to the new day, keeping the time and duration.': 'Era {0} — o treino passa para o dia novo, mantendo a hora e a duração.',
+  'A workout cannot be dated in the future': 'Um treino não pode ficar numa data futura',
+  'A workout with no sets logged cannot be saved — delete it instead.': 'Um treino sem nenhuma série marcada não pode ser salvo — apague o treino.',
+  'Discard changes?': 'Descartar as mudanças?',
+  'The workout keeps what it had before you started editing.': 'O treino continua como estava antes de você começar a editar.',
+  'Remove this set': 'Remover esta série',
+  'Swap exercise': 'Trocar exercício',
+  'Remove exercise': 'Remover exercício',
+  'Sets & reps': 'Séries e reps',
+  'No exercises in this workout.': 'Nenhum exercício neste treino.',
+  'The new exercise uses another kind of set — the sets were rebuilt.': 'O exercício novo usa outro tipo de série — as séries foram refeitas.',
+  'Changes how these numbers are read. The numbers themselves stay as they are.': 'Muda como esses números são lidos. Os números em si ficam como estão.',
+  'Profile default': 'Padrão do perfil',
+  '{0} sets logged — saving recalculates the volume, the records and your best weight for the exercises you touched.': '{0} séries marcadas — salvar recalcula o volume, os recordes e o seu melhor peso nos exercícios que você mexeu.',
+```
+
+### 8. Testes
+
+**8.1 `frontend/src/lib/workout-edit.test.js` (novo, vitest — o padrão dos 11 arquivos `lib/*.test.js`):**
+
+| # | Caso | O que prova |
+|---|---|---|
+| 1 | corrigir `160` → `200` numa série recalcula `vol` do treino | RF-9 |
+| 2 | correção para baixo que derruba o recorde tira o exercício de `w.prs` | U2 / RF-9 |
+| 3 | correção para cima que passa do histórico põe o exercício em `w.prs` | RF-9 |
+| 4 | série desmarcada sai do volume e do recorde, mas continua no array do treino | RF-5 / RF-9 |
+| 5 | exercício com todas as séries desmarcadas sai de `entries` ao salvar | RF-10 |
+| 6 | nenhuma série marcada em nenhum exercício → `applyWorkoutEdit` devolve `null` | RF-10 |
+| 7 | mudar o dia reordena `S.workouts` e desloca `start`/`end` mantendo `end - start` | RF-4 / RF-9 |
+| 8 | `exWeights` sobe quando a correção é maior que o valor guardado | RF-9 |
+| 9 | `exWeights` desce quando o valor guardado podia vir deste treino | U2 |
+| 10 | `exWeights` **não** desce quando o valor guardado veio de outro treino | U2 / RF-9 |
+| 11 | `topW` é recalculado só no exercício mexido; no intocado continua o confirmado | Decisão assumida |
+| 12 | `applyWorkoutEdit` não escreve em `routines`/`week`/`dayPlan` (o retorno não os contém) | RF-11 |
+| 13 | treino inexistente devolve `null` | RF-2 |
+| 14 | `shiftWorkoutDate` atravessando mudança de mês mantém a hora local | RF-4 |
+
+**8.2 Roteiro manual (no app, depois do deploy):**
+
+1. Stats → card **Recent workouts** → tocar num treino → o detalhe mostra `Edit workout` e `Delete workout`.
+2. `Edit workout` → a tela abre com o nome, a data e os exercícios; corrigir um peso e voltar **sem** salvar → confirmação → o treino está como antes.
+3. Repetir e **salvar** → toast `Treino atualizado` → o detalhe mostra o número novo e o volume novo.
+4. Corrigir para baixo um peso que era recorde → o troféu (`PR`) sai daquele treino e do card de recentes.
+5. Desmarcar a última série → o volume cai e o total de séries do treino cai; salvar mantém o treino na lista.
+6. Desmarcar **todas** as séries → salvar avisa e não escreve nada.
+7. `Add exercise` → escolher, configurar, digitar e marcar → salvar → o exercício aparece no detalhe e no mapa de corpo.
+8. `Remove exercise` no primeiro exercício → salvar → o detalhe não mostra mais ele, e a rotina de origem continua **igual** (conferir em `Plan`).
+9. Mudar o dia para ontem → salvar → o treino sai do card de hoje e aparece no mapa de calor de ontem; a duração não muda.
+10. Tentar uma data futura no seletor → os dias futuros estão apagados e não respondem.
+11. Trocar o exercício de um bloco por outro de mesmo tipo → os números continuam; por outro de tipo diferente → as séries voltam ao padrão, desmarcadas, com aviso.
+12. `Delete workout` na tela de edição → confirmação → volta para `/history` sem o treino.
+13. Com o app aberto, editar um treino e, antes de salvar, escrever no estado por outro caminho (assistente/outro aparelho) → salvar → a edição sobrevive (RF-12).
+
+---
+
+## Comportamento Visual/UX
+
+### Detalhe do treino (hoje × depois)
+
+```
+HOJE                                    DEPOIS
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│ Push C - Shoulder 3D         │        │ Push C - Shoulder 3D         │
+│ 12/09/2026 · 1:04:12 · 18    │        │ 12/09/2026 · 1:04:12 · 18    │
+│ séries · 8.420 kg            │        │ séries · 8.420 kg            │
+│                              │        │                              │
+│ [img] Desenvolvimento        │        │ [img] Desenvolvimento        │
+│       160×8 · 200×8 · 160×6  │        │       160×8 · 200×8 · 160×6  │
+│                              │        │                              │
+│ [img] Elevação lateral       │        │ [img] Elevação lateral       │
+│       12 · 12 · 10           │        │       12 · 12 · 10           │
+│                              │        │                              │
+│ ┌──────────────────────────┐ │        │ ┌──────────────────────────┐ │
+│ │      Delete workout      │ │        │ │  ✎  Edit workout         │ │  ← novo
+│ └──────────────────────────┘ │        │ └──────────────────────────┘ │
+└──────────────────────────────┘        │ ┌──────────────────────────┐ │
+                                        │ │      Delete workout      │ │
+                                        │ └──────────────────────────┘ │
+                                        └──────────────────────────────┘
+```
+
+### A tela de edição
+
+```
+┌────────────────────────────────────────────────┐
+│ ←   [ Push C - Shoulder 3D          ]      ✓   │  nome editável · ✓ salva
+├────────────────────────────────────────────────┤
+│  ▤  Data                          12/09/2026 › │  abre o seletor de dia
+├────────────────────────────────────────────────┤
+│ ┌────────────────────────────────────────────┐ │
+│ │ [img] Desenvolvimento                 ⌃ ⌄  │ │  mover
+│ │       3 séries                             │ │
+│ │   #   Peso (kg)      Reps      ✓     ×     │ │
+│ │   1   − 160 +        −  8 +    ☑     🗑    │ │  ← mesma linha da tela de treino
+│ │   2   − 200 +        −  8 +    ☑     🗑    │ │     + um × por série
+│ │   3   − 160 +        −  6 +    ☑     🗑    │ │
+│ │  [ + Add set ] [ ⤨ Swap ] [ 🔧 Sets & reps ]│ │
+│ │  [ kg ] [ 🗑 Remove exercise ]              │ │
+│ └────────────────────────────────────────────┘ │
+│ ┌────────────────────────────────────────────┐ │
+│ │ [img] Elevação lateral                ⌃ ⌄  │ │
+│ │   ...                                      │ │
+│ └────────────────────────────────────────────┘ │
+│                                                │
+│  [ + Add exercise ]                            │
+│                                                │
+│   18 séries marcadas — salvar recalcula o      │
+│   volume, os recordes e o seu melhor peso      │
+│                                                │
+│  [ 🗑 Delete workout ]                         │
+└────────────────────────────────────────────────┘
+```
+
+### Seletor de dia
+
+```
+┌────────────────────────────────────────┐
+│ Workout date                           │
+│ Pick the day this workout happened —   │
+│ today or earlier.                      │
+│  ( Today ) ( Yesterday ) ( 2 days ago )│
+│  ‹        September 2026           ›   │
+│  Mo Tu We Th Fr Sa Su                  │
+│  .. 1  2  3  4  5  6                   │
+│  7  8  9 10 11 [12] 13                 │   ← dia do treino: acc-soft
+│ 14 15 16 17 18 19 20                   │   ← hoje: anel de destaque
+│ 21 22 23 24 25 26 27                   │   ← futuro: apagado, não responde
+│ 28 29 30 ·  ·  ·  ·                    │
+│  [        Save date        ]           │
+└────────────────────────────────────────┘
+```
+
+### Avisos (toasts)
+
+| Ação | Mensagem |
+|---|---|
+| Salvar com sucesso | `Treino atualizado` |
+| Nenhuma série marcada | `Um treino sem nenhuma série marcada não pode ser salvo — apague o treino.` |
+| Data futura escolhida | `Um treino não pode ficar numa data futura` |
+| Troca por exercício de outro tipo | `O exercício novo usa outro tipo de série — as séries foram refeitas.` |
+| Sair com mudanças | folha: `Descartar as mudanças?` / `O treino continua como estava antes de você começar a editar.` |
+
+---
+
+## Riscos e casos de borda
+
+| # | Caso | Tratamento |
+|---|---|---|
+| R1 | Edição salva enquanto outro aparelho/assistente escreve | RF-12: dentro de 60 s, o treino editado vence por id; fora disso, o servidor vence (regra atual) |
+| R2 | Treino apagado em outra aba com a tela de edição aberta | `w` some do store → `useEffect` redireciona para `/history`; nada é escrito |
+| R3 | Exercício que não existe mais no catálogo (`exOr` devolve um stub) | A tela mostra o que `exOr` devolver (nome do `id`), como o editor de rotina já faz |
+| R4 | Mesmo exercício duas vezes no mesmo treino | O app já assume id único por treino (`entries.find(e => e.id === exId)` em toda a leitura); a edição não piora nem conserta isso |
+| R5 | Trocar o exercício e depois salvar sem mexer nas séries | `touched` acusa mudança (o `id` mudou) → `topW` recalculado naquele exercício |
+| R6 | Treino de cardio/tempo sem peso | `topW` fica `null`; `exWeights` não é tocado (`mx <= 0`) |
+| R7 | Edição que zera o volume de um treino (todas as séries sem carga) | Volume 0 é legítimo (treino de peso corporal); o treino continua na lista |
+| R8 | Data movida para uma semana já fechada | A sequência de semanas e o volume semanal se recalculam sozinhos (derivados de `w.d`) |
+| R9 | Duas edições no mesmo treino em sequência | Cada salvar recalcula do zero a partir do estado atual; não há acúmulo |
+| R10 | `S.workouts` sem o treino no momento do `applyWorkoutEdit` | Devolve `null` e a tela avisa em vez de escrever |
