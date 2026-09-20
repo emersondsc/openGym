@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore, isValidRest } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf } from './lib/exercises.js'
-import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
+import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, isoOf, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, getLang, INSTR_LANGS } from './lib/i18n.js'
@@ -15,6 +15,7 @@ import { Button, Slider, Switch, Segmented, SelectRow, Row, TextField, TextArea 
 import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
+import { removeWorkout } from './lib/workout-edit.js'
 import { parseImport, mergeImport } from './lib/import-csv.js'
 import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
@@ -430,16 +431,19 @@ function usageMap(st) {
   st.workouts.forEach(w => w.entries.forEach(e => { u[e.id] = (u[e.id] || 0) + 1 }))
   return u
 }
-function ExercisePicker({ onPick, close }) {
+function ExercisePicker({ onPick, close, exclude }) {
   const st = useStore(s => s.S)
   const usage = usageMap(st)
+  // Ja estao neste treino: id repetido envenena topW/exWeights (a leitura por id pega a primeira
+  // entrada) — quem chama passa a lista.
+  const skip = new Set(exclude || [])
   const [q, setQ] = useState('')
   const [bp, setBp] = useState('')          // '' = all, '★' = chosen, else a body part
   const [eq, setEq] = useState('')          // '' = any equipment
   const [shown, setShown] = useState(50)
   const ql = q.toLowerCase().trim()
   const all = allExercises(st)
-  let base = all.filter(e =>
+  let base = all.filter(e => !skip.has(e.id) &&
     (bp === '★' ? usage[e.id] : (!bp || e.bp === bp)) &&
     (!ql || e.n.toLowerCase().includes(ql) || e.tg.includes(ql) || e.eq.includes(ql) || (e.desc || '').toLowerCase().includes(ql)))
   if (bp === '★') base = [...base].sort((a, b) => (usage[b.id] - usage[a.id]) || (a.n < b.n ? -1 : 1))
@@ -475,7 +479,7 @@ function ExercisePicker({ onPick, close }) {
     {f.length > shown && <><div style={{ height: 8 }} /><Button onClick={() => setShown(s => s + 50)}>{t('Show more')}</Button></>}
   </>
 }
-export const exercisePicker = onPick => ui().openSheet(close => <ExercisePicker onPick={onPick} close={close} />)
+export const exercisePicker = (onPick, exclude) => ui().openSheet(close => <ExercisePicker onPick={onPick} exclude={exclude} close={close} />)
 
 /* ============================ exercise config ============================ */
 // Progression settings for one exercise (issue #17). Shown inside the config sheet because
@@ -816,10 +820,82 @@ function WorkoutDetail({ w, close }) {
           <div className="ss">{e.sets.filter(s => s.done).map(s => setLabel(e.id, s, e.target, st)).join('  ·  ') || t('no sets')}</div></div>
       </div>
     })}
-    <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), message: t('This removes it from your history for good.'), confirmText: t('Delete'), danger: true, onConfirm: () => { update(s => { s.workouts = s.workouts.filter(x => x.id !== w.id) }); close(); toast(t('Workout deleted')) } })}>{t('Delete workout')}</Button>
+    <Button variant="tinted" icon="pencil" onClick={() => { close(); nav('/history/w/' + w.id) }}>{t('Edit workout')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), message: t('This removes it from your history for good.'), confirmText: t('Delete'), danger: true, onConfirm: () => {
+      // Apagar mexe no melhor peso dos exercicios do treino: deixar a chave como esta apontaria
+      // para um treino que nao existe mais, e aquele exercicio nunca mais teria o melhor peso
+      // corrigido para baixo (lib/workout-edit.js, removeWorkout).
+      update(s => {
+        const res = removeWorkout(s, w.id)
+        if (!res) return
+        s.workouts = res.workouts
+        s.exWeights = res.exWeights
+      })
+      close(); toast(t('Workout deleted'))
+    } })}>{t('Delete workout')}</Button>
   </>
 }
 export const workoutDetailSheet = w => ui().openSheet(close => <WorkoutDetail w={w} close={close} />)
+
+/* ============================ edicao de um treino finalizado ============================ */
+/* Seletor do dia do treino. Calendario do proprio app, e nao `<input type="date">`: o app nao
+   declara `color-scheme`, entao o controle nativo apareceria com o visual claro do sistema no
+   meio de uma tela escura. Dias futuros ficam desabilitados — um treino que ainda nao aconteceu
+   entraria no mapa de calor e na semana corrente. */
+function WorkoutDate({ iso, onPick, close }) {
+  const [cur, setCur] = useState(() => { const d = new Date(iso + 'T12:00:00'); d.setDate(1); return d })
+  const [sel, setSel] = useState(iso)
+  const y = cur.getFullYear(), mo = cur.getMonth()
+  const today = todayISO()
+  const startOffset = (new Date(y, mo, 1).getDay() + 6) % 7
+  const daysIn = new Date(y, mo + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startOffset; i++) cells.push(<div key={'e' + i} />)
+  for (let d = 1; d <= daysIn; d++) {
+    const dayIso = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0')
+    const future = dayIso > today
+    cells.push(<button key={d} disabled={future}
+      className={'cal-d' + (dayIso === sel ? ' has' : '') + (dayIso === today ? ' today' : '')}
+      style={future ? { opacity: .3 } : null}
+      onClick={() => setSel(dayIso)}><span>{d}</span><i /></button>)
+  }
+  const ago = n => { const d = new Date(); d.setDate(d.getDate() - n); return isoOf(d) }
+  return <>
+    <h3>{t('Workout date')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Pick the day this workout happened — today or earlier.')}</div>
+    <div className="chips" style={{ marginBottom: 12 }}>
+      <button className={'chip' + (sel === today ? ' on' : '')} onClick={() => setSel(today)}>{t('Today')}</button>
+      <button className={'chip' + (sel === ago(1) ? ' on' : '')} onClick={() => setSel(ago(1))}>{t('Yesterday')}</button>
+      <button className={'chip' + (sel === ago(2) ? ' on' : '')} onClick={() => setSel(ago(2))}>{t('{0} days ago', 2)}</button>
+    </div>
+    <div className="row between" style={{ marginBottom: 2 }}>
+      <button className="iconbtn" onClick={() => setCur(new Date(y, mo - 1, 1))} aria-label="Previous month"><Icon name="chevronLeft" /></button>
+      <h3 style={{ margin: 0 }}>{t(MONTHS_LONG[mo])} {y}</h3>
+      <button className="iconbtn" onClick={() => setCur(new Date(y, mo + 1, 1))} aria-label="Next month"><Icon name="chevronRight" /></button>
+    </div>
+    <div className="cal-grid">{['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(l => <div key={l} className="cal-h">{t(l)}</div>)}{cells}</div>
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={() => { close(); onPick(sel) }}>{t('Save date')}</Button>
+  </>
+}
+export const workoutDateSheet = (iso, onPick) => ui().openSheet(close => <WorkoutDate iso={iso} onPick={onPick} close={close} />)
+
+/* A folha de unidade do treino grava em `S.active` E na rotina de origem; aqui o alvo e o rascunho
+   de um treino JA finalizado, e a rotina nao pode ser tocada. O numero nao e convertido: `200`
+   continua `200` — a regra da BACKLOG-01. */
+function WorkoutUnit({ value, onPick, close }) {
+  const [v, setV] = useState(value)
+  return <>
+    <h3>{t('Weight unit')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Changes how these numbers are read. The numbers themselves stay as they are.')}</div>
+    <Segmented value={v || ''} onChange={setV}
+      options={[{ value: '', label: t('Profile default') }, { value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={() => { close(); onPick(v || null) }}>{t('Save')}</Button>
+  </>
+}
+export const workoutUnitSheet = (value, onPick) => ui().openSheet(close => <WorkoutUnit value={value} onPick={onPick} close={close} />)
 
 /* ============================ calendar ============================ */
 function Calendar({ start, close }) {

@@ -8,6 +8,7 @@ import { registerCustom } from '../lib/exercises.js'
 import { pinUnits } from '../lib/unit-migration.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
 import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
+import { mergeWorkouts, mergeExWeights, freshMark, sigOf } from '../lib/workout-edit.js'
 
 const KEY = 'gym_state_v1'
 export const DEF = {
@@ -89,6 +90,17 @@ export const useStore = create((set, get) => {
   let saveTm = null
   let lastPull = 0        // última releitura por volta ao app (RF-1)
 
+  // Um treino editado tem o MESMO id de um que ja esta no servidor, e a mescla por id deixa a
+  // copia do servidor vencer (e o que preserva o que o assistente escreveu). Para uma edicao
+  // recem-feita isso descartaria o trabalho em silencio. A marca vive no ARMAZENAMENTO LOCAL, nao
+  // so em memoria: o push sai 1,5 s depois de salvar, e um recarregar no meio (o caminho normal no
+  // celular) apagaria a marca antes de ela servir para alguma coisa. Ela expira sozinha.
+  const LOCAL_WIN_KEY = 'gym_local_win'
+  const readLocalWin = () => {
+    try { return JSON.parse(localStorage.getItem(LOCAL_WIN_KEY) || 'null') } catch { return null }
+  }
+  const localWinNow = () => freshMark(get().localWin || readLocalWin())
+
   const nativePersist = () => {
     clearTimeout(saveTm)
     saveTm = setTimeout(() => { saveTm = null; nativeSave(get().S); syncReminder(get().S) }, 800)
@@ -167,14 +179,29 @@ export const useStore = create((set, get) => {
     get().setUser(null)
     localStorage.removeItem('gym_guest')
     localStorage.removeItem('gym_dirty')
+    localStorage.removeItem(LOCAL_WIN_KEY)     // a marca nao sobrevive a sair da conta nem a reset
     localStorage.removeItem(KEY)
     persist(clone(DEF), false)
+    set({ localWin: null })                    // `persist` nao mexe nela, e `localWinNow` prefere a memoria
   }
 
   return {
     S: (() => { const s = loadState(); registerCustom(s.customEx); return s })(),
     user: (() => { try { return JSON.parse(localStorage.getItem('gym_user')) || null } catch { return null } })(),
     ready: false,
+    localWin: null,          // { id, at, sig, ex, moved, deleted } — treino editado agora
+
+    // Chamada pela tela de edicao DEPOIS de escrever o estado (o carimbo `sig` sai do conteudo
+    // que acabou de ser gravado).
+    markLocalWin(id, extra = {}) {
+      const w = get().S.workouts.find(x => x.id === id)
+      const mark = {
+        id, at: Date.now(), ex: extra.ex || [], moved: !!extra.moved,
+        deleted: !!extra.deleted, sig: w ? sigOf(w) : null
+      }
+      try { localStorage.setItem(LOCAL_WIN_KEY, JSON.stringify(mark)) } catch { /* modo privado: vale so nesta sessao */ }
+      set({ localWin: mark })
+    },
 
     update(mut, push = true) {
       const S = clone(get().S)
@@ -217,11 +244,9 @@ export const useStore = create((set, get) => {
               if(srv.routines) srv.routines.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
               if(!isValidRest(srv.globalRestSec) && srv.globalRestSec!=null) delete srv.globalRestSec
               const S = get().S
-              const byId = new Map()
-              ;(srv.workouts || []).forEach(w => byId.set(w.id, w))
-              ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
               const merged = Object.assign(clone(DEF), srv)      // routines/week/dayPlan do SERVIDOR
-              merged.workouts = [...byId.values()]
+              merged.workouts = mergeWorkouts(srv.workouts, S.workouts, localWinNow())
+              merged.exWeights = mergeExWeights(srv.exWeights, S.exWeights, localWinNow())
               merged.mesos = mergeMesos(srv.mesos, S.mesos)      // nada criado aqui se perde
               // Ponteiro do mesociclo: o do SERVIDOR manda (a API é overwrite total e quem
               // coordena é o assistente, lendo antes de escrever). Id que sumiu vira null.
@@ -263,7 +288,9 @@ export const useStore = create((set, get) => {
         const serverRev = Number.isInteger(state?.rev) ? state.rev : null
         const myRev = Number.isInteger(S.rev) ? S.rev : -1
         const serverMoved = serverRev !== null && serverRev > myRev
-        if (state && (!hasData(S) || (serverMoved && !dirty))) {
+        // Com uma edicao recente na mao, adotar o estado inteiro apagaria exatamente o que o
+        // usuario acabou de salvar — entao este ramo cede lugar a mescla.
+        if (state && !localWinNow() && (!hasData(S) || (serverMoved && !dirty))) {
           // Nada pendente (`dirty` falso): o que este aparelho tinha já está confirmado no
           // servidor, então adotar o estado inteiro não descarta edição nenhuma. `active` é local.
           const active = S.active
@@ -279,11 +306,9 @@ export const useStore = create((set, get) => {
           // Tem coisa local (ou edição pendente): MESCLA em vez de sobrescrever — e a mescla de
           // rotina passa pelo mesmo adotador do caminho de 409, senão a releitura ao voltar
           // descartaria a edição que o usuário acabou de fazer.
-          const byId = new Map()
-          ;(state.workouts || []).forEach(w => byId.set(w.id, w))
-          ;(S.workouts || []).forEach(w => { if (!byId.has(w.id)) byId.set(w.id, w) })
           const merged = Object.assign(clone(DEF), state)
-          merged.workouts = [...byId.values()]
+          merged.workouts = mergeWorkouts(state.workouts, S.workouts, localWinNow())
+          merged.exWeights = mergeExWeights(state.exWeights, S.exWeights, localWinNow())
           merged.mesos = mergeMesos(state.mesos, S.mesos)
           fixMesoPointers(merged)
           if (S.active) merged.active = S.active

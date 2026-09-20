@@ -19,6 +19,7 @@
 // building a DOM.
 
 import { EXDB, EXIDX } from './exercises.js'
+import { sortWorkouts } from './workout-edit.js'
 import { uid } from './format.js'
 
 /* ----------------------------------------------------------------- CSV ---- */
@@ -516,11 +517,11 @@ export function mergeImport(S, parsed) {
   const used = new Set(fresh.flatMap(w => w.entries.map(e => e.id)))
   const customs = parsed.customEx.filter(c => used.has(c.id) && !EXIDX[c.id])
   S.customEx = [...(S.customEx || []), ...customs]
-  S.workouts = [...S.workouts, ...fresh].sort((a, b) => (a.d < b.d ? -1 : 1))
+  S.workouts = sortWorkouts([...S.workouts, ...fresh])
   // seed the weight suggestions from the newest imported set of each lift
   fresh.forEach(w => w.entries.forEach(e => {
     const mx = Math.max(0, ...e.sets.map(s => s.w || 0), e.topW || 0)
-    if (mx > 0) { const cur = S.exWeights[e.id]; if (!cur || w.d >= cur.d) S.exWeights[e.id] = { w: mx, d: w.d } }
+    if (mx > 0) { const cur = S.exWeights[e.id]; if (!cur || w.d >= cur.d) S.exWeights[e.id] = { w: mx, d: w.d, src: w.id } }
   }))
   return { added: fresh.length, skipped: parsed.workouts.length - fresh.length }
 }

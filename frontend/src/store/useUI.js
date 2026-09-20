@@ -19,6 +19,8 @@ let workDone = null
 
 export const useUI = create((set, get) => ({
   sheets: [],          // { id, render:(close)=>JSX, kind:'sheet'|'center', locked }
+  leaveGuard: null,    // fn(to) => boolean; a tela de edicao registra a dela enquanto esta montada
+  setLeaveGuard(fn) { set({ leaveGuard: fn }) },
   toastMsg: '',
   timer: null,         // rest countdown between sets — { left, total, endsAt }
   work: null,          // work countdown DURING a timed set (issue #16) — { left, total, endsAt, label }

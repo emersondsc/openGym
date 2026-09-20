@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
+import { useUI } from '../store/useUI.js'
 import { effectiveRoutine } from '../lib/history.js'
 import { todayISO } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
@@ -11,19 +12,24 @@ export default function TabBar({ onStart }) {
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
   const isGuest = useStore(s => s.isGuest())
+  const guard = useUI(s => s.leaveGuard)
   if (!user && !isGuest) return null
   const cur = loc.pathname.split('/')[1] || 'home'
   const on = k => cur === k || (cur === 'history' && k === 'stats') || (cur === 'settings' && k === 'home')
 
   const startWorkout = () => {
+    if (guard && !guard('/workout')) return
     if (!S.active) {
       const r = effectiveRoutine(S, todayISO())
       if (r && r.ex.length) { onStart(r.id); return }
     }
     nav('/workout')
   }
+  // A barra e renderizada fora das rotas: sem consultar o guarda, tocar numa aba levaria embora
+  // o rascunho da tela de edicao sem perguntar nada.
+  const go = to => { if (guard && !guard(to)) return; nav(to) }
   const Tab = ({ k, icon, to, label }) => (
-    <button className={on(k) ? 'on' : ''} onClick={() => nav(to)}>
+    <button className={on(k) ? 'on' : ''} onClick={() => go(to)}>
       <Icon name={icon} /><span>{label}</span>
     </button>
   )

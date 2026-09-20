@@ -167,16 +167,24 @@ export function lastEntryFor(S, exId) {
   }
   return null
 }
-export function bestWeightFor(S, exId) {
-  let best = 0
-  S.workouts.forEach(w => w.entries.forEach(e => {
-    if (e.id === exId) {
-      e.sets.forEach(s => { if (s.done && s.w > best) best = s.w })
-      if (e.topW && e.topW > best) best = e.topW
-    }
-  }))
-  return best
+// O melhor peso de um exercicio em todo o historico, com a data e o TREINO de onde ele veio.
+// `topW` entra: e o peso de trabalho que o usuario confirmou no fim do exercicio, e pode ser maior
+// que a maior serie registrada. `exclude` existe para a edicao de um treino — os recordes daquele
+// treino tem de ser julgados contra o historico SEM ele, senao o numero antigo, ainda gravado
+// nele, venceria a correcao (lib/workout-edit.js).
+export function bestEntryFor(S, exId, exclude) {
+  let w = 0, d = null, src = null
+  ;(S.workouts || []).forEach(x => {
+    if (exclude && x.id === exclude) return
+    x.entries.forEach(e => {
+      if (e.id !== exId) return
+      e.sets.forEach(s => { if (s.done && s.w > w) { w = s.w; d = x.d; src = x.id } })
+      if (e.topW && e.topW > w) { w = e.topW; d = x.d; src = x.id }
+    })
+  })
+  return { w, d, src }
 }
+export function bestWeightFor(S, exId, exclude) { return bestEntryFor(S, exId, exclude).w }
 export function effectiveRoutineId(S, iso) {
   const ov = S.dayPlan[iso]
   if (ov === 'rest') return null

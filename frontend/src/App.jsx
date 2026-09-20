@@ -23,6 +23,7 @@ import PlanRaw from './views/PlanRaw.jsx'
 import Workout from './views/Workout.jsx'
 import Stats from './views/Stats.jsx'
 import History from './views/History.jsx'
+import WorkoutEdit from './views/WorkoutEdit.jsx'
 import Library from './views/Library.jsx'
 import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
@@ -77,6 +78,7 @@ function Shell() {
               <Route path="/workout" element={<Workout />} />
               <Route path="/stats" element={<Stats />} />
               <Route path="/history" element={<History />} />
+              <Route path="/history/w/:id" element={<WorkoutEdit />} />
               <Route path="/library" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />

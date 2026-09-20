@@ -329,8 +329,10 @@ function ActiveWorkout() {
               // B: auto-save silencioso sem modal — o maior peso do dia vira default da próxima vez
               const maxSet = Math.max(0, ...e.sets.filter(x => x.done).map(x => x.w || 0))
               if (maxSet > 0) {
+                // `src` diz de qual treino veio o melhor peso: sem ele, uma edicao posterior nao
+                // consegue saber se o valor guardado veio do treino que esta sendo corrigido.
                 const cur = s.exWeights[e.id]
-                s.exWeights[e.id] = { w: Math.max(maxSet, cur ? cur.w : 0), d: todayISO() }
+                if (!cur || maxSet > cur.w) s.exWeights[e.id] = { w: maxSet, d: todayISO(), src: s.active.id }
               }
             }
           }
@@ -407,7 +409,7 @@ function ActiveWorkout() {
       const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
       s.active.entries.push({ id: ex.id, target: { ...cfg }, plan, sets: applyPrescription(buildSets(s, full), plan) })
       s.active.cur = s.active.entries.length - 1
-    }), null, S.routines.find(r => r.id === A.routineId)))} icon="plus">{t('Add exercise')}</Button>
+    }), null, S.routines.find(r => r.id === A.routineId)), S.active.entries.map(e => e.id))} icon="plus">{t('Add exercise')}</Button>
     <div style={{ height: 10 }} />
     {(() => {
       const exDone = A.entries.filter(e => e.sets.length && e.sets.every(s => s.done)).length

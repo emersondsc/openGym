@@ -580,6 +580,11 @@ h4.sec{
 .setrow.eff3 .stp button{width:23px}
 .setrow.eff3 .stp.eff button{width:20px}
 .setrow.eff3 .stp .num{font-size:14px}
+/* a coluna do × por serie existe so na tela de edicao de um treino finalizado; o espacador do
+   cabecalho precisa da MESMA largura, ou os rotulos saem de cima dos steppers */
+.sethead .rm-sp{width:26px;flex:none}
+.setrow .rm-sp{width:26px;height:26px;border-radius:7px;font-size:13px;flex:none;color:var(--red)}
+.iconbtn.mini{width:28px;height:24px;border-radius:7px;font-size:12px}
 .setrow.done .n{background:var(--acc);color:var(--on-acc)}
 .setrow.done{opacity:.45}
 /* why the next target is what it is (issue #17) */
