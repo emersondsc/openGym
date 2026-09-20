@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
@@ -9,10 +10,24 @@ import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf, DEFAULT_GLYPH } from '../lib/glyphs.js'
 
+// Preferência de exibição do Plan: mora no aparelho, não no estado sincronizado.
+const WEEK_OPEN_KEY = 'gym_week_open'
+
 export default function Plan() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
+
+  // A grade de dias é referência, não ação: quem já sabe o próprio split quer a lista de
+  // rotinas mais perto. A escolha fica no aparelho e sobrevive ao recarregar.
+  const [weekOpen, setWeekOpen] = useState(() => {
+    try { return localStorage.getItem(WEEK_OPEN_KEY) !== '0' } catch { return true }
+  })
+  const toggleWeek = () => {
+    const next = !weekOpen
+    setWeekOpen(next)
+    try { localStorage.setItem(WEEK_OPEN_KEY, next ? '1' : '0') } catch { /* modo privado: vale só nesta sessão */ }
+  }
 
   const addRoutine = () => {
     const r = { id: uid(), name: t('New routine'), emoji: DEFAULT_GLYPH, ex: [] }
@@ -95,8 +110,14 @@ export default function Plan() {
     {/* O botão "Gerar micro S(n)" entra aqui na spec do BACKLOG-02. O lugar é este. */}
 
     <div className="cols"><div>
-      <h4 className="sec">{t('Week schedule')}</h4>
-      <div className="list" style={{ display: 'flex', flexDirection: 'column' }}>
+      {/* O cabeçalho inteiro é o botão de esconder: a grade de dias é referência, e sem ela a
+          coluna some e a lista de rotinas sobe. Estado aberto/fechado fica em WEEK_OPEN_KEY. */}
+      <button onClick={toggleWeek} aria-expanded={weekOpen}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', margin: '22px 0 10px', padding: 0, textAlign: 'left' }}>
+        <h4 className="sec" style={{ margin: 0 }}>{t('Week schedule')}</h4>
+        <Icon name={weekOpen ? 'chevronUp' : 'chevronDown'} style={{ color: 'var(--label-3)', fontSize: 16, marginRight: 4 }} />
+      </button>
+      {weekOpen && <div className="list" style={{ display: 'flex', flexDirection: 'column' }}>
         {[1, 2, 3, 4, 5, 6, 0].map(d => {
           const r = S.routines.find(x => x.id === S.week[d])
           return <div key={d} className="item" onClick={() => dayAssignSheet(d)}>
@@ -104,7 +125,7 @@ export default function Plan() {
             {r ? <span className="tag acc"><Icon name={glyphOf(r.emoji)} />{r.name}</span> : <span className="tag">{t('Rest')}</span>}
             <Icon name="chevronRight" className="chev" /></div>
         })}
-      </div>
+      </div>}
     </div><div>
       <div className="row between" style={{ marginTop: 22, marginBottom: 10 }}>
         <h4 className="sec" style={{ margin: 0 }}>{t('Routines')}</h4>
