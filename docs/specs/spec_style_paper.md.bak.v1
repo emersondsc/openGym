@@ -1,0 +1,618 @@
+# Spec: escolher o estilo do app (Style) — Paper — v1
+
+> **Pedido do usuário (20/09/2026):** *"eu quero implementar uma função nova no settings, quero permitir o usuário escolher o Style de app dele. Teremos todas esse como opções. hoje o app em Setting permite mudar a cor, e quero q ao mudarmos de 'Style' essa opção (div) de mudar de cor suma […] entendo q essa implementação requer muito trabalho então podemos fazer o seguinte, vamos criar a spec para adicionar esse opção de Style e colocar o estilo 'Paper' disponível."*
+> **Repo/branch:** `emersondsc/openGym`, `emerson-custom`. Frontend React 19 + Vite (`frontend/`), CSS único em `frontend/src/index.css`, estado do usuário em `localStorage` + `PUT /api/data` (API Node sem framework em `api/server.js`).
+> **Base medida (20/09/2026), na VPS `/mnt/drivebackup/apps/openGym/openGym`, HEAD `ebc9c44`, árvore limpa:** `frontend/src/views/Settings.jsx` 363 linhas · `frontend/src/store/useStore.js` 388 · `frontend/src/App.jsx` 102 · `frontend/src/index.css` 933 · `frontend/src/components/Icon.jsx` 153 · `frontend/src/components/ui.jsx` 296 · `frontend/src/lib/format.js` 47 · `frontend/src/lib/i18n.js` 56 · `frontend/src/locales/pt.js` 46.951 bytes · 12 arquivos `frontend/src/lib/*.test.js` (vitest).
+> **Estado hoje:** a aparência tem exatamente dois controles — **Theme** (Dark/Light, `Settings.jsx:154-162`) e **Accent color** (oito amostras, `Settings.jsx:168-176`) — e os dois são aplicados por `applyPrefs(theme, accent)` (`App.jsx:33-40`), que escreve `data-theme` e `data-accent` no `<html>`. Todo o CSS do app lê variáveis (`--bg`, `--surface`, `--label`, `--acc`, `--r-card`, `--pad`, `--icon-stroke`, `--hair`), então uma aparência diferente **já é possível só com um bloco de CSS** — o que não existe é o conceito de "estilo" no estado, na tela nem no `<html>`.
+> **Revisão 1:** pendente (achados no anexo, ao fim).
+
+---
+
+## Contexto e Objetivo
+
+Hoje o usuário escolhe **uma cor** e o app é sempre o mesmo app: mesma forma, mesma tipografia, mesmo canto. A proposta de identidade visual apresentada em 20/09/2026 mostrou quatro direções completas (Grind, Paper, Pulse, Sage), todas construídas sobre as variáveis que o app já tem — nenhuma delas exige tocar em componente.
+
+**Objetivo:** transformar "aparência" em duas camadas. A camada de baixo é o **estilo** (um visual inteiro: cor, forma, tipografia, densidade), escolhido numa linha nova de Settings. A camada de cima são os ajustes finos que só fazem sentido enquanto o estilo não manda neles — hoje **Theme** e **Accent color**, que somem quando o estilo escolhido fixa o modo ou traz a própria cor. Nesta entrega entra **um** estilo novo, o **Paper** (papel quente, serifas, réguas de impressão, vinho no dado); o mecanismo fica pronto para receber Grind, Pulse e Sage sem nova estrutura.
+
+**Por que o controle some em vez de ficar desabilitado:** escolher Paper e ainda ver oito amostras de cor que não pintam nada é pior que não ver nada — o usuário tocaria, nada aconteceria e ele concluiria que o app quebrou. O que a tela deve ao usuário é a explicação, não o controle morto (RF-5).
+
+---
+
+## Escopo
+
+**Inclui**
+
+- linha **Style** na seção *Appearance* de Settings, acima de **Theme**, abrindo uma folha com um item por estilo (nome + uma linha de descrição + `check` no atual);
+- o estado `S.skin` (`'classic'` | `'paper'`), com default `'classic'`, gravado no `localStorage` e sincronizado no `PUT /api/data` como `theme` e `accent` já são;
+- `data-skin` no `<html>`, escrito pelo mesmo `applyPrefs`;
+- o bloco de CSS do estilo Paper no fim de `index.css` (tokens + regras de componente), **sem alterar nenhuma regra existente**;
+- **Theme** e **Accent color** escondidos quando o estilo ativo fixa o modo (`mode`) ou traz a própria cor (`ownAccent`) — no Paper, os dois;
+- uma linha de rodapé na seção explicando o que sumiu e por quê;
+- o `theme-color` do navegador acompanhando o estilo;
+- ícone novo `palette` no `Icon.jsx` (a linha precisa de ícone, e o set não tem nenhum de aparência);
+- as strings novas nos 11 pacotes de idioma.
+
+**Não inclui**
+
+- os estilos **Grind**, **Pulse** e **Sage** (o mecanismo fica pronto; cada um é um bloco de CSS + uma entrada no mapa, depois);
+- um **Paper escuro**: por decisão do usuário (D1), o estilo manda no modo — Paper é claro e ponto;
+- miniatura/preview visual de cada estilo na folha de escolha (só nome + descrição nesta entrega);
+- mudar qualquer outro comportamento do app: nada além de `applyPrefs` lê o estilo (RF-9);
+- tocar em `api/server.js`: `checkState` é deliberadamente frouxo e deixa campo desconhecido passar (verificado em `api/server.js:66-90`);
+- ícone do app, `manifest.json`, splash e nome do produto.
+
+---
+
+## Decisões do usuário
+
+- **D1 — o estilo manda no modo (respondida em 20/09/2026).** Pergunta: *"o estilo Paper é claro por natureza; se a pessoa escolher Paper e depois tocar em Dark, o que acontece?"* Resposta: **A) o estilo manda** — escolhendo Paper o app fica claro e o controle de claro/escuro some junto com o de cor; voltando para Classic, os dois reaparecem como estavam. Consequência de projeto: o Paper **não** ganha variante escura nesta entrega, e o valor de `S.theme` fica guardado, intocado, para quando o usuário voltar ao Classic (RF-6).
+
+## Decisões assumidas
+
+Decididas por mim porque são detalhe de implementação ou consequência direta de D1 — nenhuma muda o que o usuário vê além do que já está descrito nos RF.
+
+- **A1 — `S.skin` é o nome do campo**, com os valores `'classic'` e `'paper'`. Um mapa `SKINS` em `lib/format.js`, ao lado do `ACCENTS` que já vive lá, descreve cada estilo. Efeito visível: nenhum; é o que permite adicionar os outros três estilos depois sem mexer em tela.
+- **A2 — o estilo é sincronizado com o perfil**, igual a `theme` e `accent`. Efeito visível: trocar o estilo no celular muda também no tablet, como já acontece com a cor.
+- **A3 — o estilo ativo **não** apaga a cor escolhida.** `S.accent` continua no estado enquanto o Paper está ligado; voltando ao Classic, a cor anterior reaparece. Efeito visível: nada se perde por experimentar.
+- **A4 — `data-accent` é removido do `<html>` quando o estilo traz a própria cor** (em vez de deixar o atributo antigo e ganhar por ordem de CSS). Efeito visível: nenhum; é o que impede a cor de vazar para dentro do Paper por acidente de cascata.
+- **A5 — o bloco do estilo vai no **fim** de `index.css`**, depois de todas as regras de `:root`, de `:root[data-theme="light"]` e dos acentos. As regras do Paper têm a mesma especificidade das regras de tema claro (por exemplo `:root[data-skin="paper"] #tabbar` e `:root[data-theme="light"] #tabbar` são ambas id+2), então quem decide é a ordem no arquivo. Efeito visível: o Paper não é derrotado pela metade clara do tema.
+- **A6 — o Paper aproveita o modo claro que já existe.** Como o modo efetivo vira `light`, todas as regras `:root[data-theme="light"]` continuam valendo (busca, folha, gráficos) e o bloco do Paper só refina o que é identidade. Efeito visível: nenhuma tela fica sem tratamento no estilo novo.
+- **A7 — a resolução do que vai para o `<html>` é uma função pura** (`resolveSkin`, em `lib/format.js`) e `applyPrefs` só escreve no DOM. É o que permite testar a regra sem navegador (teste em §8).
+- **A8 — estilo desconhecido cai em Classic** em dois pontos (leitura do estado e escrita no DOM). Efeito visível: um backup vindo de uma versão futura (com `'grind'`) abre no visual de sempre em vez de abrir sem estilo nenhum.
+- **A9 — o nome dos estilos não é traduzido** (`Classic`, `Paper` são nomes próprios, como os nomes de idioma na linha *Language*, que também não passam por `t()`). O que é traduzido é o rótulo da linha, as descrições e a nota do rodapé.
+- **A10 — a seção ganha uma linha de rodapé em vez de um controle desabilitado.** Quando os dois controles somem, o rodapé diz por quê; a nota "synced with your profile" continua, na mesma linha, quando ela existe.
+- **A11 — ícone novo `palette`** desenhado nas convenções do arquivo (24×24, área viva 3…21, só traço, pontas arredondadas). Alternativa mais barata, se o desenho não agradar: reusar `sparkles`.
+
+---
+
+## Requisitos Funcionais
+
+**RF-1.** A seção *Appearance* de Settings passa a ter, como primeiro item, uma linha **Style** (`icon="palette"`), que mostra o nome do estilo ativo e abre uma folha com uma opção por estilo do mapa, cada uma com nome e descrição, e `check` na ativa. Tocar numa opção fecha a folha e aplica o estilo.
+
+**RF-2.** O estilo escolhido é gravado em `S.skin` e sobrevive a: recarregar a página, trocar de aba, fechar e reabrir o app, e entrar na mesma conta em outro aparelho (mesma via de `theme`/`accent`: `localStorage` + `PUT /api/data`, com o push de 1,5 s do `persist`).
+
+**RF-3.** Com o estilo **Classic** ativo, a seção *Appearance* é exatamente a de hoje: linha **Theme** com o `Segmented` Dark/Light e a linha de amostras **Accent color**, as duas funcionando.
+
+**RF-4.** Com o estilo **Paper** ativo: o `<html>` recebe `data-skin="paper"`; o modo efetivo é `light` **mesmo que `S.theme` seja `'dark'`**; a linha **Theme** e a linha **Accent color** não são renderizadas; a linha **Body diagram** continua.
+
+**RF-5.** Quando o estilo ativo tem `mode` ou `ownAccent`, o rodapé da seção *Appearance* diz, nomeando o estilo, que ele traz as próprias cores e o próprio modo e que por isso aqueles controles estão escondidos. A frase é traduzida.
+
+**RF-6.** Voltar para o estilo **Classic** devolve a tela ao estado de RF-3 **com os valores anteriores**: `S.theme` e `S.accent` nunca são reescritos por causa da troca de estilo. Se o usuário estava em Dark + teal antes de escolher Paper, é Dark + teal que ele vê ao voltar.
+
+**RF-7.** Um valor de estilo que não existe no mapa — vindo de um backup, de um `localStorage` editado à mão ou de um estado gravado por uma versão futura — resolve para `classic` nas duas pontas (ao ler o estado e ao escrever o `<html>`), sem erro no console e sem tela quebrada. O valor inválido **não** é corrigido no `localStorage` (só ignorado), para não apagar a escolha de quem abriu uma versão mais nova em outra aba.
+
+**RF-8.** O `content` do `<meta name="theme-color">` passa a sair do estilo ativo: no Classic, `#000000` no escuro e `#f2f2f7` no claro (como hoje); no Paper, `#f4f0e6`.
+
+**RF-9.** Nenhum outro ponto do app lê `S.skin`. Os únicos arquivos que conhecem o conceito são `lib/format.js` (o mapa e a função pura), `App.jsx` (aplicar no `<html>`), `views/Settings.jsx` (a linha) e `store/useStore.js` (default e saneamento na leitura).
+
+**RF-10.** O estilo viaja com os dados: entra no **Export backup (JSON)** e volta no **Import backup**, e **Reset everything** devolve o app ao Classic (porque o reset recarrega o `DEF`).
+
+**RF-11.** Adicionar um estilo novo depois (Grind, Pulse, Sage) não exige mexer em nenhum componente: é uma entrada no `SKINS` e um bloco `:root[data-skin="..."]` no CSS.
+
+**RF-12.** A troca de estilo é imediata e sem recarregar: tocar na opção na folha fecha a folha e a tela inteira já está no estilo novo (mesmo caminho de `applyPrefs` que o Theme usa hoje).
+
+---
+
+## Detalhe de Implementação (nível código)
+
+### 1. `frontend/src/lib/format.js` — o mapa dos estilos e a função pura
+
+**1.1 — depois de `ACCENTS` (linha 47, hoje a última do arquivo), acrescentar:**
+
+```js
+// Um estilo é um visual inteiro — cor, forma, tipografia e densidade —, não uma cor. O mapa é a
+// única lista de estilos que existe: a folha de Settings e o CSS leem daqui, então acrescentar
+// Grind, Pulse ou Sage é uma entrada aqui e um bloco :root[data-skin="..."] no index.css.
+//
+//   mode       fixa o modo do estilo (Paper é claro por natureza); null = obedece ao Theme
+//   ownAccent  o estilo traz a própria cor; o Accent color do usuário não pinta nada nele
+//   chrome     cor da barra do navegador (<meta name="theme-color">) por modo
+//   subtitle   chave de tradução (o inglês é a chave, ver lib/i18n.js)
+export const SKINS = {
+  classic: {
+    label: 'Classic', mode: null, ownAccent: false,
+    subtitle: 'The look openGym has always had.',
+    chrome: { dark: '#000000', light: '#f2f2f7' },
+  },
+  paper: {
+    label: 'Paper', mode: 'light', ownAccent: true,
+    subtitle: 'Warm paper, serifs and print rules.',
+    chrome: { light: '#f4f0e6' },
+  },
+}
+
+export const skinOf = k => SKINS[k] || SKINS.classic
+
+// O que vai para o <html>, resolvido sem DOM (é o que o teste cobre). `accent: null` significa
+// "o estilo manda na cor" — quem escreve o atributo é que decide remover `data-accent`.
+export function resolveSkin(skin, theme, accent) {
+  const sk = skinOf(skin)
+  const mode = sk.mode || (theme === 'light' ? 'light' : 'dark')
+  return {
+    skin: SKINS[skin] ? skin : 'classic',
+    mode,
+    accent: sk.ownAccent ? null : (ACCENTS[accent] ? accent : 'lime'),
+    chrome: sk.chrome[mode] || (mode === 'light' ? '#f2f2f7' : '#000000'),
+  }
+}
+```
+
+> **Atenção ao import circular:** `format.js` não importa nada hoje (linha 1 é `import { t } from './i18n.js'`? — conferir: `format.js` importa `t` de `i18n.js` na linha 1). `SKINS` guarda a **chave** da descrição, e quem traduz é a tela (`t(sk.subtitle)`), para o mapa não depender do idioma carregado.
+
+### 2. `frontend/src/store/useStore.js` — default e saneamento
+
+**2.1 — `DEF` (linha 14-21), acrescentar `skin` junto de `theme`/`accent`:**
+
+```js
+// ANTES
+const DEF = {
+  unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
+  theme: 'dark', accent: 'lime', body: 'male', targetW: null,
+```
+```js
+// DEPOIS
+const DEF = {
+  unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
+  theme: 'dark', accent: 'lime', skin: 'classic', body: 'male', targetW: null,
+```
+
+**2.2 — `loadState()` (linha 33-45), saneamento do valor lido.** O `Object.assign(clone(DEF), parsed)` já cobre o estado **sem** `skin` (recebe `'classic'` do `DEF`); o que falta é o valor **inválido**, que passaria adiante e só seria tratado na hora de pintar:
+
+```js
+// ANTES
+      if(!isValidRest(state.globalRestSec)) state.globalRestSec = 90
+```
+```js
+// DEPOIS
+      if(!isValidRest(state.globalRestSec)) state.globalRestSec = 90
+      // Estilo que não existe (backup de versão futura, JSON editado à mão) cai no Classic. O
+      // valor estranho NÃO é apagado do localStorage de propósito: quem abriu uma versão mais
+      // nova em outra aba não pode ter a escolha sobrescrita por uma aba velha (RF-7).
+      if(state.skin != null && !SKINS[state.skin]) console.warn('[skin] desconhecido, usando classic:', state.skin)
+```
+com o import no topo (linha 3, junto do `localTZ` que já vem de lá):
+
+```js
+// ANTES
+import { localTZ } from '../lib/format.js'
+// DEPOIS
+import { localTZ, SKINS } from '../lib/format.js'
+```
+
+> O valor não é reescrito aqui — `applyPrefs` já resolve para `classic` (A8). O `console.warn` existe para o caso ficar rastreável, no mesmo espírito do `console.warn('[restSec] limpeza: …')` que já está no arquivo.
+
+**2.3 — nada mais muda no store.** `persist()` grava o estado inteiro (o `skin` entra sozinho), `pushState()` manda o estado inteiro sanitizado (o `skin` passa), e a mescla de 409 usa `Object.assign(clone(DEF), srv)` — ou seja, o estilo vem do servidor quando existe e cai no `'classic'` do `DEF` quando não existe. É o mesmo comportamento de `theme`/`accent` hoje (última escrita vence), e não precisa de tratamento especial.
+
+### 3. `frontend/src/App.jsx` — aplicar no `<html>`
+
+**3.1 — import (linha 6):**
+
+```js
+// ANTES
+import { ACCENTS } from './lib/format.js'
+// DEPOIS
+import { resolveSkin } from './lib/format.js'
+```
+> `ACCENTS` deixa de ser usado aqui: quem valida a cor agora é o `resolveSkin`.
+
+**3.2 — `applyPrefs` (linha 33-40):**
+
+```js
+// ANTES
+function applyPrefs(theme, accent) {
+  const de = document.documentElement
+  de.dataset.theme = theme === 'light' ? 'light' : 'dark'
+  de.dataset.accent = ACCENTS[accent] ? accent : 'lime'
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.content = de.dataset.theme === 'light' ? '#f2f2f7' : '#000000'
+}
+```
+```js
+// DEPOIS
+function applyPrefs(theme, accent, skin) {
+  const de = document.documentElement
+  const r = resolveSkin(skin, theme, accent)
+  de.dataset.skin = r.skin
+  de.dataset.theme = r.mode
+  // `null` = o estilo traz a própria cor: o atributo sai do <html> em vez de ficar lá sem
+  // efeito, senão a cor do usuário voltaria a valer por ordem de cascata (A4).
+  if (r.accent) de.dataset.accent = r.accent
+  else delete de.dataset.accent
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.content = r.chrome
+}
+```
+
+**3.3 — a chamada (linha 48):**
+
+```js
+// ANTES
+  useEffect(() => { applyPrefs(S.theme, S.accent) }, [S.theme, S.accent])
+// DEPOIS
+  useEffect(() => { applyPrefs(S.theme, S.accent, S.skin) }, [S.theme, S.accent, S.skin])
+```
+
+### 4. `frontend/src/views/Settings.jsx` — a linha Style e o que some
+
+**4.1 — import (linha 5):**
+
+```js
+// ANTES
+import { ACCENTS, todayISO, localTZ } from '../lib/format.js'
+// DEPOIS
+import { ACCENTS, SKINS, skinOf, todayISO, localTZ } from '../lib/format.js'
+```
+
+**4.2 — dentro do componente, junto das outras derivadas (depois de `const wakeOK = wakeLockSupported()`, linha 25):**
+
+```jsx
+  // O estilo ativo decide o que a seção Appearance mostra. `skinOf` nunca devolve undefined —
+  // um valor estranho vira o Classic, que é o que o applyPrefs também pinta (RF-7).
+  const skin = skinOf(S.skin)
+  const skinNote = (skin.mode || skin.ownAccent)
+    ? t('{0} brings its own colours and light mode, so those controls are hidden.', skin.label)
+    : null
+  // O rodapé da seção já dizia uma coisa (a sincronia com o perfil); a nota do estilo entra na
+  // frente dela, na mesma linha, em vez de virar uma segunda linha cinza embaixo da lista.
+  const appFooter = [skinNote, (DEMO || MOBILE) ? null : t('synced with your profile')].filter(Boolean).join(' ')
+```
+
+**4.3 — a seção *Appearance* (linha 152-177), inteira:**
+
+```jsx
+// ANTES
+    <Section title={t('Appearance')} footer={DEMO || MOBILE ? undefined : t('synced with your profile')}>
+      <Row icon="moon" iconTint="var(--indigo)" title={t('Theme')}>
+        <Segmented
+          className="seg-inline"
+          options={[{ value: 'dark', icon: 'moon', label: t('Dark') }, { value: 'light', icon: 'sun', label: t('Light') }]}
+          value={S.theme === 'light' ? 'light' : 'dark'}
+          onChange={v => update(s => { s.theme = v })}
+        />
+      </Row>
+      {/* Purely how the muscle map is drawn — nothing else in the app reads this. */}
+      <Row icon="figureStrength" iconTint="var(--teal)" title={t('Body diagram')}>
+        <Segmented
+          className="seg-inline"
+          options={[{ value: 'male', label: t('Male') }, { value: 'female', label: t('Female') }]}
+          value={S.body === 'female' ? 'female' : 'male'}
+          onChange={v => update(s => { s.body = v })}
+        />
+      </Row>
+      <div className="lrow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12, paddingTop: 13, paddingBottom: 14 }}>
+        <span className="lrow-t">{t('Accent color')}</span>
+        <div className="swatches">
+          {Object.entries(ACCENTS).map(([k, c]) => (
+            <button key={k} className={'swatch' + ((S.accent || 'lime') === k ? ' on' : '')}
+              style={{ background: c }} onClick={() => update(s => { s.accent = k })} aria-label={k} />
+          ))}
+        </div>
+      </div>
+    </Section>
+```
+```jsx
+// DEPOIS
+    <Section title={t('Appearance')} footer={appFooter || undefined}>
+      {/* O estilo vem primeiro porque é a escolha que pode engolir as duas de baixo: um estilo
+          que fixa o modo (Paper é claro) ou que traz a própria cor esconde o controle
+          correspondente. Esconder é de propósito — um controle que não pinta nada faz o
+          usuário concluir que o app quebrou (RF-4/RF-5). */}
+      <SelectRow icon="palette" iconTint="var(--purple)" title={t('Style')}
+        value={SKINS[S.skin] ? S.skin : 'classic'} sheetTitle={t('Style')}
+        onChange={v => update(s => { s.skin = v })}
+        options={Object.entries(SKINS).map(([k, sk]) => ({ value: k, label: sk.label, subtitle: t(sk.subtitle) }))} />
+      {!skin.mode && <Row icon="moon" iconTint="var(--indigo)" title={t('Theme')}>
+        <Segmented
+          className="seg-inline"
+          options={[{ value: 'dark', icon: 'moon', label: t('Dark') }, { value: 'light', icon: 'sun', label: t('Light') }]}
+          value={S.theme === 'light' ? 'light' : 'dark'}
+          onChange={v => update(s => { s.theme = v })}
+        />
+      </Row>}
+      {/* Purely how the muscle map is drawn — nothing else in the app reads this. */}
+      <Row icon="figureStrength" iconTint="var(--teal)" title={t('Body diagram')}>
+        <Segmented
+          className="seg-inline"
+          options={[{ value: 'male', label: t('Male') }, { value: 'female', label: t('Female') }]}
+          value={S.body === 'female' ? 'female' : 'male'}
+          onChange={v => update(s => { s.body = v })}
+        />
+      </Row>
+      {!skin.ownAccent && <div className="lrow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12, paddingTop: 13, paddingBottom: 14 }}>
+        <span className="lrow-t">{t('Accent color')}</span>
+        <div className="swatches">
+          {Object.entries(ACCENTS).map(([k, c]) => (
+            <button key={k} className={'swatch' + ((S.accent || 'lime') === k ? ' on' : '')}
+              style={{ background: c }} onClick={() => update(s => { s.accent = k })} aria-label={k} />
+          ))}
+        </div>
+      </div>}
+    </Section>
+```
+
+> `SelectRow` já existe e faz exatamente o que a linha precisa (`components/ui.jsx:243-269`): renderiza uma `Row` com o valor atual à direita e abre uma folha com a lista, `check` no item ativo. Nada novo de componente nesta entrega.
+> `ACCENTS` continua sendo importado porque as amostras continuam existindo no estilo Classic.
+
+### 5. `frontend/src/index.css` — o bloco do Paper (novo, no **fim** do arquivo)
+
+Nenhuma regra existente é alterada. O bloco inteiro é novo, depois da última linha (hoje `:root[data-skin]` não existe em lugar nenhum, então não há conflito — só ordem, e por isso ele é o último).
+
+```css
+/* ============================================================================
+   SKINS — estilos de app inteiros (Settings › Appearance › Style)
+   ----------------------------------------------------------------------------
+   Um estilo não é uma cor: é forma, tipografia e densidade junto. O bloco fica
+   no FIM do arquivo de propósito — as regras daqui têm a mesma especificidade
+   das regras de tema claro (:root[data-theme="light"] …) e é a ordem que decide.
+   Acrescentar Grind, Pulse ou Sage é um bloco como este e uma entrada no SKINS
+   (lib/format.js). Nada mais.
+   ========================================================================== */
+
+/* ---- Paper — papel quente, serifa no título, régua de impressão no lugar da caixa ---- */
+:root[data-skin="paper"]{
+  --bg:#f4f0e6; --bg-el:#faf7f0; --surface:#fffdf8; --surface-2:#efeade; --surface-3:#e5dfd1;
+  --label:#15130d; --label-2:rgba(21,19,13,.60); --label-3:rgba(21,19,13,.34); --label-4:rgba(21,19,13,.14);
+  --sep:rgba(21,19,13,.17); --sep-op:rgba(21,19,13,.10);
+  --acc:#9c2b2b; --acc-2:#7d1f1f; --on-acc:#fffdf8;
+  --r-sm:2px; --r:3px; --r-lg:4px; --r-xl:6px; --r-card:3px;
+  --pad:18px; --icon-stroke:1.6; --hair:1px;
+}
+/* Títulos em serifa, rótulo de seção em caixa-alta espaçada. A regra é essa e vale para a tela
+   inteira: o que nomeia uma coisa é serifa; o que a classifica é rótulo. */
+:root[data-skin="paper"] .hdr h1,
+:root[data-skin="paper"] .card h2,
+:root[data-skin="paper"] .sheet h3,
+:root[data-skin="paper"] .stat-v{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-weight:600;letter-spacing:-.012em}
+:root[data-skin="paper"] .card h2{font-size:15px;color:var(--label)}
+:root[data-skin="paper"] .card h2 .dim,
+:root[data-skin="paper"] .hdr .sub{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,sans-serif}
+:root[data-skin="paper"] .card h2 .dim{font-size:11px;text-transform:uppercase;letter-spacing:.12em}
+:root[data-skin="paper"] .hdr .sub{font-style:italic;font-size:14px}
+:root[data-skin="paper"] h4.sec,
+:root[data-skin="paper"] .sect-t{text-transform:uppercase;letter-spacing:.16em;font-size:10px;font-weight:600;color:var(--label-2)}
+/* Caixa: contorno em vez de sombra; a lista deixa de ser cartões soltos e vira linhas com régua. */
+:root[data-skin="paper"] .card,
+:root[data-skin="paper"] .sect-b,
+:root[data-skin="paper"] .efftbl{border:1px solid var(--sep);box-shadow:none}
+:root[data-skin="paper"] .list{gap:0}
+:root[data-skin="paper"] .item{background:transparent;border-radius:0;border-bottom:1px solid var(--sep);padding:11px 2px}
+:root[data-skin="paper"] .item .tt{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-size:16px}
+:root[data-skin="paper"] .efftbl .hd{background:transparent;border-bottom:1px solid var(--sep)}
+/* Controles: canto de 2px, segmented de contorno com o polegar em tinta. */
+:root[data-skin="paper"] .btn{border-radius:2px;font-size:14px}
+:root[data-skin="paper"] .seg{border-radius:2px;background:transparent;box-shadow:inset 0 0 0 1px var(--sep)}
+:root[data-skin="paper"] .seg-sel{background:var(--label);border-radius:1px;box-shadow:none}
+:root[data-skin="paper"] .seg button.on{color:var(--surface);font-weight:600}
+:root[data-skin="paper"] .chip{border-radius:2px;font-size:11.5px}
+:root[data-skin="paper"] .tag{border-radius:2px}
+:root[data-skin="paper"] .field,
+:root[data-skin="paper"] .input,
+:root[data-skin="paper"] .exnote{box-shadow:inset 0 0 0 1px var(--sep)}
+:root[data-skin="paper"] .sw,
+:root[data-skin="paper"] .sw .knob{border-radius:2px}
+:root[data-skin="paper"] .sw .knob{border-radius:1px}
+/* Dado: barra de 3px sem ponta arredondada, célula de mapa quase quadrada. */
+:root[data-skin="paper"] .mrow{padding:5px 0;border-bottom:1px solid var(--sep-op)}
+:root[data-skin="paper"] .mrow .bar,
+:root[data-skin="paper"] .mrow .bar i,
+:root[data-skin="paper"] .wprog,
+:root[data-skin="paper"] .wprog i{border-radius:0}
+:root[data-skin="paper"] .mrow .bar{height:3px}
+:root[data-skin="paper"] .hm-c{border-radius:1px}
+:root[data-skin="paper"] .cal-d{border-radius:2px}
+/* Barra de abas e folhas: sólidas, com régua em cima, sem vidro fosco. */
+:root[data-skin="paper"] #tabbar{background:var(--bg);border-top:1px solid var(--sep);backdrop-filter:none;-webkit-backdrop-filter:none}
+:root[data-skin="paper"] #tabbar button{letter-spacing:.04em}
+:root[data-skin="paper"] #tabbar button.start .cir{border-radius:3px}
+:root[data-skin="paper"] .sheet{border-radius:6px 6px 0 0}
+:root[data-skin="paper"] .sheet .grab{height:2px;border-radius:0}
+:root[data-skin="paper"] .center{background:var(--surface);border-radius:4px}
+```
+
+> **O que o bloco não toca, de propósito:** a paleta de status (`--blue`, `--red`, `--yellow`, `--orange`…). Ela é semântica, não marca — o amarelo do PR e o laranja do "não treinado" continuam os do modo claro, que é o que o usuário já vê hoje no Light. Trocar isso seria mudar o significado das cores junto com a pele.
+> **O que herda sozinho:** busca (`:root[data-theme="light"] .searchf .field`), folha (`… .sheet{background:var(--bg)}`), mapa de calor, mapa muscular, gráficos e o timer do descanso — todos leem variáveis, e as variáveis já são as do Paper.
+
+### 6. `frontend/src/components/Icon.jsx` — o ícone `palette`
+
+Acrescentar em `P`, junto dos ícones de interface (depois de `info`, que hoje é o último, linha 121):
+
+```jsx
+  // Paleta: a forma fechada com o vão do polegar e três pastilhas. Só traço, como o resto do
+  // set — as pastilhas são círculos de contorno, não pontos cheios, para o ícone não ficar
+  // mais pesado que os vizinhos na mesma linha de Settings.
+  palette: <><path d="M12 3.6a8.4 8.4 0 0 0 0 16.8c1.2 0 2-.8 2-1.8 0-.5-.2-.9-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8h1.5a3.3 3.3 0 0 0 3.3-3.3c0-3.9-3.4-7.4-7.6-7.4Z" /><circle cx="8.6" cy="11.4" r="1.1" /><circle cx="12" cy="8.4" r="1.1" /><circle cx="15.6" cy="11.4" r="1.1" /></>,
+```
+
+Conferência obrigatória ao implementar: renderizar a 19px (tamanho de `.lrow-i`) ao lado de `moon` e `figureStrength` na mesma seção, e confirmar que a área viva respeita 3…21 e que nenhum traço encosta na borda.
+Se o desenho não agradar, a alternativa registrada em A11 é `sparkles` — troca de uma palavra na linha do `SelectRow`.
+
+### 7. `frontend/src/locales/*.js` — strings novas
+
+Quatro strings de origem (inglês), no padrão do `lib/i18n.js` (a string inglesa é a chave):
+
+| chave (inglês) | onde aparece |
+|---|---|
+| `Style` | título da linha e título da folha |
+| `The look openGym has always had.` | descrição do Classic, na folha |
+| `Warm paper, serifs and print rules.` | descrição do Paper, na folha |
+| `{0} brings its own colours and light mode, so those controls are hidden.` | rodapé da seção, com o nome do estilo em `{0}` |
+
+`Classic` e `Paper` **não** entram nos pacotes (A9: são nomes próprios, como os nomes de idioma da linha *Language*).
+
+**`pt.js`** (registro de português europeu, igual ao resto do arquivo — `'Settings': 'Definições'`, `'Appearance': 'Aparência'`, `'Accent color': 'Cor de destaque'`), inserir junto do bloco de Settings (perto da linha 374):
+
+```js
+  'Style': 'Estilo',
+  'The look openGym has always had.': 'O visual de sempre do openGym.',
+  'Warm paper, serifs and print rules.': 'Papel quente, serifas e réguas de impressão.',
+  '{0} brings its own colours and light mode, so those controls are hidden.': 'O estilo {0} traz as suas próprias cores e o seu modo claro, por isso estes controlos estão escondidos.',
+```
+
+**`es.js` / `fr.js` / `de.js` / `it.js` / `pl.js` / `ru.js` / `tr.js` / `zh.js` / `ko.js` / `hi.js`:** mesmas quatro chaves, traduzidas no registro de cada arquivo. Sem tradução, o inglês aparece — não quebra nada, mas a entrega só está completa com os 11.
+
+### 8. Testes
+
+**8.1 — arquivo novo `frontend/src/lib/skins.test.js`** (vitest, roda com `npm test` dentro de `frontend/`), cobrindo a função pura de A7:
+
+```js
+import { describe, it, expect } from 'vitest'
+import { SKINS, skinOf, resolveSkin } from './format.js'
+
+describe('resolveSkin', () => {
+  it('classic obedece ao tema e mantem a cor escolhida', () => {
+    expect(resolveSkin('classic', 'dark', 'teal')).toEqual({ skin: 'classic', mode: 'dark', accent: 'teal', chrome: '#000000' })
+    expect(resolveSkin('classic', 'light', 'teal')).toEqual({ skin: 'classic', mode: 'light', accent: 'teal', chrome: '#f2f2f7' })
+  })
+  it('paper fixa o modo claro mesmo com theme dark e tira a cor do usuario', () => {
+    expect(resolveSkin('paper', 'dark', 'teal')).toEqual({ skin: 'paper', mode: 'light', accent: null, chrome: '#f4f0e6' })
+  })
+  it('estilo desconhecido cai no classic (RF-7)', () => {
+    expect(resolveSkin('grind', 'dark', 'teal')).toEqual(resolveSkin('classic', 'dark', 'teal'))
+    expect(resolveSkin(undefined, 'dark', 'teal').skin).toBe('classic')
+  })
+  it('cor desconhecida cai no lime, como o applyPrefs fazia', () => {
+    expect(resolveSkin('classic', 'dark', 'roxo').accent).toBe('lime')
+  })
+  it('todo estilo do mapa tem descricao e chrome do modo que ele fixa', () => {
+    for (const [k, sk] of Object.entries(SKINS)) {
+      expect(sk.subtitle, k).toBeTruthy()
+      expect(sk.chrome[sk.mode || 'dark'], k).toBeTruthy()
+    }
+    expect(skinOf('paper')).toBe(SKINS.paper)
+  })
+})
+```
+
+**8.2 — testes manuais (o que o teste automático não vê):**
+
+1. `cd frontend && npm test` — verde, incluindo o arquivo novo.
+2. `cd frontend && npm run build` — sem aviso de import não usado (`ACCENTS` fora do `App.jsx`).
+3. Abrir o app (docker local ou `npm run dev`), ir em **Settings › Appearance**: a linha **Style** aparece em cima, mostrando `Classic`.
+4. Tocar em **Style** → a folha lista `Classic` (com check) e `Paper`, cada um com a descrição. Escolher **Paper**: a folha fecha, a tela inteira muda na hora, **Theme** e **Accent color** somem, **Body diagram** fica, e o rodapé passa a explicar o motivo nomeando o Paper.
+5. Recarregar a página (F5): continua Paper, sem piscar em Classic.
+6. Voltar em **Style** → **Classic**: o app volta ao escuro com a cor que estava escolhida antes (testar tendo deixado `teal` ou `gold`), e os dois controles reaparecem com o valor certo.
+7. Com Paper ativo, conferir nas outras abas que a pele pegou: **Stats** (barras de 3px, sem ponta arredondada, heatmap quadrado), **Home**, **Workout** (timer do descanso e séries), **Settings** (lista agrupada com contorno, folha sem vidro fosco), e a barra de abas sólida com régua em cima.
+8. Com Paper ativo e logado, conferir a barra do navegador no celular: cor `#f4f0e6`, não preta.
+9. Logado em dois aparelhos: trocar o estilo num e abrir o outro — o estilo veio junto (como theme/accent).
+10. Editar o `localStorage` (`gym_state_v1`) trocando `"skin":"classic"` por `"skin":"grind"` e recarregar: o app abre em Classic, com um aviso no console, sem tela branca (RF-7).
+11. **Export backup** com Paper ativo → abrir o JSON e conferir `"skin": "paper"` → **Reset everything** → o app volta ao Classic.
+12. Modo demo (sem login) e build mobile: a linha Style aparece e funciona; o rodapé mostra só a nota do estilo, sem a parte da sincronia.
+
+---
+
+## Comportamento Visual/UX
+
+### Settings › Appearance — hoje
+
+```
+┌──────────────────────────────────────────┐
+│ ‹   Settings                             │
+│                                          │
+│ APPEARANCE                               │
+│ ┌──────────────────────────────────────┐ │
+│ │ ☾  Theme              [ Dark | Light ]│ │
+│ ├──────────────────────────────────────┤ │
+│ │ ⬤  Body diagram       [ Male | Fem. ] │ │
+│ ├──────────────────────────────────────┤ │
+│ │ Accent color                          │ │
+│ │ ● ● ● ● ● ● ● ●                       │ │
+│ └──────────────────────────────────────┘ │
+│ synced with your profile                 │
+└──────────────────────────────────────────┘
+```
+
+### Settings › Appearance — com Style = Classic (novo item, resto igual)
+
+```
+┌──────────────────────────────────────────┐
+│ APPEARANCE                               │
+│ ┌──────────────────────────────────────┐ │
+│ │ ◕  Style                  Classic  ›  │ │   ← novo, primeiro item
+│ ├──────────────────────────────────────┤ │
+│ │ ☾  Theme              [ Dark | Light ]│ │   ← continua
+│ ├──────────────────────────────────────┤ │
+│ │ ⬤  Body diagram       [ Male | Fem. ] │ │   ← continua
+│ ├──────────────────────────────────────┤ │
+│ │ Accent color                          │ │   ← continua
+│ │ ● ● ● ● ● ● ● ●                       │ │
+│ └──────────────────────────────────────┘ │
+│ synced with your profile                 │
+└──────────────────────────────────────────┘
+```
+
+### Settings › Appearance — com Style = Paper (Theme e Accent color somem)
+
+```
+┌──────────────────────────────────────────┐
+│ APPEARANCE                               │
+│ ┌──────────────────────────────────────┐ │
+│ │ ◕  Style                    Paper  ›  │ │
+│ ├──────────────────────────────────────┤ │
+│ │ ⬤  Body diagram       [ Male | Fem. ] │ │   ← Theme sumiu
+│ └──────────────────────────────────────┘ │   ← Accent color sumiu
+│ Paper brings its own colours and light   │
+│ mode, so those controls are hidden.      │
+│ synced with your profile                 │
+└──────────────────────────────────────────┘
+```
+
+### A folha do Style (toque na linha)
+
+```
+┌──────────────────────────────────────────┐
+│                  ▁▁▁                     │
+│ Style                                    │
+│ ┌──────────────────────────────────────┐ │
+│ │ Classic                          ✓   │ │
+│ │ The look openGym has always had.     │ │
+│ ├──────────────────────────────────────┤ │
+│ │ Paper                                │ │
+│ │ Warm paper, serifs and print rules.  │ │
+│ └──────────────────────────────────────┘ │
+└──────────────────────────────────────────┘
+```
+
+### O app no Paper (a mesma tela de Stats)
+
+```
+┌──────────────────────────────────────────┐   papel #f4f0e6, tinta #15130d
+│ Stats                              ⟲     │   H1 em serifa
+│ Progress & history (itálico, serifa)     │
+│                                          │
+│ RECENT WORKOUTS              All 307 ›   │   rótulo em caixa-alta espaçada
+│ Legs 2                                   │   item sem caixa: linha + régua
+│ Sun 20 Sept · 39 min · 8 sets · 9,480 kg │
+│ ──────────────────────────────────────── │   1px rgba(21,19,13,.17)
+│ Pull C · Shoulder 3D                     │
+│ Sun 20 Sept · 55 min · 12 sets · 2,655 kg│
+│ ──────────────────────────────────────── │
+│ ┌──────────────────────────────────────┐ │   card = contorno, zero sombra
+│ │ Muscle balance · by sets worked      │ │   título em serifa
+│ │ [ Week | 30d | 90d | All ]           │ │   segmented de contorno, polegar tinta
+│ │ Shoulders  ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬  39.4 sets│ │   barra 3px, canto reto, vinho #9c2b2b
+│ │ Upper back ▬▬▬▬▬              14.4 sets│ │
+│ └──────────────────────────────────────┘ │
+│                                          │
+│ ┌──────────────────────────────────────┐ │
+│ │ Home  Plan  (◕)  Stats  Exercises    │ │   barra sólida, régua em cima, sem blur
+└──────────────────────────────────────────┘
+```
+
+---
+
+## Riscos e casos de borda
+
+- **Piscada de estilo no boot.** `applyPrefs` roda num `useEffect`, depois do primeiro render — quem está no Paper vê um quadro em Classic antes de virar. **É o mesmo comportamento que o Theme já tem hoje** (mesma função, mesma ordem); não é regressão desta entrega. Se incomodar, o conserto é um script inline no `index.html` lendo o `localStorage` antes do bundle — fica registrado como próximo passo, não como escopo.
+- **Duas abas com estilos diferentes.** O `localStorage` é compartilhado e o evento `storage` não é tratado hoje para `theme`/`accent`; o estilo herda o mesmo comportamento. A aba em foco manda na próxima escrita.
+- **Conflito de sincronia (409).** A mescla adota o estado do servidor para `skin`, como faz para `theme`/`accent`. Trocar o estilo em dois aparelhos ao mesmo tempo termina com o valor do servidor — aceitável e igual ao que já acontece com a cor.
+- **Contraste no Paper.** O vinho `#9c2b2b` sobre papel `#f4f0e6` dá 7,4:1 (AAA para texto normal); `--label-2` (60% de tinta) dá 4,9:1 — acima de AA. O ponto de atenção é `--label-3` (34%), usado em rótulo de seção e legenda, que fica em 2,6:1: é o mesmo papel que ele tem hoje no Light e não é texto de leitura, mas vale um olhar na conferência do item 7.
+- **`--on-acc` no Paper é creme (`#fffdf8`), não branco puro** — o botão primário em vinho com texto creme é o que mantém a coerência do papel. Conferir o `.btn.primary` e o `check` do `SelectRow`.
+- **Exercício/GIF em fundo branco.** `.exmedia{background:#fff}` e `.thumb{background:#fff}` ficam brancos no meio do papel. É de propósito (a mídia é foto de exercício, não papel) e já é assim no Light.
+- **Ícone `palette`.** É o único desenho novo; se a geometria não fechar a 19px, o plano B é `sparkles` (A11). Não travar a entrega por causa disso.
+- **Tradução faltando.** Sem as quatro strings num pacote, a folha mistura idioma. O `pt.js` está especificado acima; os outros dez são mecânicos.
+
+---
+
+## Anexo — achados da Revisão 1
+
+Pendente. Preenchido na Fase 2 (subagente revisor contra o código real), com a tabela `ID | Severidade | Local | Problema | Sugestão` e o que foi aplicado na v2.
