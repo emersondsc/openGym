@@ -141,11 +141,14 @@ export default function WorkoutEdit() {
   // quando a tela reabre.
   useEffect(() => {
     setLeaveGuard(to => {
-      if (!dirty.current || to.startsWith('/history/w/')) return true
+      if (to.startsWith('/history/w/')) return true
+      // Sair sem mudancas nao pergunta nada, mas ainda precisa fechar as folhas abertas: elas sao
+      // globais, e o seletor de dia ficaria por cima da tela de destino.
+      if (!dirty.current) { useUI.getState().closeAll(); return true }
       confirmSheet({
         title: t('Discard changes?'), message: t('The workout keeps what it had before you started editing.'),
         confirmText: t('Discard'), danger: true,
-        onConfirm: () => { dirty.current = false; clearDraft(id); nav(to) }
+        onConfirm: () => { dirty.current = false; clearDraft(id); leaveTo(to) }
       })
       return false
     })
@@ -161,9 +164,12 @@ export default function WorkoutEdit() {
     setDraft(d => { const c = clone(d); fn(c); writeDraft(id, c); return c })
   }
   const mutEntry = (i, fn) => mut(d => fn(d.entries[i]))
+  // As folhas são globais (não pertencem à rota): sair com o seletor de dia aberto deixaria ele
+  // pendurado por cima da tela de destino. Fecha tudo antes de navegar.
+  const leaveTo = to => { useUI.getState().closeAll(); nav(to) }
   // Volta para onde o usuário estava; sem entrada anterior (link direto, recarregamento) cai na
   // lista do histórico, que é onde o treino sempre existe.
-  const leave = () => (window.history.state && window.history.state.idx > 0 ? nav(-1) : nav('/history'))
+  const leave = () => (window.history.state && window.history.state.idx > 0 ? leaveTo(-1) : leaveTo('/history'))
   const back = () => {
     if (!dirty.current) { leave(); return }
     confirmSheet({
@@ -255,7 +261,7 @@ export default function WorkoutEdit() {
       useStore.getState().markLocalWin(id, { ex: touchedEx, deleted: true })
       toast(t('Workout deleted'))
       dirty.current = false
-      nav('/history')
+      leaveTo('/history')
     }
   })
 
