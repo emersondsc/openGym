@@ -30,7 +30,7 @@ function StartChooser() {
       <h2 className="accent">{t("Today's plan")}{todayOvr ? ' · ' + t('rescheduled') : ''}</h2>
       <div className="row between" style={{ marginBottom: 12 }}>
         <div><div className="big">{todayR.name}</div><div className="muted small">{exCount(todayR.ex.length)}</div></div>
-        <span className="lrow-i" style={{ width: 38, height: 38, borderRadius: 9, fontSize: 22 }}><Icon name={glyphOf(todayR.emoji)} /></span>
+        <span className="lrow-i" style={{ width: 38, height: 38, borderRadius: 'var(--r-sm)', fontSize: 22 }}><Icon name={glyphOf(todayR.emoji)} /></span>
       </div>
       <Button variant="primary" icon="play" onClick={() => startFlow(todayR.id)}>{t('Start {0}', todayR.name)}</Button>
     </div>}

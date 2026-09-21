@@ -118,6 +118,10 @@ const P = {
   signOut: <><path d="M14.2 4.6H7a1.9 1.9 0 0 0-1.9 1.9v11a1.9 1.9 0 0 0 1.9 1.9h7.2" /><path d="m16.8 8.4 3.6 3.6-3.6 3.6M20.4 12H10.2" /></>,
   shuffle: <><path d="M3.6 7.2h2.9c1.6 0 2.8.9 3.8 2.4l3 4.8c1 1.5 2.2 2.4 3.8 2.4h2.9M3.6 16.8h2.9c1.6 0 2.8-.9 3.8-2.4l.7-1.1M15.6 9.9l.7-1.1c1-1.5 2.2-2.4 3.8-2.4h1.9" /><path d="m17.9 4.3 2.8 2.1-2.8 2.1M17.9 14.7l2.8 2.1-2.8 2.1" /></>,
   info: <><circle cx="12" cy="12" r="8.2" /><path d="M12 11v5.4" /><circle cx="12" cy="7.9" r=".9" fill="currentColor" stroke="none" /></>,
+  // Paleta: a forma fechada com o vao do polegar e tres pastilhas. So traco, como o resto do
+  // set - as pastilhas sao circulos de contorno, nao pontos cheios, para o icone nao ficar
+  // mais pesado que os vizinhos na mesma linha de Settings.
+  palette: <><path d="M12 3.6a8.4 8.4 0 0 0 0 16.8c1.2 0 2-.8 2-1.8 0-.5-.2-.9-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8h1.5a3.3 3.3 0 0 0 3.3-3.3c0-3.9-3.4-7.4-7.6-7.4Z" /><circle cx="8.6" cy="11.4" r="1.1" /><circle cx="12" cy="8.4" r="1.1" /><circle cx="15.6" cy="11.4" r="1.1" /></>,
 }
 
 // A few keys are aliases so call sites can say what they mean.

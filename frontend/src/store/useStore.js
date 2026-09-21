@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { api } from '../lib/api.js'
-import { localTZ } from '../lib/format.js'
+import { localTZ, SKINS } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { adoptServerRoutines, rememberBase, readBase, ifMatchFor, planChanged } from '../lib/plan-merge.js'
 import { normalizeMeso, mergeMesos, fixMesoPointers } from '../lib/meso.js'
@@ -13,7 +13,7 @@ import { mergeWorkouts, mergeExWeights, freshMark, sigOf } from '../lib/workout-
 const KEY = 'gym_state_v1'
 export const DEF = {
   unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
-  theme: 'dark', accent: 'lime', body: 'male', targetW: null,
+  theme: 'dark', accent: 'lime', skin: 'classic', body: 'male', targetW: null,
   bodyweight: [], routines: [], week: {}, dayPlan: {},
   exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'full',
   confirmTopWeight: false,
@@ -44,6 +44,11 @@ function loadState() {
         state.restSec = state.globalRestSec
       }
       if(!isValidRest(state.globalRestSec)) state.globalRestSec = 90
+      // Estilo que nao existe (backup de versao futura, JSON editado a mao) cai no
+      // Classic - mas o valor cru NAO e apagado daqui: quem resolve e `skinOf` na tela e
+      // `resolveSkin` no <html>, e sobrescrever aqui faria uma aba velha apagar a escolha
+      // de uma versao mais nova.
+      if(state.skin != null && !SKINS[state.skin]) console.warn('[skin] desconhecido, usando classic:', state.skin)
       // Limpeza por-rotina
       ;(state.routines||[]).forEach(r=>{
         ;(r.ex||[]).forEach(ex=>{

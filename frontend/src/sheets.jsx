@@ -140,7 +140,7 @@ function BwSheet({ required, onDone, close }) {
         {recent.map(b => <div key={b.d} className="row between" style={{ padding: '9px 2px', borderBottom: '1px solid var(--sep)' }}>
           <span className="small muted">{fmtDate(b.d, true)}</span>
           <span className="row" style={{ gap: 12 }}><b>{fmtNum(b.w)} {unit}</b>
-            <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, fontSize: 15, color: 'var(--red)' }} onClick={() => delEntry(b.d)} aria-label="delete"><Icon name="trash" /></button></span>
+            <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 'var(--r-sm)', fontSize: 15, color: 'var(--red)' }} onClick={() => delEntry(b.d)} aria-label="delete"><Icon name="trash" /></button></span>
         </div>)}
       </div>
     </>}
@@ -355,7 +355,7 @@ function AddToRoutine({ ex, close }) {
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
         {r.ex.some(e => e.id === ex.id) && <span className="tag">{t('already in')}</span>}<Icon name="plus" className="chev" />
       </div>)}
-      <div className="item" onClick={() => pick('_new')}><span className="lrow-i" style={{ background: 'var(--surface-3)' }}><Icon name="sparkles" /></span>
+      <div className="item" onClick={() => pick('_new')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="sparkles" /></span>
         <div className="grow"><div className="tt">{t('New routine')}</div><div className="ss">{t('Create one and start with this exercise')}</div></div><Icon name="plus" className="chev" /></div>
     </div>
   </>
@@ -783,8 +783,8 @@ function DayOverride({ iso, close }) {
         <span className="lrow-i"><Icon name={glyphOf(r.emoji)} /></span>
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
         {effId === r.id && <Icon name="check" className="accent" />}</div>)}
-      <div className="item" onClick={() => set('rest')}><span className="lrow-i" style={{ background: 'var(--surface-3)' }}><Icon name="moon" /></span><div className="grow"><div className="tt">{t('Rest / skip this day')}</div></div>{effId === null && <Icon name="check" className="accent" />}</div>
-      {hasOvr && <div className="item" onClick={() => set('')}><span className="lrow-i" style={{ background: 'var(--surface-3)' }}><Icon name="reset" /></span><div className="grow"><div className="tt">{t('Back to weekly plan')}</div></div></div>}
+      <div className="item" onClick={() => set('rest')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="moon" /></span><div className="grow"><div className="tt">{t('Rest / skip this day')}</div></div>{effId === null && <Icon name="check" className="accent" />}</div>
+      {hasOvr && <div className="item" onClick={() => set('')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="reset" /></span><div className="grow"><div className="tt">{t('Back to weekly plan')}</div></div></div>}
     </div>
   </>
 }
@@ -796,7 +796,7 @@ function DayAssign({ day, close }) {
   return <>
     <h3>{t(DAYN[day])}</h3>
     <div className="list">
-      <div className="item" onClick={() => set('')}><span className="lrow-i" style={{ background: 'var(--surface-3)' }}><Icon name="moon" /></span><div className="grow"><div className="tt">{t('Rest day')}</div></div>{!st.week[day] && <Icon name="check" className="accent" />}</div>
+      <div className="item" onClick={() => set('')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="moon" /></span><div className="grow"><div className="tt">{t('Rest day')}</div></div>{!st.week[day] && <Icon name="check" className="accent" />}</div>
       {st.routines.map(r => <div key={r.id} className="item" onClick={() => set(r.id)}>
         <span className="lrow-i"><Icon name={glyphOf(r.emoji)} /></span>
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
@@ -944,7 +944,7 @@ export function WorkoutRow({ w, onClick }) {
   const st = useStore(s => s.S)
   const glyph = glyphOf((st.routines.find(r => r.id === w.routineId) || {}).emoji)
   return <div className="item" onClick={onClick}>
-    <span className="lrow-i" style={{ width: 34, height: 34, borderRadius: 8, fontSize: 19 }}><Icon name={glyph} /></span>
+    <span className="lrow-i" style={{ width: 34, height: 34, borderRadius: 'var(--r-sm)', fontSize: 19 }}><Icon name={glyph} /></span>
     <div className="grow"><div className="tt">{w.name}</div>
       <div className="ss">{[fmtDate(w.d, true), ...durPart(w.end - w.start), t('{0} sets', setsDone(w)), fmtVol(w.vol, st.unit)].join(' · ')}</div></div>
     {w.prs && w.prs.length > 0 && <span className="pr"><Icon name="trophy" />{w.prs.length} PR</span>}
@@ -1183,7 +1183,7 @@ function MesoList({ close }) {
             <div className="ss">{fmtDate(m.start)} – {fmtDate(m.end)} · {t(s === 'ended' ? 'ended' : s === 'future' ? 'starts soon' : 'in progress')}</div>
           </div>
           {m.id === st.activeMeso && <Icon name="check" className="accent" />}
-          <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, color: 'var(--red)' }}
+          <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 'var(--r-sm)', color: 'var(--red)' }}
             onClick={e => { e.stopPropagation(); deleteMeso(m) }}
             aria-label={t('Delete')}>
             <Icon name="trash" /></button>

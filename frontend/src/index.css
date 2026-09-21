@@ -819,6 +819,11 @@ h4.sec{
 }
 .pr .icn{font-size:13px}
 
+/* Texto sobre o acento num selo pequeno. Existe como classe, e nao inline, porque o estilo (skin)
+   precisa poder trocar a cor: o preto e o certo nos acentos do Classic (5,8-6,2:1 num texto de
+   12px), mas sobre o vinho do Paper ele da 2,79:1 e quem manda ali e o --on-acc (6,6:1). */
+.badge-acc{color:#000}
+
 /* --- toast --- */
 #toast{
   position:fixed;left:50%;transform:translateX(-50%) translateY(6px);
@@ -931,3 +936,120 @@ h4.sec{
   font:400 12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2;color:var(--label);
 }
+
+/* ============================================================================
+   SKINS - estilos de app inteiros (Settings > Appearance > Style)
+   ----------------------------------------------------------------------------
+   Um estilo nao e uma cor: e forma, tipografia e densidade junto. O bloco fica
+   no FIM do arquivo de proposito - as regras daqui empatam em especificidade com
+   as do tema claro (:root[data-theme="light"] ...) e e a ordem que decide o empate.
+
+   Tres regras de manutencao, aprendidas nas duas revisoes da spec:
+   . `:root[data-skin="paper"] .x` e (0,3,0) e VENCE `.x:focus`/`.x:active` (0,2,0) -
+     todo estado interativo que este bloco encobrir precisa ser redeclarado aqui;
+   . onde o app usa id (`#app .list` na media query de desktop, (1,1,0)), o seletor
+     daqui tambem precisa do id, senao a regra de desktop ganha;
+   . onde o app escreve a cor/raio INLINE no JSX, nenhum seletor daqui alcanca -
+     nesses pontos a correcao tem de ser uma classe (`.badge-acc`, `.lrow-i.flat`)
+     ou um valor de variavel no proprio JSX.
+
+   Acrescentar Grind, Pulse ou Sage e um bloco como este e uma entrada no SKINS
+   (lib/format.js). Nada mais.
+   ========================================================================== */
+
+/* ---- Paper - papel quente, serifa no titulo, regua de impressao no lugar da caixa ---- */
+:root[data-skin="paper"]{
+  --bg:#f4f0e6; --bg-el:#faf7f0; --surface:#fffdf8; --surface-2:#efeade; --surface-3:#e5dfd1;
+  --label:#15130d; --label-2:rgba(21,19,13,.60); --label-3:rgba(21,19,13,.34); --label-4:rgba(21,19,13,.14);
+  --sep:rgba(21,19,13,.17); --sep-op:rgba(21,19,13,.10);
+  --acc:#9c2b2b; --acc-2:#7d1f1f; --on-acc:#fffdf8;
+  --r-sm:2px; --r:3px; --r-lg:4px; --r-xl:6px; --r-card:3px;
+  --pad:18px; --icon-stroke:1.6; --hair:1px;
+}
+/* Titulos em serifa, rotulo de secao em caixa-alta espacada. A regra e essa e vale para a tela
+   inteira: o que nomeia uma coisa e serifa; o que a classifica e rotulo. Numero NAO entra: a
+   Georgia tem algarismos old-style e o .stat-v de 26px ficaria com alturas desiguais. */
+:root[data-skin="paper"] .hdr h1,
+:root[data-skin="paper"] .card h2,
+:root[data-skin="paper"] .sheet h3{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-weight:600;letter-spacing:-.012em}
+:root[data-skin="paper"] .card h2{font-size:15px;color:var(--label)}
+:root[data-skin="paper"] .card h2 .dim,
+:root[data-skin="paper"] .hdr .sub{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,system-ui,sans-serif}
+:root[data-skin="paper"] .card h2 .dim{font-size:11px}
+:root[data-skin="paper"] .hdr .sub{font-style:italic;font-size:14px}
+:root[data-skin="paper"] h4.sec,
+:root[data-skin="paper"] .sect-t{text-transform:uppercase;letter-spacing:.16em;font-size:10px;font-weight:600;color:var(--label-2)}
+/* Caixa: contorno no lugar de sombra; a lista deixa de ser cartoes soltos e vira linhas com regua. */
+:root[data-skin="paper"] .card,
+:root[data-skin="paper"] .sect-b,
+:root[data-skin="paper"] .efftbl,
+:root[data-skin="paper"] .tile{border:1px solid var(--sep)}
+:root[data-skin="paper"] .list{gap:0}
+/* com id de proposito: a media query de desktop do app (#app .list, (1,1,0)) vira grade de duas
+   colunas e venceria o gap:0 - e uma linha com regua embaixo nao se le em duas colunas */
+:root[data-skin="paper"] #app .list{display:flex;flex-direction:column;gap:0}
+:root[data-skin="paper"] .item{background:transparent;border-radius:0;border-bottom:1px solid var(--sep);padding:11px 2px}
+/* redeclarado: sem esta linha, o background:transparent de cima (0,3,0) mataria o :active do app */
+:root[data-skin="paper"] .item:active{background:var(--surface-2)}
+:root[data-skin="paper"] .item .tt{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-size:16px}
+:root[data-skin="paper"] .efftbl .hd{background:transparent;border-bottom:1px solid var(--sep)}
+/* Controles: canto de 2px, segmented de contorno com o polegar em tinta. */
+:root[data-skin="paper"] .btn{border-radius:2px}
+:root[data-skin="paper"] .seg{border-radius:2px;background:transparent;box-shadow:inset 0 0 0 1px var(--sep)}
+:root[data-skin="paper"] .seg-sel{background:var(--label);border-radius:1px;box-shadow:none}
+:root[data-skin="paper"] .seg button.on{color:var(--surface);font-weight:600}
+:root[data-skin="paper"] .chip{border-radius:2px;font-size:11.5px}
+:root[data-skin="paper"] .tag{border-radius:2px}
+:root[data-skin="paper"] .field,
+:root[data-skin="paper"] .input,
+:root[data-skin="paper"] .exnote{border-radius:var(--r);box-shadow:inset 0 0 0 1px var(--sep)}
+/* redeclarado: o box-shadow de cima e (0,3,0) e engoliria o anel de foco do app (0,2,0) */
+:root[data-skin="paper"] .field:focus,
+:root[data-skin="paper"] .input:focus{box-shadow:inset 0 0 0 2px var(--acc)}
+:root[data-skin="paper"] .sw{border-radius:2px}
+:root[data-skin="paper"] .sw .knob{border-radius:1px}
+/* Os raios que o app fixa fora das variaveis. Sem este grupo o estilo fica pela metade: o campo
+   de busca ficaria 10px, o stepper 10px, a caixa de marcar redonda, o botao de icone redondo, a
+   amostra de cor redonda - cada um contradizendo o canto de 2px do resto. */
+:root[data-skin="paper"] .iconbtn,
+:root[data-skin="paper"] .iconbtn.mini,
+:root[data-skin="paper"] .searchf .clear,
+:root[data-skin="paper"] .chk,
+:root[data-skin="paper"] .setrow .n,
+:root[data-skin="paper"] .setrow .setgo,
+:root[data-skin="paper"] .setrow .rm-sp,
+:root[data-skin="paper"] .bw-pm,
+:root[data-skin="paper"] .sld-knob{border-radius:3px}
+:root[data-skin="paper"] .lrow-i,
+:root[data-skin="paper"] .glyph-cell,
+:root[data-skin="paper"] .wday,
+:root[data-skin="paper"] .stp,
+:root[data-skin="paper"] .timef,
+:root[data-skin="paper"] .thumb{border-radius:var(--r-sm)}
+:root[data-skin="paper"] .swatch,
+:root[data-skin="paper"] .swatch.on::after{border-radius:2px}
+:root[data-skin="paper"] .mchip{border-radius:2px}
+:root[data-skin="paper"] .sld-track{border-radius:2px}
+:root[data-skin="paper"] .pr{border-radius:2px}
+:root[data-skin="paper"] #toast{border-radius:3px}
+/* o rail neutro: o icone e #fff por padrao e sumiria sobre o --surface-3 do papel */
+:root[data-skin="paper"] .lrow-i.flat{color:var(--label-2)}
+/* o selo de texto sobre o acento */
+:root[data-skin="paper"] .badge-acc{color:var(--on-acc)}
+/* Dado: barra de 3px sem ponta arredondada, celula de mapa quase quadrada. */
+:root[data-skin="paper"] .mrow{padding:5px 0;border-bottom:1px solid var(--sep-op)}
+:root[data-skin="paper"] .mrow .bar,
+:root[data-skin="paper"] .mrow .bar i,
+:root[data-skin="paper"] .wprog,
+:root[data-skin="paper"] .wprog i{border-radius:0}
+:root[data-skin="paper"] .mrow .bar{height:3px}
+:root[data-skin="paper"] .hm-c{border-radius:1px}
+:root[data-skin="paper"] .cal-d{border-radius:2px}
+/* Barra de abas e folhas: solidas, com regua, sem vidro fosco. */
+:root[data-skin="paper"] #tabbar{background:var(--bg);border-top:1px solid var(--sep);backdrop-filter:none;-webkit-backdrop-filter:none}
+:root[data-skin="paper"] #tabbar button{letter-spacing:.04em}
+:root[data-skin="paper"] #tabbar button.start .cir,
+:root[data-skin="paper"] #tabbar button.start.rec .cir::after{border-radius:3px}
+:root[data-skin="paper"] .sheet{border-top:1px solid var(--sep)}
+:root[data-skin="paper"] .sheet .grab{height:2px;border-radius:0}
+:root[data-skin="paper"] .center{background:var(--surface)}

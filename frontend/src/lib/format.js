@@ -45,3 +45,46 @@ export const localTZ = () => { try { return Intl.DateTimeFormat().resolvedOption
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 export const ACCENTS = { lime: '#30d158', sky: '#0a84ff', orange: '#ff9f0a', violet: '#bf5af2', pink: '#ff375f', red: '#ff453a', teal: '#40c8e0', gold: '#ffd60a' }
+
+// Um estilo e um visual inteiro - cor, forma, tipografia e densidade -, nao uma cor. O mapa e a
+// unica lista de estilos que existe: a folha de Settings e o CSS leem daqui, entao acrescentar
+// Grind, Pulse ou Sage e uma entrada aqui e um bloco :root[data-skin="..."] no index.css.
+//
+//   mode       fixa o modo do estilo (Paper e claro por natureza); null = obedece ao Theme
+//   ownAccent  o estilo traz a propria cor; o Accent color do usuario nao pinta nada nele
+//   chrome     cor da barra do navegador (<meta name="theme-color">) por modo
+//   subtitle   descricao curta, mostrada na folha de escolha
+//   note       o que a secao Appearance diz quando este estilo esconde controles (null = nada)
+//
+// subtitle e note sao chaves de traducao: o ingles e a chave (lib/i18n.js) e quem traduz e a
+// tela (t(sk.subtitle)). O mapa nao guarda texto ja traduzido para nao depender do idioma.
+// Todo estilo com `mode` ou `ownAccent` precisa de `note` - ha teste para isso.
+export const SKINS = {
+  classic: {
+    label: 'Classic', mode: null, ownAccent: false,
+    subtitle: 'The look openGym has always had.',
+    note: null,
+    chrome: { dark: '#000000', light: '#f2f2f7' },
+  },
+  paper: {
+    label: 'Paper', mode: 'light', ownAccent: true,
+    subtitle: 'Warm paper, serifs and print rules.',
+    note: 'Paper brings its own colours and light mode, so those controls are hidden.',
+    chrome: { light: '#f4f0e6' },
+  },
+}
+
+export const skinOf = k => SKINS[k] || SKINS.classic
+
+// O que vai para o <html>, resolvido sem DOM (e o que o teste cobre). `accent: null` significa
+// "o estilo manda na cor" - quem escreve o atributo e que decide remover `data-accent`.
+export function resolveSkin(skin, theme, accent) {
+  const sk = skinOf(skin)
+  const mode = sk.mode || (theme === 'light' ? 'light' : 'dark')
+  return {
+    skin: SKINS[skin] ? skin : 'classic',
+    mode,
+    accent: sk.ownAccent ? null : (ACCENTS[accent] ? accent : 'lime'),
+    chrome: sk.chrome[mode] || (mode === 'light' ? '#f2f2f7' : '#000000'),
+  }
+}

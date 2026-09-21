@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { ACCENTS, todayISO, localTZ } from '../lib/format.js'
+import { ACCENTS, SKINS, skinOf, todayISO, localTZ } from '../lib/format.js'
 import { effortOf } from '../lib/history.js'
 import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
@@ -23,6 +23,13 @@ export default function Settings() {
   const fileRef = useRef(null)
   const importRef = useRef(null)
   const wakeOK = wakeLockSupported()
+  // O estilo ativo decide o que a secao Appearance mostra. `skinOf` nunca devolve undefined -
+  // um valor estranho vira o Classic, que e o que o applyPrefs tambem pinta.
+  const skin = skinOf(S.skin)
+  const skinNote = skin.note ? t(skin.note) : null
+  // O rodape da secao ja dizia uma coisa (a sincronia com o perfil); a nota do estilo entra na
+  // frente dela, na mesma linha, em vez de virar uma segunda linha cinza embaixo da lista.
+  const appFooter = [skinNote, (DEMO || MOBILE) ? null : t('synced with your profile')].filter(Boolean).join(' ')
 
   const doExport = async () => {
     const json = JSON.stringify(S, null, 2)
@@ -146,15 +153,23 @@ export default function Settings() {
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 
     {/* ---------- appearance ---------- */}
-    <Section title={t('Appearance')} footer={DEMO || MOBILE ? undefined : t('synced with your profile')}>
-      <Row icon="moon" iconTint="var(--indigo)" title={t('Theme')}>
+    <Section title={t('Appearance')} footer={appFooter || undefined}>
+      {/* O estilo vem primeiro porque e a escolha que pode engolir as duas de baixo: um estilo
+          que fixa o modo (Paper e claro) ou que traz a propria cor esconde o controle
+          correspondente. Esconder e de proposito - um controle que nao pinta nada faz o
+          usuario concluir que o app quebrou. */}
+      <SelectRow icon="palette" iconTint="var(--purple)" title={t('Style')}
+        value={SKINS[S.skin] ? S.skin : 'classic'} sheetTitle={t('Style')}
+        onChange={v => update(s => { s.skin = v })}
+        options={Object.entries(SKINS).map(([k, sk]) => ({ value: k, label: sk.label, subtitle: t(sk.subtitle) }))} />
+      {!skin.mode && <Row icon="moon" iconTint="var(--indigo)" title={t('Theme')}>
         <Segmented
           className="seg-inline"
           options={[{ value: 'dark', icon: 'moon', label: t('Dark') }, { value: 'light', icon: 'sun', label: t('Light') }]}
           value={S.theme === 'light' ? 'light' : 'dark'}
           onChange={v => update(s => { s.theme = v })}
         />
-      </Row>
+      </Row>}
       {/* Purely how the muscle map is drawn — nothing else in the app reads this. */}
       <Row icon="figureStrength" iconTint="var(--teal)" title={t('Body diagram')}>
         <Segmented
@@ -164,7 +179,7 @@ export default function Settings() {
           onChange={v => update(s => { s.body = v })}
         />
       </Row>
-      <div className="lrow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12, paddingTop: 13, paddingBottom: 14 }}>
+      {!skin.ownAccent && <div className="lrow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12, paddingTop: 13, paddingBottom: 14 }}>
         <span className="lrow-t">{t('Accent color')}</span>
         <div className="swatches">
           {Object.entries(ACCENTS).map(([k, c]) => (
@@ -172,7 +187,7 @@ export default function Settings() {
               style={{ background: c }} onClick={() => update(s => { s.accent = k })} aria-label={k} />
           ))}
         </div>
-      </div>
+      </div>}
     </Section>
 
     {/* ---------- data: fill it, bring things over, back it up, wipe it ---------- */}

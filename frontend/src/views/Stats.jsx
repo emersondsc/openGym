@@ -165,7 +165,7 @@ function CoachAnalysisCard(){
       <div className="list">
         {a.prs.slice(0,3).map(p=>{ const base = p.ex.replace(' (weighted)',''); const name = EXIDX[base]?.n || EXIDX[p.ex]?.n || p.ex; return <div key={p.ex} className="row between" style={{padding:'10px 0',borderBottom:'var(--hair) solid var(--sep)',gap:8}}>
           <span style={{fontWeight:600,flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={p.ex}>{name}</span>
-          <span style={{background:'var(--acc)',color:'#000',padding:'2px 8px',borderRadius:999,fontWeight:800,fontSize:12}}>{p.e1rm} kg</span>
+          <span className="badge-acc" style={{background:'var(--acc)',padding:'2px 8px',borderRadius:999,fontWeight:800,fontSize:12}}>{p.e1rm} kg</span>
           <span className="dim small">{p.wmax} kg · {p.date}</span>
         </div>;})}
       </div>
