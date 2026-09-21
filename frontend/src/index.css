@@ -1236,6 +1236,9 @@ h4.sec{
   display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
   -webkit-overflow-scrolling:touch;scrollbar-width:none;
   max-width:596px;margin:0 auto;padding:2px 18px 8px;overscroll-behavior-x:contain;
+  /* o encaixe alinha na borda do TRILHO, nao depois do padding - sem esta linha o cartao que
+     acabou de encaixar cola na borda da tela e come o espaco da esquerda */
+  scroll-padding:0 18px;
 }
 .pv-track::-webkit-scrollbar{display:none}
 .pv-card-btn{
