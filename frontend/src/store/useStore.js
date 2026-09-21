@@ -14,6 +14,10 @@ const KEY = 'gym_state_v1'
 export const DEF = {
   unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
   theme: 'dark', accent: 'lime', skin: 'classic', body: 'male', targetW: null,
+  // Marca de que a vitrine de estilos ja foi mostrada a este perfil (uma vez, e so).
+  // Estado antigo nao tem a chave: o Object.assign com o DEF devolve `false` e a folha
+  // aparece na proxima abertura, que e exatamente o que se quer para quem ja usa o app.
+  skinIntro: false,
   bodyweight: [], routines: [], week: {}, dayPlan: {},
   exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'full',
   confirmTopWeight: false,

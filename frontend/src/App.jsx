@@ -7,7 +7,7 @@ import { resolveSkin } from './lib/format.js'
 import { setLang, useLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
-import { startFlow } from './sheets.jsx'
+import { startFlow, styleIntroSheet } from './sheets.jsx'
 import Icon from './components/Icon.jsx'
 import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
@@ -51,6 +51,15 @@ function Shell() {
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
   useEffect(() => { setNav(navigate) }, [navigate])
+  // A vitrine dos estilos, com um respiro para nao competir com o primeiro render. A marca de
+  // "ja vi" (skinIntro) NAO e posta aqui: quem marca e a escolha na folha ou o "Not now" - quem
+  // fecha no fundo sem olhar nao perde a vitrine, e ve de novo na proxima abertura. O atraso e
+  // cancelado se o app desmontar antes (StrictMode incluso).
+  useEffect(() => {
+    if (!ready || (!user && !isGuest) || S.skinIntro) return
+    const id = setTimeout(() => styleIntroSheet(), 800)
+    return () => clearTimeout(id)
+  }, [ready, user, isGuest, S.skinIntro])
   useEffect(() => { applyPrefs(S.theme, S.accent, S.skin) }, [S.theme, S.accent, S.skin])
   useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
   useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])

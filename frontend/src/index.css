@@ -958,7 +958,8 @@ h4.sec{
    ========================================================================== */
 
 /* ---- Paper - papel quente, serifa no titulo, regua de impressao no lugar da caixa ---- */
-:root[data-skin="paper"]{
+:root[data-skin="paper"],
+.skin-prev[data-skin="paper"]{
   --bg:#f4f0e6; --bg-el:#faf7f0; --surface:#fffdf8; --surface-2:#efeade; --surface-3:#e5dfd1;
   --label:#15130d; --label-2:rgba(21,19,13,.60); --label-3:rgba(21,19,13,.34); --label-4:rgba(21,19,13,.14);
   --sep:rgba(21,19,13,.17); --sep-op:rgba(21,19,13,.10);
@@ -1055,7 +1056,8 @@ h4.sec{
 :root[data-skin="paper"] .center{background:var(--surface)}
 
 /* ---- Grind - peso livre, industrial: canto seco, caixa visivel, laranja de seguranca ---- */
-:root[data-skin="grind"]{
+:root[data-skin="grind"],
+.skin-prev[data-skin="grind"]{
   --bg:#0c0b0a; --bg-el:#131110; --surface:#1b1815; --surface-2:#262119; --surface-3:#332c23;
   --label:#f5efe6; --label-2:rgba(245,239,230,.58); --label-3:rgba(245,239,230,.30); --label-4:rgba(245,239,230,.14);
   --sep:rgba(245,239,230,.13); --sep-op:rgba(245,239,230,.09);
@@ -1112,7 +1114,8 @@ h4.sec{
 :root[data-skin="grind"] #tabbar button.start.rec .cir::after{border-radius:9px}
 
 /* ---- Pulse - app moderno: azul-noite, canto grande, um gradiente so na acao ---- */
-:root[data-skin="pulse"]{
+:root[data-skin="pulse"],
+.skin-prev[data-skin="pulse"]{
   --bg:#080b14; --bg-el:#0c1120; --surface:#141b2c; --surface-2:#1d2740; --surface-3:#2a3654;
   --label:#f2f5ff; --label-2:rgba(226,233,255,.62); --label-3:rgba(226,233,255,.32); --label-4:rgba(226,233,255,.14);
   --sep:rgba(226,233,255,.12); --sep-op:rgba(226,233,255,.08);
@@ -1150,7 +1153,8 @@ h4.sec{
 :root[data-skin="pulse"] #tabbar button.start .cir{background:linear-gradient(135deg,#7c5cff,#31e1c4);color:#06121a;box-shadow:0 10px 26px -8px rgba(124,92,255,.75)}
 
 /* ---- Sage - claro, calmo, minimal: verde profundo, mais ar, zero ruido ---- */
-:root[data-skin="sage"]{
+:root[data-skin="sage"],
+.skin-prev[data-skin="sage"]{
   --bg:#eceeec; --bg-el:#f6f7f6; --surface:#ffffff; --surface-2:#eef1ef; --surface-3:#e3e7e4;
   --label:#171a18; --label-2:rgba(23,26,24,.56); --label-3:rgba(23,26,24,.34); --label-4:rgba(23,26,24,.12);
   --sep:rgba(23,26,24,.10); --sep-op:rgba(23,26,24,.06);
@@ -1197,3 +1201,67 @@ h4.sec{
 :root[data-skin="sage"] #toast{border-radius:var(--r)}
 :root[data-skin="sage"] #tabbar{background:rgba(246,247,246,.88);border-top:1px solid var(--sep)}
 :root[data-skin="sage"] #tabbar button.start .cir{box-shadow:0 8px 20px -8px color-mix(in srgb,var(--acc) 60%,transparent)}
+
+/* ============================================================================
+   VITRINE DOS ESTILOS - as miniaturas da folha "Choose your style"
+   ----------------------------------------------------------------------------
+   A folha aparece uma vez por perfil. Cada cartao traz uma miniatura da tela de
+   Stats; ela nao e a tela real, e um desenho.
+
+   O que ela NAO desenha e a cor: cada bloco de skin la em cima ganhou tambem o
+   seletor `.skin-prev[data-skin="x"]`, entao a miniatura le os MESMOS tokens do
+   estilo - mudar um token muda a vitrine junto, sem copia de valor em lugar
+   nenhum. Estas regras desenham so a forma.
+
+   A miniatura do Classic precisa da paleta base declarada aqui: o <html> pode
+   estar em outro estilo (o `:root[data-skin]` de cima vence o `:root`), e sem
+   isto o cartao do Classic apareceria com as cores do estilo ativo.
+   ========================================================================== */
+.skin-prev[data-skin="classic"]{
+  --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e;
+  --label:#ffffff; --label-2:rgba(235,235,245,.60); --label-3:rgba(235,235,245,.32);
+  --sep:rgba(84,84,88,.60); --sep-op:rgba(84,84,88,.34);
+  --acc:#30d158; --on-acc:#000000; --r-card:14px;
+}
+.skin-prev{
+  width:134px;flex:none;display:flex;flex-direction:column;gap:6px;
+  background:var(--bg);color:var(--label);
+  border-radius:12px;padding:9px 10px;overflow:hidden;
+  font-size:10px;line-height:1.25;letter-spacing:-.01em;font-variant-numeric:tabular-nums;
+  box-shadow:inset 0 0 0 1px var(--sep-op);
+}
+.skin-prev .pv-top{display:flex;align-items:baseline;justify-content:space-between;gap:4px}
+.skin-prev .pv-h1{font-size:15px;font-weight:700;letter-spacing:-.02em}
+.skin-prev .pv-sub{color:var(--label-3);font-size:8px}
+.skin-prev .pv-card{background:var(--surface);border-radius:var(--r-card);padding:7px 8px;display:flex;flex-direction:column;gap:5px}
+.skin-prev .pv-eyebrow{color:var(--label-2);font-size:8px;line-height:1.2}
+.skin-prev .pv-row{display:flex;align-items:center;gap:5px}
+.skin-prev .pv-row span:first-child{width:48px;flex:none;color:var(--label-2);font-size:9px;overflow:hidden;white-space:nowrap}
+.skin-prev .pv-row b{font-size:9px;font-weight:600}
+.skin-prev .pv-bar{flex:1;min-width:0;height:4px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.skin-prev .pv-bar i{display:block;height:100%;background:var(--acc);border-radius:99px}
+.skin-prev .pv-list{display:flex;flex-direction:column;gap:4px}
+.skin-prev .pv-item{background:var(--surface);border-radius:var(--r-card);padding:5px 7px;display:flex;justify-content:space-between;gap:5px}
+.skin-prev .pv-item b{font-weight:500;font-size:9.5px}
+.skin-prev .pv-item span{color:var(--label-2);font-size:8.5px}
+/* a forma de cada estilo, que os tokens nao carregam */
+.skin-prev[data-skin="grind"] .pv-h1,
+.skin-prev[data-skin="grind"] .pv-eyebrow{text-transform:uppercase;letter-spacing:.1em}
+.skin-prev[data-skin="grind"] .pv-h1{font-weight:800;font-size:14px}
+.skin-prev[data-skin="grind"] .pv-card,
+.skin-prev[data-skin="grind"] .pv-item{border:1px solid var(--sep)}
+.skin-prev[data-skin="grind"] .pv-bar,
+.skin-prev[data-skin="grind"] .pv-bar i{border-radius:1px}
+.skin-prev[data-skin="paper"] .pv-h1{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-weight:600}
+.skin-prev[data-skin="paper"] .pv-eyebrow{text-transform:uppercase;letter-spacing:.14em}
+.skin-prev[data-skin="paper"] .pv-card,
+.skin-prev[data-skin="paper"] .pv-item{border:1px solid var(--sep)}
+.skin-prev[data-skin="paper"] .pv-item{background:transparent;border:0;border-bottom:1px solid var(--sep);border-radius:0;padding:5px 0}
+.skin-prev[data-skin="paper"] .pv-bar,
+.skin-prev[data-skin="paper"] .pv-bar i{border-radius:0}
+.skin-prev[data-skin="paper"] .pv-bar{height:3px}
+.skin-prev[data-skin="pulse"] .pv-card{background:linear-gradient(180deg,#18203a,#131a2c);border:1px solid var(--sep-op)}
+.skin-prev[data-skin="pulse"] .pv-bar i{background:linear-gradient(90deg,#7c5cff,#31e1c4)}
+.skin-prev[data-skin="sage"] .pv-eyebrow{text-transform:uppercase;letter-spacing:.1em}
+.skin-prev[data-skin="sage"] .pv-card{box-shadow:0 1px 2px rgba(23,26,24,.06)}
+.skin-prev[data-skin="sage"] .pv-bar{height:5px;background:color-mix(in srgb,var(--acc) 13%,transparent)}

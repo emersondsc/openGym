@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore, isValidRest } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf } from './lib/exercises.js'
-import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, isoOf, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
+import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, isoOf, uid, exCount, DAYN, MONTHS_LONG, ACCENTS, SKINS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, getLang, INSTR_LANGS } from './lib/i18n.js'
@@ -14,6 +14,7 @@ import Icon from './components/Icon.jsx'
 import { Button, Slider, Switch, Segmented, SelectRow, Row, TextField, TextArea } from './components/ui.jsx'
 import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
+import StylePreview from './components/StylePreview.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
 import { removeWorkout } from './lib/workout-edit.js'
 import { parseImport, mergeImport } from './lib/import-csv.js'
@@ -1422,5 +1423,42 @@ function MesoForm({ meso, close }) {
     <Button variant="primary" onClick={save}>{base ? t('Save') : t('Create mesocycle')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+  </>
+}
+
+// A vitrine dos estilos, mostrada uma vez por perfil (App.jsx dispara na abertura). Cada cartao
+// traz uma miniatura e, ao toque, aplica o estilo na hora: a propria folha repinta junto, entao
+// a escolha se explica sozinha - nao ha "salvar" nem confirmacao, so a coisa acontecendo.
+export function styleIntroSheet() {
+  ui().openSheet(close => <StyleIntro close={close} />)
+}
+
+function StyleIntro({ close }) {
+  const skin = useStore(s => s.S.skin)
+  const cur = SKINS[skin] ? skin : 'classic'
+  const pick = k => { update(s => { s.skin = k; s.skinIntro = true }); close() }
+  return <>
+    <h3>{t('Choose your style')}</h3>
+    <div className="muted small" style={{ lineHeight: 1.5 }}>
+      {t('Four new looks for the same app. Tap one and the whole app changes right away — you can switch back anytime in Settings.')}
+    </div>
+    <div className="list" style={{ marginTop: 14 }}>
+      {Object.entries(SKINS).map(([k, sk]) => (
+        <button key={k} className={'item' + (k === cur ? ' in-ss' : '')} onClick={() => pick(k)}>
+          <StylePreview skin={k} />
+          <div className="grow">
+            <div className="tt">{sk.label}</div>
+            <div className="ss">{t(sk.subtitle)}</div>
+          </div>
+          {k === cur && <Icon name="check" className="accent" />}
+        </button>
+      ))}
+    </div>
+    <div className="dim small" style={{ marginTop: 10, lineHeight: 1.45 }}>
+      {t('You can change this later in Settings › Appearance.')}
+    </div>
+    <Button variant="plain" style={{ marginTop: 6 }} onClick={() => { update(s => { s.skinIntro = true }); close() }}>
+      {t('Not now')}
+    </Button>
   </>
 }
