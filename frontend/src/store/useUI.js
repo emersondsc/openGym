@@ -25,9 +25,12 @@ export const useUI = create((set, get) => ({
   timer: null,         // rest countdown between sets — { left, total, endsAt }
   work: null,          // work countdown DURING a timed set (issue #16) — { left, total, endsAt, label }
 
-  openSheet(render, { kind = 'sheet', locked = false } = {}) {
+  // `locked` tira as saidas laterais (fundo e arrasto); `handle` tira o puxador, que sem
+  // arrasto nenhum seria so um enfeite mentindo. Os dois juntos deixam a folha com UMA
+  // saida: o botao que ela mesma desenha.
+  openSheet(render, { kind = 'sheet', locked = false, handle = true } = {}) {
     const id = uid()
-    set(s => ({ sheets: [...s.sheets, { id, render, kind, locked }] }))
+    set(s => ({ sheets: [...s.sheets, { id, render, kind, locked, handle }] }))
     const close = () => get().closeSheet(id)
     return { id, close, lock: v => set(s => ({ sheets: s.sheets.map(x => x.id === id ? { ...x, locked: v } : x) })) }
   },

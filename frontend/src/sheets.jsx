@@ -1430,7 +1430,9 @@ function MesoForm({ meso, close }) {
 // traz uma miniatura e, ao toque, aplica o estilo na hora: a propria folha repinta junto, entao
 // a escolha se explica sozinha - nao ha "salvar" nem confirmacao, so a coisa acontecendo.
 export function styleIntroSheet() {
-  ui().openSheet(close => <StyleIntro close={close} />)
+  // Travada e sem puxador de proposito: a vitrine nao se fecha por arrasto nem por toque no
+  // fundo - quem sai dela e o botao. Escolher um estilo tambem fecha.
+  ui().openSheet(close => <StyleIntro close={close} />, { locked: true, handle: false })
 }
 
 function StyleIntro({ close }) {

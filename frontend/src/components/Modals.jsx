@@ -11,7 +11,9 @@ function Sheet({ sheet }) {
     const el = ref.current
     // a gesture that begins on a slider (or opted-out control) belongs to that control,
     // not to the sheet's swipe-to-dismiss — so it keeps working while you drag
-    if (e.target.closest && e.target.closest('input[type=range], [data-nodrag]')) {
+    // folha travada nao arrasta: sem isto ela seguiria o dedo e voltaria sozinha, que parece
+    // defeito - melhor nem comecar o gesto
+    if (sheet.locked || (e.target.closest && e.target.closest('input[type=range], [data-nodrag]'))) {
       drag.current = { startY: null, delta: 0 }
       return
     }
@@ -57,7 +59,7 @@ function Sheet({ sheet }) {
     <div>
       <div className="mback" onClick={() => { if (!sheet.locked) close() }} />
       <div className="sheet" ref={ref} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div className="grab" />
+        {sheet.handle !== false && <div className="grab" />}
         {sheet.render(close)}
       </div>
     </div>
