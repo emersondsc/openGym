@@ -72,6 +72,24 @@ export const SKINS = {
     note: 'Paper brings its own colours and light mode, so those controls are hidden.',
     chrome: { light: '#f4f0e6' },
   },
+  grind: {
+    label: 'Grind', mode: 'dark', ownAccent: true,
+    subtitle: 'Weight-room industrial: hard corners, uppercase, safety orange.',
+    note: 'Grind brings its own colours and dark mode, so those controls are hidden.',
+    chrome: { dark: '#0c0b0a' },
+  },
+  pulse: {
+    label: 'Pulse', mode: 'dark', ownAccent: true,
+    subtitle: 'Modern app: deep navy, big corners, one gradient on the action.',
+    note: 'Pulse brings its own colours and dark mode, so those controls are hidden.',
+    chrome: { dark: '#080b14' },
+  },
+  sage: {
+    label: 'Sage', mode: 'light', ownAccent: true,
+    subtitle: 'Calm and minimal: deep green, more air, no noise.',
+    note: 'Sage brings its own colours and light mode, so those controls are hidden.',
+    chrome: { light: '#eceeec' },
+  },
 }
 
 export const skinOf = k => SKINS[k] || SKINS.classic

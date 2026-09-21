@@ -1053,3 +1053,147 @@ h4.sec{
 :root[data-skin="paper"] .sheet{border-top:1px solid var(--sep)}
 :root[data-skin="paper"] .sheet .grab{height:2px;border-radius:0}
 :root[data-skin="paper"] .center{background:var(--surface)}
+
+/* ---- Grind - peso livre, industrial: canto seco, caixa visivel, laranja de seguranca ---- */
+:root[data-skin="grind"]{
+  --bg:#0c0b0a; --bg-el:#131110; --surface:#1b1815; --surface-2:#262119; --surface-3:#332c23;
+  --label:#f5efe6; --label-2:rgba(245,239,230,.58); --label-3:rgba(245,239,230,.30); --label-4:rgba(245,239,230,.14);
+  --sep:rgba(245,239,230,.13); --sep-op:rgba(245,239,230,.09);
+  --acc:#ff6a1f; --acc-2:#d9500c; --on-acc:#160b02;
+  --r-sm:3px; --r:4px; --r-lg:6px; --r-xl:8px; --r-card:6px;
+  --pad:14px; --icon-stroke:1.95; --hair:1px;
+}
+:root[data-skin="grind"] .hdr h1{font-weight:800;text-transform:uppercase;letter-spacing:-.005em}
+:root[data-skin="grind"] .hdr .sub{text-transform:uppercase;letter-spacing:.15em;font-size:10px;font-weight:600;color:var(--label-3)}
+:root[data-skin="grind"] .card,
+:root[data-skin="grind"] .sect-b,
+:root[data-skin="grind"] .tile{border:1px solid var(--sep)}
+:root[data-skin="grind"] .card h2{text-transform:uppercase;letter-spacing:.11em;font-size:10.5px;font-weight:700;color:var(--label-2)}
+:root[data-skin="grind"] h4.sec,
+:root[data-skin="grind"] .sect-t{text-transform:uppercase;letter-spacing:.15em;font-size:10.5px;font-weight:700}
+:root[data-skin="grind"] .item{border:1px solid var(--sep)}
+:root[data-skin="grind"] .item .tt{font-weight:600;text-transform:uppercase;letter-spacing:.03em;font-size:14px}
+/* sem font-size em .btn/.seg: o bloco e (0,3,0) e achataria .btn.sm (15px) e .btn.xs (13px) */
+:root[data-skin="grind"] .btn{text-transform:uppercase;letter-spacing:.09em;font-weight:700}
+:root[data-skin="grind"] .seg button{text-transform:uppercase;letter-spacing:.06em}
+:root[data-skin="grind"] .seg-sel{background:var(--acc);box-shadow:none}
+:root[data-skin="grind"] .seg button.on{color:var(--on-acc);font-weight:700}
+:root[data-skin="grind"] .mrow .nm{font-size:12.5px;text-transform:uppercase;letter-spacing:.07em}
+:root[data-skin="grind"] .mrow .bar{height:8px;border-radius:1px}
+:root[data-skin="grind"] .mrow .bar i{border-radius:1px}
+:root[data-skin="grind"] .stat-v{font-weight:800}
+:root[data-skin="grind"] .chip,
+:root[data-skin="grind"] .mchip{border-radius:2px;font-size:11px;text-transform:uppercase;letter-spacing:.07em}
+:root[data-skin="grind"] .badge-acc{color:var(--on-acc)}
+/* canto: o que o app arredonda demais vira canto seco */
+:root[data-skin="grind"] .iconbtn,
+:root[data-skin="grind"] .iconbtn.mini,
+:root[data-skin="grind"] .searchf .clear,
+:root[data-skin="grind"] .chk,
+:root[data-skin="grind"] .setrow .n,
+:root[data-skin="grind"] .setrow .setgo,
+:root[data-skin="grind"] .setrow .rm-sp,
+:root[data-skin="grind"] .bw-pm,
+:root[data-skin="grind"] .sld-knob,
+:root[data-skin="grind"] .swatch,
+:root[data-skin="grind"] .swatch.on::after{border-radius:2px}
+:root[data-skin="grind"] .lrow-i,
+:root[data-skin="grind"] .glyph-cell,
+:root[data-skin="grind"] .wday,
+:root[data-skin="grind"] .stp,
+:root[data-skin="grind"] .timef,
+:root[data-skin="grind"] .thumb,
+:root[data-skin="grind"] .pr,
+:root[data-skin="grind"] .sld-track,
+:root[data-skin="grind"] #toast{border-radius:var(--r-sm)}
+:root[data-skin="grind"] #tabbar{background:var(--bg-el);border-top:1px solid var(--sep);backdrop-filter:none;-webkit-backdrop-filter:none}
+:root[data-skin="grind"] #tabbar button{text-transform:uppercase;letter-spacing:.09em;font-size:9px;font-weight:600}
+:root[data-skin="grind"] #tabbar button.start .cir,
+:root[data-skin="grind"] #tabbar button.start.rec .cir::after{border-radius:9px}
+
+/* ---- Pulse - app moderno: azul-noite, canto grande, um gradiente so na acao ---- */
+:root[data-skin="pulse"]{
+  --bg:#080b14; --bg-el:#0c1120; --surface:#141b2c; --surface-2:#1d2740; --surface-3:#2a3654;
+  --label:#f2f5ff; --label-2:rgba(226,233,255,.62); --label-3:rgba(226,233,255,.32); --label-4:rgba(226,233,255,.14);
+  --sep:rgba(226,233,255,.12); --sep-op:rgba(226,233,255,.08);
+  --acc:#31e1c4; --acc-2:#1fbfa6; --on-acc:#04140f;
+  --r-sm:10px; --r:16px; --r-lg:22px; --r-xl:26px; --r-card:20px;
+  --pad:16px; --icon-stroke:1.75; --hair:1px;
+}
+:root[data-skin="pulse"] .card{border:1px solid var(--sep-op);background:linear-gradient(180deg,#18203a,#131a2c)}
+:root[data-skin="pulse"] .sect-b,
+:root[data-skin="pulse"] .tile{border:1px solid var(--sep-op)}
+:root[data-skin="pulse"] .item{border:1px solid var(--sep-op)}
+:root[data-skin="pulse"] .item .tt{font-weight:600}
+:root[data-skin="pulse"] .stat-v{font-weight:800;letter-spacing:-.03em}
+:root[data-skin="pulse"] .btn.primary{background:linear-gradient(135deg,#7c5cff,#31e1c4);color:#06121a}
+:root[data-skin="pulse"] .btn.tinted{background:color-mix(in srgb,#7c5cff 20%,transparent);color:#c3b8ff}
+:root[data-skin="pulse"] .seg-sel{background:var(--surface-3);box-shadow:inset 0 0 0 1px var(--acc-line)}
+:root[data-skin="pulse"] .seg button.on{color:var(--acc)}
+:root[data-skin="pulse"] .mrow .bar{height:8px}
+:root[data-skin="pulse"] .mrow .bar i{background:linear-gradient(90deg,#7c5cff,#31e1c4)}
+:root[data-skin="pulse"] .chip.on{background:var(--acc-soft);color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc-line)}
+:root[data-skin="pulse"] .badge-acc{color:var(--on-acc)}
+/* canto: o que o app mantem reto demais sobe para a lingua macia do estilo */
+:root[data-skin="pulse"] .searchf .field,
+:root[data-skin="pulse"] .search .input,
+:root[data-skin="pulse"] .stp,
+:root[data-skin="pulse"] .timef{border-radius:var(--r)}
+:root[data-skin="pulse"] .lrow-i,
+:root[data-skin="pulse"] .wday,
+:root[data-skin="pulse"] .thumb,
+:root[data-skin="pulse"] .glyph-cell,
+:root[data-skin="pulse"] .iconbtn.mini,
+:root[data-skin="pulse"] .setrow .rm-sp,
+:root[data-skin="pulse"] .pr{border-radius:var(--r-sm)}
+:root[data-skin="pulse"] #tabbar{background:rgba(8,11,20,.86);border-top:1px solid var(--sep-op)}
+:root[data-skin="pulse"] #tabbar button.start .cir{background:linear-gradient(135deg,#7c5cff,#31e1c4);color:#06121a;box-shadow:0 10px 26px -8px rgba(124,92,255,.75)}
+
+/* ---- Sage - claro, calmo, minimal: verde profundo, mais ar, zero ruido ---- */
+:root[data-skin="sage"]{
+  --bg:#eceeec; --bg-el:#f6f7f6; --surface:#ffffff; --surface-2:#eef1ef; --surface-3:#e3e7e4;
+  --label:#171a18; --label-2:rgba(23,26,24,.56); --label-3:rgba(23,26,24,.34); --label-4:rgba(23,26,24,.12);
+  --sep:rgba(23,26,24,.10); --sep-op:rgba(23,26,24,.06);
+  --acc:#2f6b4f; --acc-2:#245540; --on-acc:#ffffff;
+  --r-sm:8px; --r:12px; --r-lg:16px; --r-xl:20px; --r-card:14px;
+  --pad:18px; --icon-stroke:1.6; --hair:1px;
+}
+:root[data-skin="sage"] .hdr h1{font-weight:600;letter-spacing:-.025em}
+:root[data-skin="sage"] .card{box-shadow:0 1px 2px rgba(23,26,24,.05)}
+:root[data-skin="sage"] .card h2,
+:root[data-skin="sage"] .sect-t,
+:root[data-skin="sage"] h4.sec{text-transform:uppercase;letter-spacing:.11em;font-size:10.5px;font-weight:600;color:var(--label-2)}
+:root[data-skin="sage"] .card h2 .dim{font-size:10.5px}
+:root[data-skin="sage"] .item .tt{font-weight:500}
+:root[data-skin="sage"] .btn.primary{background:var(--acc);color:var(--on-acc)}
+:root[data-skin="sage"] .btn.tinted{background:color-mix(in srgb,var(--acc) 10%,transparent);color:var(--acc)}
+:root[data-skin="sage"] .seg{background:var(--surface-2)}
+:root[data-skin="sage"] .seg-sel{background:var(--surface);box-shadow:0 1px 3px rgba(23,26,24,.10)}
+:root[data-skin="sage"] .mrow{padding:8px 0}
+:root[data-skin="sage"] .mrow .bar{height:5px;background:color-mix(in srgb,var(--acc) 13%,transparent)}
+/* so nos chips apagados: sem o :not(.on), este bloco (0,3,0) apagaria o fundo do chip ativo */
+:root[data-skin="sage"] .chip:not(.on){background:var(--surface-2)}
+:root[data-skin="sage"] .lrow-i.flat{color:var(--label-2)}
+:root[data-skin="sage"] .badge-acc{color:var(--on-acc)}
+:root[data-skin="sage"] .iconbtn,
+:root[data-skin="sage"] .iconbtn.mini,
+:root[data-skin="sage"] .searchf .clear,
+:root[data-skin="sage"] .chk,
+:root[data-skin="sage"] .setrow .n,
+:root[data-skin="sage"] .setrow .setgo,
+:root[data-skin="sage"] .setrow .rm-sp,
+:root[data-skin="sage"] .bw-pm,
+:root[data-skin="sage"] .sld-knob,
+:root[data-skin="sage"] .swatch,
+:root[data-skin="sage"] .swatch.on::after,
+:root[data-skin="sage"] .sld-track{border-radius:var(--r-sm)}
+:root[data-skin="sage"] .lrow-i,
+:root[data-skin="sage"] .glyph-cell,
+:root[data-skin="sage"] .wday,
+:root[data-skin="sage"] .stp,
+:root[data-skin="sage"] .timef,
+:root[data-skin="sage"] .thumb,
+:root[data-skin="sage"] .pr,
+:root[data-skin="sage"] #toast{border-radius:var(--r)}
+:root[data-skin="sage"] #tabbar{background:rgba(246,247,246,.88);border-top:1px solid var(--sep)}
+:root[data-skin="sage"] #tabbar button.start .cir{box-shadow:0 8px 20px -8px color-mix(in srgb,var(--acc) 60%,transparent)}

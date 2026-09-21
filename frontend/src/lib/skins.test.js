@@ -12,7 +12,7 @@ describe('resolveSkin', () => {
   })
 
   it('estilo desconhecido cai no classic', () => {
-    expect(resolveSkin('grind', 'dark', 'teal')).toEqual(resolveSkin('classic', 'dark', 'teal'))
+    expect(resolveSkin('nao-existe', 'dark', 'teal')).toEqual(resolveSkin('classic', 'dark', 'teal'))
     expect(resolveSkin(undefined, 'dark', 'teal').skin).toBe('classic')
   })
 
