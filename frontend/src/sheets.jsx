@@ -1442,18 +1442,18 @@ function StyleIntro({ close }) {
     <div className="muted small" style={{ lineHeight: 1.5 }}>
       {t('Four new looks for the same app. Tap one and the whole app changes right away — you can switch back anytime in Settings.')}
     </div>
-    <div className="list" style={{ marginTop: 14 }}>
+    <div className="pv-bleed">
+    <div className="pv-track">
       {Object.entries(SKINS).map(([k, sk]) => (
-        <button key={k} className={'item' + (k === cur ? ' in-ss' : '')} onClick={() => pick(k)}>
+        <button key={k} className={'pv-card-btn' + (k === cur ? ' on' : '')} onClick={() => pick(k)}>
           <StylePreview skin={k} />
-          <div className="grow">
-            <div className="tt">{sk.label}</div>
-            <div className="ss">{t(sk.subtitle)}</div>
-          </div>
-          {k === cur && <Icon name="check" className="accent" />}
+          <span className="pv-name">{sk.label}{k === cur && <Icon name="check" />}</span>
+          <span className="pv-desc">{t(sk.subtitle)}</span>
         </button>
       ))}
     </div>
+    </div>
+    <div className="pv-hint">{t('Swipe to see the others')} →</div>
     <div className="dim small" style={{ marginTop: 10, lineHeight: 1.45 }}>
       {t('You can change this later in Settings › Appearance.')}
     </div>

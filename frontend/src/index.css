@@ -1202,20 +1202,25 @@ h4.sec{
 :root[data-skin="sage"] #tabbar{background:rgba(246,247,246,.88);border-top:1px solid var(--sep)}
 :root[data-skin="sage"] #tabbar button.start .cir{box-shadow:0 8px 20px -8px color-mix(in srgb,var(--acc) 60%,transparent)}
 
-/* ============================================================================
-   VITRINE DOS ESTILOS - as miniaturas da folha "Choose your style"
-   ----------------------------------------------------------------------------
-   A folha aparece uma vez por perfil. Cada cartao traz uma miniatura da tela de
-   Stats; ela nao e a tela real, e um desenho.
 
-   O que ela NAO desenha e a cor: cada bloco de skin la em cima ganhou tambem o
-   seletor `.skin-prev[data-skin="x"]`, entao a miniatura le os MESMOS tokens do
+/* ============================================================================
+   VITRINE DOS ESTILOS - as telas da folha "Choose your style"
+   ----------------------------------------------------------------------------
+   A folha aparece uma vez por perfil, num carrossel: a tela de Home de cada
+   estilo, grande o bastante para se ler, com a proxima espiando na borda para
+   convidar ao arrasto.
+
+   O que a miniatura NAO desenha e a cor: cada bloco de skin la em cima ganhou
+   tambem o seletor `.skin-prev[data-skin="x"]`, entao ela le os MESMOS tokens do
    estilo - mudar um token muda a vitrine junto, sem copia de valor em lugar
-   nenhum. Estas regras desenham so a forma.
+   nenhum. Estas regras desenham so a forma (caixa, regua, caixa-alta, serifa).
 
    A miniatura do Classic precisa da paleta base declarada aqui: o <html> pode
    estar em outro estilo (o `:root[data-skin]` de cima vence o `:root`), e sem
    isto o cartao do Classic apareceria com as cores do estilo ativo.
+
+   As classes `pv-` nao casam com nenhuma regra de skin de proposito: assim a
+   miniatura de um estilo nunca herda a forma do estilo que estiver ativo.
    ========================================================================== */
 .skin-prev[data-skin="classic"]{
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e;
@@ -1223,45 +1228,99 @@ h4.sec{
   --sep:rgba(84,84,88,.60); --sep-op:rgba(84,84,88,.34);
   --acc:#30d158; --on-acc:#000000; --r-card:14px;
 }
+/* a sangria existe para a proxima tela aparecer colada na borda do telefone; a largura maxima
+   existe para o carrossel NAO virar uma vitrine de cinco telas lado a lado no desktop - o
+   convite a arrastar depende de sobrar uma ponta da proxima */
+.pv-bleed{margin:14px -18px 0}
+.pv-track{
+  display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  max-width:596px;margin:0 auto;padding:2px 18px 8px;
+}
+.pv-track::-webkit-scrollbar{display:none}
+.pv-card-btn{
+  flex:none;width:min(272px,74vw);scroll-snap-align:start;text-align:left;
+  display:flex;flex-direction:column;gap:9px;background:none;border:0;padding:0;
+  color:var(--label);font:inherit;letter-spacing:inherit;
+}
+.pv-card-btn .pv-name{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:600;letter-spacing:-.014em}
+.pv-card-btn .pv-desc{font-size:12.5px;line-height:1.35;color:var(--label-2)}
+.pv-card-btn.on .pv-name{color:var(--acc)}
+.pv-card-btn.on .skin-prev{box-shadow:inset 0 0 0 2px var(--acc)}
+.pv-hint{margin-top:2px;font-size:12px;color:var(--label-3)}
+
 .skin-prev{
-  width:134px;flex:none;display:flex;flex-direction:column;gap:6px;
+  width:100%;height:354px;display:flex;flex-direction:column;gap:9px;
   background:var(--bg);color:var(--label);
-  border-radius:12px;padding:9px 10px;overflow:hidden;
-  font-size:10px;line-height:1.25;letter-spacing:-.01em;font-variant-numeric:tabular-nums;
+  border-radius:20px;padding:12px 12px 0;overflow:hidden;
+  font-size:11px;line-height:1.25;letter-spacing:-.01em;font-variant-numeric:tabular-nums;
   box-shadow:inset 0 0 0 1px var(--sep-op);
 }
-.skin-prev .pv-top{display:flex;align-items:baseline;justify-content:space-between;gap:4px}
-.skin-prev .pv-h1{font-size:15px;font-weight:700;letter-spacing:-.02em}
-.skin-prev .pv-sub{color:var(--label-3);font-size:8px}
-.skin-prev .pv-card{background:var(--surface);border-radius:var(--r-card);padding:7px 8px;display:flex;flex-direction:column;gap:5px}
-.skin-prev .pv-eyebrow{color:var(--label-2);font-size:8px;line-height:1.2}
-.skin-prev .pv-row{display:flex;align-items:center;gap:5px}
-.skin-prev .pv-row span:first-child{width:48px;flex:none;color:var(--label-2);font-size:9px;overflow:hidden;white-space:nowrap}
-.skin-prev .pv-row b{font-size:9px;font-weight:600}
-.skin-prev .pv-bar{flex:1;min-width:0;height:4px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.skin-prev .pv-hdr{display:flex;flex-direction:column;gap:1px}
+.skin-prev .pv-h1{font-size:22px;font-weight:700;letter-spacing:-.024em;line-height:1.1}
+.skin-prev .pv-date{color:var(--label-2);font-size:10px}
+.skin-prev .pv-week{display:flex;justify-content:space-between;gap:2px}
+.skin-prev .pv-day{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 0;border-radius:8px}
+.skin-prev .pv-day.today{background:var(--surface-2)}
+.skin-prev .pv-dl{font-size:8px;color:var(--label-3);letter-spacing:.03em}
+.skin-prev .pv-dn{font-size:12px}
+.skin-prev .pv-dot{width:4px;height:4px;border-radius:50%;background:transparent}
+.skin-prev .pv-dot.done{background:var(--acc)}
+.skin-prev .pv-dot.plan{background:var(--label-3)}
+.skin-prev .pv-today{display:flex;align-items:center;gap:9px;background:var(--surface);border-radius:var(--r-card);padding:9px 10px}
+.skin-prev .pv-rail{width:28px;height:28px;flex:none;border-radius:7px;background:var(--acc)}
+.skin-prev .pv-tx{display:flex;flex-direction:column;min-width:0}
+.skin-prev .pv-tt{font-size:13px;font-weight:600;letter-spacing:-.012em}
+.skin-prev .pv-ss{font-size:9.5px;color:var(--label-2)}
+.skin-prev .pv-card{background:var(--surface);border-radius:var(--r-card);padding:9px 10px;display:flex;flex-direction:column;gap:6px}
+.skin-prev .pv-eyebrow{color:var(--label-2);font-size:9px;line-height:1.2}
+.skin-prev .pv-row{display:flex;align-items:center;gap:6px}
+.skin-prev .pv-row span:first-child{width:62px;flex:none;color:var(--label-2);font-size:9.5px;overflow:hidden;white-space:nowrap}
+.skin-prev .pv-row b{font-size:9.5px;font-weight:600}
+.skin-prev .pv-bar{flex:1;min-width:0;height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .skin-prev .pv-bar i{display:block;height:100%;background:var(--acc);border-radius:99px}
-.skin-prev .pv-list{display:flex;flex-direction:column;gap:4px}
-.skin-prev .pv-item{background:var(--surface);border-radius:var(--r-card);padding:5px 7px;display:flex;justify-content:space-between;gap:5px}
-.skin-prev .pv-item b{font-weight:500;font-size:9.5px}
-.skin-prev .pv-item span{color:var(--label-2);font-size:8.5px}
-/* a forma de cada estilo, que os tokens nao carregam */
+.skin-prev .pv-tabs{margin-top:auto;display:flex;align-items:center;justify-content:space-around;padding:10px 2px 14px;border-top:1px solid var(--sep-op)}
+.skin-prev .pv-tabs>span{font-size:8.5px;color:var(--label-3)}
+.skin-prev .pv-start{width:26px;height:26px;border-radius:50%;background:var(--acc);margin-top:-16px}
+
+/* ---- a forma de cada estilo, que os tokens nao carregam ---- */
 .skin-prev[data-skin="grind"] .pv-h1,
-.skin-prev[data-skin="grind"] .pv-eyebrow{text-transform:uppercase;letter-spacing:.1em}
-.skin-prev[data-skin="grind"] .pv-h1{font-weight:800;font-size:14px}
-.skin-prev[data-skin="grind"] .pv-card,
-.skin-prev[data-skin="grind"] .pv-item{border:1px solid var(--sep)}
+.skin-prev[data-skin="grind"] .pv-eyebrow,
+.skin-prev[data-skin="grind"] .pv-dl,
+.skin-prev[data-skin="grind"] .pv-tabs>span{text-transform:uppercase;letter-spacing:.1em}
+.skin-prev[data-skin="grind"] .pv-h1{font-weight:800;font-size:20px}
+.skin-prev[data-skin="grind"] .pv-tt{text-transform:uppercase;font-size:12px;letter-spacing:.03em}
+.skin-prev[data-skin="grind"] .pv-today,
+.skin-prev[data-skin="grind"] .pv-card{border:1px solid var(--sep)}
+.skin-prev[data-skin="grind"] .pv-rail,
+.skin-prev[data-skin="grind"] .pv-day,
 .skin-prev[data-skin="grind"] .pv-bar,
-.skin-prev[data-skin="grind"] .pv-bar i{border-radius:1px}
-.skin-prev[data-skin="paper"] .pv-h1{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-weight:600}
+.skin-prev[data-skin="grind"] .pv-bar i,
+.skin-prev[data-skin="grind"] .pv-start{border-radius:2px}
+.skin-prev[data-skin="grind"] .pv-bar{height:7px}
+
+.skin-prev[data-skin="paper"] .pv-h1{font-family:Georgia,'Iowan Old Style','Times New Roman',serif;font-weight:600;letter-spacing:-.012em}
+.skin-prev[data-skin="paper"] .pv-date{font-style:italic}
 .skin-prev[data-skin="paper"] .pv-eyebrow{text-transform:uppercase;letter-spacing:.14em}
-.skin-prev[data-skin="paper"] .pv-card,
-.skin-prev[data-skin="paper"] .pv-item{border:1px solid var(--sep)}
-.skin-prev[data-skin="paper"] .pv-item{background:transparent;border:0;border-bottom:1px solid var(--sep);border-radius:0;padding:5px 0}
+.skin-prev[data-skin="paper"] .pv-tt{font-family:Georgia,'Iowan Old Style','Times New Roman',serif}
+.skin-prev[data-skin="paper"] .pv-today,
+.skin-prev[data-skin="paper"] .pv-card{border:1px solid var(--sep)}
 .skin-prev[data-skin="paper"] .pv-bar,
 .skin-prev[data-skin="paper"] .pv-bar i{border-radius:0}
 .skin-prev[data-skin="paper"] .pv-bar{height:3px}
+.skin-prev[data-skin="paper"] .pv-start{border-radius:3px}
+.skin-prev[data-skin="paper"] .pv-rail{border-radius:2px}
+.skin-prev[data-skin="paper"] .pv-tabs{border-top:1px solid var(--sep)}
+
+.skin-prev[data-skin="pulse"] .pv-h1{font-weight:800;letter-spacing:-.03em}
+.skin-prev[data-skin="pulse"] .pv-rail,
+.skin-prev[data-skin="pulse"] .pv-start{background:linear-gradient(135deg,#7c5cff,#31e1c4)}
+.skin-prev[data-skin="pulse"] .pv-start{box-shadow:0 8px 20px -6px rgba(124,92,255,.7)}
 .skin-prev[data-skin="pulse"] .pv-card{background:linear-gradient(180deg,#18203a,#131a2c);border:1px solid var(--sep-op)}
 .skin-prev[data-skin="pulse"] .pv-bar i{background:linear-gradient(90deg,#7c5cff,#31e1c4)}
+
+.skin-prev[data-skin="sage"] .pv-h1{font-weight:600}
 .skin-prev[data-skin="sage"] .pv-eyebrow{text-transform:uppercase;letter-spacing:.1em}
-.skin-prev[data-skin="sage"] .pv-card{box-shadow:0 1px 2px rgba(23,26,24,.06)}
+.skin-prev[data-skin="sage"] .pv-today,
+.skin-prev[data-skin="sage"] .pv-card{box-shadow:0 1px 2px rgba(23,26,24,.05)}
 .skin-prev[data-skin="sage"] .pv-bar{height:5px;background:color-mix(in srgb,var(--acc) 13%,transparent)}
