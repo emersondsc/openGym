@@ -1235,11 +1235,11 @@ h4.sec{
 .pv-track{
   display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
   -webkit-overflow-scrolling:touch;scrollbar-width:none;
-  max-width:596px;margin:0 auto;padding:2px 18px 8px;
+  max-width:596px;margin:0 auto;padding:2px 18px 8px;overscroll-behavior-x:contain;
 }
 .pv-track::-webkit-scrollbar{display:none}
 .pv-card-btn{
-  flex:none;width:min(272px,74vw);scroll-snap-align:start;text-align:left;
+  flex:none;width:min(272px,74vw);scroll-snap-align:start;scroll-snap-stop:always;text-align:left;
   display:flex;flex-direction:column;gap:9px;background:none;border:0;padding:0;
   color:var(--label);font:inherit;letter-spacing:inherit;
 }

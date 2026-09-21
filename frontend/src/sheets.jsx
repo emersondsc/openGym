@@ -1437,13 +1437,58 @@ function StyleIntro({ close }) {
   const skin = useStore(s => s.S.skin)
   const cur = SKINS[skin] ? skin : 'classic'
   const pick = k => { update(s => { s.skin = k; s.skinIntro = true }); close() }
+  const track = useRef(null)
+  const drag = useRef(null)
+  const lock = useRef(0)
+
+  // UM GESTO = UMA OPCAO. O trilho rola nativamente (o dedo acompanha a tela), mas quem decide
+  // onde ele para e este par de handlers: no fim do toque o destino e recalculado a partir de
+  // onde o gesto COMECOU, entao uma deslizada forte nao atravessa tres telas - anda uma, sempre.
+  // O `scroll-snap-stop: always` do CSS cobre o mesmo caso pelo caminho nativo; isto e a
+  // garantia, e vale tambem para o trackpad (roda horizontal), que nao passa por touch.
+  const stepOf = () => {
+    const c = track.current
+    return c && c.children[1] ? c.children[1].offsetLeft - c.children[0].offsetLeft : 0
+  }
+  const goTo = i => {
+    const c = track.current, st = stepOf()
+    if (!c || !st) return
+    c.scrollTo({ left: Math.max(0, Math.min(c.children.length - 1, i)) * st, behavior: 'smooth' })
+  }
+  const onTouchStart = e => { drag.current = { x: e.touches[0].clientX, left: track.current.scrollLeft } }
+  const onTouchEnd = e => {
+    const d = drag.current
+    drag.current = null
+    if (!d) return
+    const dx = e.changedTouches[0].clientX - d.x
+    if (Math.abs(dx) < 20) return                       // foi um toque, nao um arrasto
+    const st = stepOf()
+    if (!st) return
+    goTo(Math.round(d.left / st) + (dx < 0 ? 1 : -1))   // uma casa a partir de onde comecou
+  }
+  useEffect(() => {
+    const c = track.current
+    if (!c) return
+    const onWheel = e => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return   // roda vertical e da folha, nao do trilho
+      e.preventDefault()
+      const now = Date.now()
+      if (now - lock.current < 400) return                   // um gesto de trackpad vira UM passo
+      lock.current = now
+      const st = stepOf()
+      if (st) goTo(Math.round(c.scrollLeft / st) + (e.deltaX > 0 ? 1 : -1))
+    }
+    c.addEventListener('wheel', onWheel, { passive: false })
+    return () => c.removeEventListener('wheel', onWheel)
+  }, [])
+
   return <>
     <h3>{t('Choose your style')}</h3>
     <div className="muted small" style={{ lineHeight: 1.5 }}>
       {t('Four new looks for the same app. Tap one and the whole app changes right away — you can switch back anytime in Settings.')}
     </div>
     <div className="pv-bleed">
-    <div className="pv-track">
+    <div className="pv-track" ref={track} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       {Object.entries(SKINS).map(([k, sk]) => (
         <button key={k} className={'pv-card-btn' + (k === cur ? ' on' : '')} onClick={() => pick(k)}>
           <StylePreview skin={k} />
