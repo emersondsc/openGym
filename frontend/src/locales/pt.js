@@ -377,7 +377,6 @@ export default {
   'Not now': 'Agora não',
   'Swipe to see the others': 'Desliza para veres os outros',
   'Four new looks for the same app. Tap one and the whole app changes right away — you can switch back anytime in Settings.': 'Quatro visuais novos para a mesma aplicação. Toca num e o app inteiro muda logo — podes voltar atrás quando quiseres nas Definições.',
-  'You can change this later in Settings › Appearance.': 'Podes mudar isto mais tarde em Definições › Aparência.',
   'The look openGym has always had.': 'O visual de sempre do openGym.',
   'Warm paper, serifs and print rules.': 'Papel quente, serifas e réguas de impressão.',
   'Paper brings its own colours and light mode, so those controls are hidden.': 'O estilo Paper traz as suas próprias cores e o seu modo claro, por isso estes controlos estão escondidos.',

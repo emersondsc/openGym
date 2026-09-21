@@ -1501,10 +1501,7 @@ function StyleIntro({ close }) {
     </div>
     </div>
     <div className="pv-hint">{t('Swipe to see the others')} →</div>
-    <div className="dim small" style={{ marginTop: 10, lineHeight: 1.45 }}>
-      {t('You can change this later in Settings › Appearance.')}
-    </div>
-    <Button variant="plain" style={{ marginTop: 6 }} onClick={() => { update(s => { s.skinIntro = true }); close() }}>
+    <Button variant="plain" style={{ marginTop: 12 }} onClick={() => { update(s => { s.skinIntro = true }); close() }}>
       {t('Not now')}
     </Button>
   </>
