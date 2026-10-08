@@ -12,10 +12,13 @@ import Icon from './Icon.jsx'
 export default function Media({ ex, id, compact, minimizable }) {
   const [playing, setPlaying] = useState(true)
   const gifSize = useStore(s => s.S.gifSize)
+  const gifSizeChosen = useStore(s => s.S.gifSizeChosen)
   const update = useStore(s => s.update)
   if (!ex.gif) return null
-  const mini = minimizable && gifSize !== 'full'   // missing/unknown value falls back to mini
-  const toggleSize = e => { e.stopPropagation(); update(s => { s.gifSize = mini ? 'full' : 'mini' }) }
+  // Minimized until the user expands it on purpose: the state pulled from the server still carries
+  // 'full' from the old default, and that stale value must not beat the new default.
+  const mini = minimizable && !(gifSizeChosen && gifSize === 'full')
+  const toggleSize = e => { e.stopPropagation(); update(s => { s.gifSize = mini ? 'full' : 'mini'; s.gifSizeChosen = true }) }
   return (
     <div className={'exmedia' + (compact ? ' compact' : '') + (mini ? ' mini' : '')} id={id} onClick={() => setPlaying(p => !p)}>
       <img decoding="async" src={playing ? gifSrc(ex) : imgSrc(ex)} alt={ex.n} />
