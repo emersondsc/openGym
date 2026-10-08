@@ -71,8 +71,8 @@ function Shell() {
   const authed = user || isGuest
   if (!ready && !authed) return (
     <div id="app">
-      <div style={{ paddingTop: '44vh', display: 'flex', justifyContent: 'center', fontSize: 34, color: 'var(--label-3)' }}>
-        <Icon name="dumbbell" />
+      <div style={{ paddingTop: '44vh', display: 'flex', justifyContent: 'center' }}>
+        <img src="icon-180.png?v=3" alt="openGym" width="64" height="64" style={{ borderRadius: 15 }} />
       </div>
     </div>
   )
