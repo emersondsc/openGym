@@ -43,16 +43,21 @@ into both native projects — re-run it after every web-code change before build
 
 ## App icons & splash screens
 
-`frontend/resources/icon.svg` is the 1024×1024 source (the app's dumbbell glyph on the
-app background). Generate all platform assets from it on a machine with the tooling:
+`frontend/resources/icon.png` is the 1024×1024 source: the app's dumbbell on the light-blue
+plate (#5EB1F2). It is the same artwork the PWA ships as `public/icon-512.png` and
+`public/icon-180.png`, so the native app, the installed PWA and the browser tab agree. The
+mipmaps under `android/` and the `AppIcon.appiconset` under `ios/` are generated output,
+committed so a build does not need the tooling. Regenerate them on a machine with the tooling:
 
 ```sh
 cd frontend
-npx @capacitor/assets generate --iconBackgroundColor '#0c0e12' --splashBackgroundColor '#0c0e12'
+npx @capacitor/assets generate --iconBackgroundColor '#5EB1F2' --splashBackgroundColor '#5EB1F2'
 ```
 
-(If the generator won't take the SVG directly, export it to `resources/icon.png` at
-1024×1024 first — any image tool can do it.)
+(The source used to be `frontend/resources/icon.svg`, a vector trace of the old lime glyph.
+It is gone on purpose: the artwork is now a raster, and keeping both would be two sources of
+truth. `--iconBackgroundColor` only matters where the source has transparency — ours is
+full-bleed, so the plate colour comes from the PNG itself.)
 
 ## Distribution — deliberately no app stores
 
