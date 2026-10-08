@@ -3,7 +3,7 @@ import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'r
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
-import { resolveSkin } from './lib/format.js'
+import { resolveSkin, effAccent } from './lib/format.js'
 import { setLang, useLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
@@ -60,7 +60,7 @@ function Shell() {
     const id = setTimeout(() => styleIntroSheet(), 800)
     return () => clearTimeout(id)
   }, [ready, user, isGuest, S.skinIntro])
-  useEffect(() => { applyPrefs(S.theme, S.accent, S.skin) }, [S.theme, S.accent, S.skin])
+  useEffect(() => { applyPrefs(S.theme, effAccent(S), S.skin) }, [S.theme, S.accent, S.accentChosen, S.skin])
   useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
   useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
   // every tab/route change starts at the top of the page

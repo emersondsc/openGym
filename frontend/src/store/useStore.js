@@ -13,7 +13,12 @@ import { mergeWorkouts, mergeExWeights, freshMark, sigOf } from '../lib/workout-
 const KEY = 'gym_state_v1'
 export const DEF = {
   unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
-  theme: 'dark', accent: 'lime', skin: 'classic', body: 'male', targetW: null,
+  theme: 'dark', accent: 'teal', skin: 'classic', body: 'male', targetW: null,
+  // Accent default changed lime -> teal (2026-10, matches the app icon). accentChosen is
+  // written ONLY by the swatch picker: a profile saved before this change carries accent
+  // 'lime' from the old default, and pullState adopts that state wholesale - so the flag,
+  // not the value, is what proves the user had a say.
+  accentChosen: false,
   // Marca de que a vitrine de estilos ja foi mostrada a este perfil (uma vez, e so).
   // Estado antigo nao tem a chave: o Object.assign com o DEF devolve `false` e a folha
   // aparece na proxima abertura, que e exatamente o que se quer para quem ja usa o app.

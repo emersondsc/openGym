@@ -106,3 +106,8 @@ export function resolveSkin(skin, theme, accent) {
     chrome: sk.chrome[mode] || (mode === 'light' ? '#f2f2f7' : '#000000'),
   }
 }
+
+// Effective accent for display: the factory default is teal; the stored value only wins
+// when the user tapped a swatch (accentChosen). Survives pullState adopting a stale server
+// state, and skins with ownAccent keep ignoring it downstream in resolveSkin.
+export const effAccent = s => (s && s.accentChosen && s.accent) || 'teal'

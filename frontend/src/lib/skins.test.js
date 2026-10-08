@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SKINS, skinOf, resolveSkin } from './format.js'
+import { SKINS, skinOf, resolveSkin, effAccent } from './format.js'
 
 describe('resolveSkin', () => {
   it('classic obedece ao tema e mantem a cor escolhida', () => {
@@ -18,6 +18,13 @@ describe('resolveSkin', () => {
 
   it('cor desconhecida cai no lime, como o applyPrefs fazia', () => {
     expect(resolveSkin('classic', 'dark', 'roxo').accent).toBe('lime')
+  })
+
+  it('effAccent: teal ate o usuario tocar numa cor', () => {
+    expect(effAccent({})).toBe('teal')
+    expect(effAccent({ accent: 'lime' })).toBe('teal')
+    expect(effAccent({ accent: 'orange', accentChosen: true })).toBe('orange')
+    expect(effAccent({ accent: 'lime', accentChosen: true })).toBe('lime')
   })
 
   it('todo estilo tem descricao, chrome do modo que fixa e nota quando esconde controle', () => {
