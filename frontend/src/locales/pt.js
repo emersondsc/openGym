@@ -261,6 +261,7 @@ export default {
   'Build a plan first': 'Cria primeiro um plano',
   'Duration (min)': 'Duração (min)',
   'Last time': 'Da última vez',
+  'Previous': 'Anterior',
   'Last time you hit all reps — try {0}': 'Da última vez completaste todas as reps — tenta {0}',
   'Weights bumped to {0}': 'Pesos aumentados para {0}',
   'Remove set': 'Remover série',

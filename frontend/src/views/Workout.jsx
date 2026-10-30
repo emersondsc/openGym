@@ -146,6 +146,15 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
   }
   // Uses the shared stepper markup so a set row picks up the same control styling
   // as every other +/- field in the app.
+  const rowCls = (col3 ? ' eff3' : '') + (last ? ' pv' : '')
+  // A série de mesmo número no último treino. O esforço vem do próprio rótulo, "12×8 (RIR 0)",
+  // e desce para a segunda linha porque a coluna é estreita.
+  const prevCell = i => {
+    const p = last.sets[i]
+    if (!p) return <div className="prev">—</div>
+    const [main, extra] = setLabel(entry.id, p, last.target, S).split(' (')
+    return <div className="prev">{main}{extra && <i>{extra.replace(/\)$/, '')}</i>}</div>
+  }
   const openEffort = (s, i, col) => useUI.getState().openSheet(close => <EffortSheet kind={col.eff} value={s[col.f]}
     start={entry.sets[i - 1]?.[col.f]} onSave={v => onField(i, col.f, v)} close={close} />)
   const cell = (s, i, col, cls) => col.eff ? (
@@ -226,16 +235,16 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
   }
 }} />
     </div>
-    {last && <div className="small dim" style={{ marginBottom: 4 }}>{t('Last time')} ({fmtDate(last.d)}): {last.sets.map(s => setLabel(entry.id, s, last.target, S)).join(', ')}</div>}
     {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
       <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
       <span>{t(...plan.why)}</span>
     </div>}
     <div className="card" style={{ marginTop: 10, marginBottom: 0 }}>
       {/* the header carries the same eff3 sizing as the rows, or the labels drift off their columns */}
-      <div className={'sethead' + (col3 ? ' eff3' : '')}><span className="n-sp" /><span className="w-sp">{col1.hd}</span>{col2 && <span className="r-sp">{col2.hd}</span>}{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
-      {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
+      <div className={'sethead' + rowCls}><span className="n-sp" />{last && <span className="p-sp">{t('Previous')}<i>{fmtDate(last.d)}</i></span>}<span className="w-sp">{col1.hd}</span>{col2 && <span className="r-sp">{col2.hd}</span>}{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
+      {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + rowCls}>
         <div className="n">{i + 1}</div>
+        {last && prevCell(i)}
         {cell(s, i, col1, 'w')}
         {col2 && cell(s, i, col2, 'r')}
         {col3 && cell(s, i, col3, 'eff')}
