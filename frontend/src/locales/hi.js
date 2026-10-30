@@ -162,7 +162,6 @@ export default {
   'Exercise {0} / {1}': 'व्यायाम {0} / {1}',
   'Superset · do these back-to-back, rest after both': 'सुपरसेट · इन्हें लगातार करें, दोनों के बाद आराम',
   'Freestyle workout — add your first exercise.': 'फ्रीस्टाइल वर्कआउट — पहला व्यायाम जोड़ें।',
-  'Finish workout early · {0} exercises': 'जल्दी समाप्त करें · {0} व्यायाम',
   'Rest over — next set!': 'आराम खत्म — अगला सेट!',
   'Hi {0}': 'नमस्ते {0}',
   'This week': 'इस हफ़्ते',
