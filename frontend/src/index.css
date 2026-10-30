@@ -596,8 +596,7 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .setrow.pv.eff3 .stp button{width:20px}
 .setrow .prev,.sethead .p-sp{width:50px;flex:none;text-align:center}
 .setrow .prev{font-size:12px;line-height:1.2;color:var(--label-2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
-.setrow .prev i,.sethead .p-sp i{display:block;font-style:normal;font-size:11px;color:var(--label-3)}
-.sethead .p-sp i{text-transform:none;letter-spacing:0}
+.setrow .prev i{display:block;font-style:normal;font-size:11px;color:var(--label-3)}
 .setrow.eff3 .stp.eff button{width:20px}
 .setrow.eff3 .stp .num{font-size:14px}
 /* a coluna do × por serie existe so na tela de edicao de um treino finalizado; o espacador do
