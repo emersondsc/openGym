@@ -87,6 +87,17 @@ export function stepEffort(kind, cur, dir) {
 // the first keystroke into the floor and fight the input.
 export const capEffort = (kind, v) =>
   (v == null || !EFFORT[kind] ? v : Math.min(EFFORT[kind].max, v))
+// A barra do popup de esforço, do mais leve para o mais pesado. Termina no RIR 5 / RPE 6 porque
+// acima disso a série não conta como trabalho (EFFORT.max do RIR é só o teto do que se digita).
+const EFFORT_BAR = { rir: [5, 0], rpe: [6, 10] }
+export const effortStops = kind => {
+  const [from, to] = EFFORT_BAR[kind], { step } = EFFORT[kind]
+  const dir = Math.sign(to - from)
+  return Array.from({ length: Math.abs(to - from) / step + 1 }, (_, i) => from + dir * i * step)
+}
+export const nearestStop = (stops, v) => stops.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a))
+// Onde o popup abre numa série sem valor e sem série anterior: RIR 2 == RPE 8.
+export const EFFORT_START = { rir: 2, rpe: 8 }
 // Which scale a profile logs. `showRir` is the boolean this replaced and is only consulted
 // when the profile has no answer of its own — an explicit 'none' has to win over it, or a
 // backup or another device that still carries the old flag would switch the column back on.
