@@ -93,6 +93,7 @@ function readState(uid) {
 
 // Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
+         cleanPushSub, restSeconds, sameSiteWrite,
          readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
          ROUTINE_HANDLERS, meso, micro, livePresence };
 
@@ -103,6 +104,25 @@ try { vapid = JSON.parse(fs.readFileSync(vapidFile, 'utf8')); }
 catch { vapid = webpush.generateVAPIDKeys(); fs.writeFileSync(vapidFile, JSON.stringify(vapid), { mode: 0o600 }); }
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || (SECURE ? ORIGIN : 'mailto:admin@localhost');
 webpush.setVapidDetails(VAPID_SUBJECT, vapid.publicKey, vapid.privateKey);
+
+// Só os serviços de push dos navegadores: `endpoint` vem do cliente e o servidor faz POST nele, então
+// sem esta lista qualquer sessão mandaria o servidor falar com qualquer host. Devolve só os campos
+// que o envio usa (o resto do objeto iria parar no db.json), ou null.
+const PUSH_HOSTS = [
+  /^fcm\.googleapis\.com$/,
+  /^([a-z0-9-]+\.)*push\.apple\.com$/,
+  /^([a-z0-9-]+\.)*push\.services\.mozilla\.com$/,
+  /^([a-z0-9-]+\.)*notify\.windows\.com$/
+];
+const MAX_SUBS_PER_USER = 10;
+function cleanPushSub(sub) {
+  const short = (v, n) => typeof v === 'string' && !!v && v.length <= n;
+  if (!short(sub?.endpoint, 2048) || !short(sub?.keys?.p256dh, 256) || !short(sub?.keys?.auth, 256)) return null;
+  let u;
+  try { u = new URL(sub.endpoint); } catch { return null; }
+  if (u.protocol !== 'https:' || u.port || !PUSH_HOSTS.some(re => re.test(u.hostname))) return null;
+  return { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } };
+}
 
 async function sendPush(userId, payload) {
   const subs = db.subs.filter(s => s.userId === userId);
@@ -129,6 +149,11 @@ async function sendPush(userId, payload) {
 // Rest-timer alerts: client schedules on start/extend, cancels on skip or on-screen completion —
 // this only fires when the tab was backgrounded/suspended and never got to cancel it itself.
 const restTimers = new Map(); // userId -> Timeout
+// null quando o cliente não mandou um número: sem isto a ausência virava um alerta em 1 s.
+function restSeconds(v) {
+  const sec = Math.round(+v);
+  return sec >= 1 ? Math.min(3600, sec) : null;
+}
 function scheduleRestTimer(userId, sec) {
   const t = restTimers.get(userId);
   if (t) clearTimeout(t);
@@ -305,6 +330,11 @@ function requireAdmin(req, res) {
   if (!isAdmin(user)) { json(res, 403, { error: 'forbidden' }); return null; }
   return user;
 }
+// `SameSite=Lax` trata os irmãos de edsc.fun como o mesmo site, e share.edsc.fun serve HTML público:
+// um POST de lá levaria o cookie. Cliente sem navegador (o agente) não manda este cabeçalho.
+function sameSiteWrite(req) {
+  return req.method !== 'GET' && req.method !== 'HEAD' && req.headers['sec-fetch-site'] === 'same-site';
+}
 function sessionCookie(user) {
   return `gymsid=${makeSession(user)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly;${SECURE} SameSite=Lax`;
 }
@@ -418,7 +448,6 @@ const routes = {
     if (!state || typeof state !== 'object' || (state.workouts != null && !Array.isArray(state.workouts))) { console.error('[coach] corrupt schema', safeUid); return json(res, 500, { error: 'state corrupt', code: 'STATE_CORRUPT', hint: 'restore backup' }); }
     try {
       const { analysis, progress } = buildAnalysis(state);
-      if (analysis.n_sets > 20000) return json(res, 200, { analysis, progress, meta: { uid: user.id, generatedAt: Date.now(), n_sets: analysis.n_sets, n_sessions: analysis.n_sessions, period: analysis.period, truncated: true, limitedTo: 20000 } }, { 'Cache-Control': 'private, no-store, max-age=0', 'Vary': 'Cookie', 'Pragma': 'no-cache' });
       json(res, 200, { analysis, progress, meta: { uid: user.id, generatedAt: Date.now(), n_sets: analysis.n_sets, n_sessions: analysis.n_sessions, period: analysis.period } }, { 'Cache-Control': 'private, no-store, max-age=0', 'Vary': 'Cookie', 'Pragma': 'no-cache' });
     } catch (e) { console.error('[coach] build error', safeUid, e); json(res, 500, { error: 'server error' }); }
   },
@@ -638,10 +667,15 @@ const routes = {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
-    const sub = body.subscription;
-    if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return json(res, 400, { error: 'invalid subscription' });
+    const sub = cleanPushSub(body.subscription);
+    if (!sub) return json(res, 400, { error: 'invalid subscription' });
     db.subs = db.subs.filter(s => s.endpoint !== sub.endpoint);
-    db.subs.push({ userId: user.id, endpoint: sub.endpoint, keys: sub.keys, created: new Date().toISOString() });
+    db.subs.push({ userId: user.id, ...sub, created: new Date().toISOString() });
+    const mine = db.subs.filter(s => s.userId === user.id);
+    if (mine.length > MAX_SUBS_PER_USER) {       // a mais antiga sai: aparelho trocado não avisa
+      const drop = new Set(mine.slice(0, mine.length - MAX_SUBS_PER_USER));
+      db.subs = db.subs.filter(s => !drop.has(s));
+    }
     saveDb();
     json(res, 200, { ok: true });
   },
@@ -666,7 +700,7 @@ const routes = {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
-    const sec = Math.max(1, Math.min(3600, Math.round(+body.seconds || 0)));
+    const sec = restSeconds(body.seconds);
     if (!sec) return json(res, 400, { error: 'seconds required' });
     scheduleRestTimer(user.id, sec);
     json(res, 200, { ok: true });
@@ -785,7 +819,8 @@ const routes = {
 // Handlers de rotina: recebem o roteador pronto (readSession/readState/atomicWrite) por injeção,
 // para não haver import circular entre server.js e routines.js.
 Object.assign(ROUTINE_HANDLERS, routines.makeHandlers({
-  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH
+  readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, CATALOG_PATH,
+  isAdmin, livePresence
 }));
 // Mesociclo: MESMO mapa, porque o `matchRoute` procura handler de padrão só em ROUTINE_HANDLERS —
 // registrar num mapa próprio deixaria a rota de ativação respondendo 404.
@@ -819,10 +854,14 @@ Object.assign(ROUTINE_HANDLERS, micro.makeHandlers({
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://x');
+  // Fora do try de baixo, um `//` viraria rejeição não tratada, e isso derruba o processo.
+  let url;
+  try { url = new URL(req.url, 'http://x'); }
+  catch { return json(res, 400, { error: 'bad url' }); }
   const key = req.method + ' ' + url.pathname;     // usado só pelo catch abaixo
   const hit = matchRoute(req.method, url.pathname);
   if (!hit) return json(res, 404, { error: 'not found' });
+  if (sameSiteWrite(req)) return json(res, 403, { error: 'same-site write refused', code: 'SAME_SITE' });
   try { await hit.handler(req, res, hit.params); }
   catch (e) {
     console.error(key, e);

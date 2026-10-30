@@ -95,12 +95,20 @@ export function stillIntact(S, ids, hashes) {
 
 /* ---------------------------------------------------------------- validação (RF-5..RF-9) */
 
+/** O modo que a entrada vai gravar. Validação e gravação usam a mesma regra: com regras diferentes,
+ *  um campo era conferido num modo e salvo em outro, sem passar pelo limite daquele modo. */
+function effectiveMode(raw, before, meta) {
+  return raw.mode === 'normal' ? 'reps'
+    : raw.mode || (before.mode === 'normal' ? 'reps' : null) || before.mode
+      || (meta.eq === 'cardio' ? 'cardio' : 'reps');
+}
+
 /**
  * Forma da publicação. `ex` é ARRAY aqui (substituição total) — o `validateRoutineBody` do
  * routines.js é o validador do PATCH (merge, `ex` chaveado por id) e recusaria este payload (B1).
  * O legado do estado vivo (`mode:"normal"`, `sg:0`) é aceito e normalizado (A5d).
  */
-export function validatePublish(body, catalog, custom, hoje) {
+export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) {
   const bad = (code, field, message, allowed) => ({ error: message, code, field, ...(allowed ? { allowed } : {}) });
   if (!body || typeof body !== 'object' || Array.isArray(body)) return bad('BAD_BODY', null, 'body must be an object');
   if (typeof body.meso_id !== 'string' || !MESO_RE.test(body.meso_id)) {
@@ -134,6 +142,7 @@ export function validatePublish(body, catalog, custom, hoje) {
       return bad('BAD_PROG', `${where}.prog`, `prog must be one of ${PROG_ALLOWED.join('|')}`, PROG_ALLOWED);
     }
     if (!Array.isArray(r.ex) || r.ex.length < 1) return bad('BAD_EX', `${where}.ex`, 'ex must be a non-empty array');
+    const prevEx = new Map(((prevRoutines.find(x => x.id === r.id) || {}).ex || []).map(e => [e.id, e]));
     const exIds = new Set();
     for (let j = 0; j < r.ex.length; j++) {
       const raw = r.ex[j], exWhere = `${where}.ex.${raw && raw.id ? raw.id : j}`;
@@ -144,7 +153,7 @@ export function validatePublish(body, catalog, custom, hoje) {
       exIds.add(raw.id);
       // Defaults do app antes de validar, com o modo efetivo e o `eq` do catálogo (M17).
       const meta = catalog ? (catalog.get(raw.id) || {}) : {};
-      const mode = raw.mode === 'normal' ? 'reps' : (raw.mode || (meta.eq === 'cardio' ? 'cardio' : 'reps'));
+      const mode = effectiveMode(raw, prevEx.get(raw.id) || {}, meta);
       const filled = stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...raw, id: raw.id, mode }, mode);
       // `sg: 0` e `sg: ""` são o marcador de "sem superset" do estado antigo: some antes de validar,
       // senão `isNewEntry` os leria como legado INTRODUZIDO e recusaria (A5d).
@@ -197,13 +206,9 @@ export function materializeRoutine(r, catalog, prev) {
   const prevEx = new Map((((prev || {}).ex) || []).map(e => [e.id, e]));
   const ex = r.ex.map(raw => {
     const meta = catalog ? (catalog.get(raw.id) || {}) : {};
-    const before = prevEx.get(raw.id) || {};
-    const declared = raw.mode;
-    const mode = declared === 'normal' ? 'reps'
-      : declared || (before.mode === 'normal' ? 'reps' : null) || before.mode
-        || (meta.eq === 'cardio' ? 'cardio' : 'reps');
+    const mode = effectiveMode(raw, prevEx.get(raw.id) || {}, meta);
     const merged = stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...raw, id: raw.id, mode }, mode);
-    if (merged.sg === 0) delete merged.sg;                     // marcador de legado, sem significado
+    if (merged.sg === 0 || merged.sg === '') delete merged.sg; // marcador de legado, sem significado
     return merged;
   });
   cleanupSg(ex);
@@ -299,7 +304,7 @@ export function makeHandlers(deps) {
     const custom = new Set((S0.customEx || []).map(c => c.id));
     const hoje = todaySP();
 
-    const bad = validatePublish(body, catalog, custom, hoje);
+    const bad = validatePublish(body, catalog, custom, hoje, S0.routines || []);
     if (bad) return json(res, 400, bad);
 
     const { datas } = findConflicts(S0, body);

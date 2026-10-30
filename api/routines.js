@@ -360,7 +360,8 @@ export function withState(deps, uid, opts, fn) {
 /* ---------------------------------------------------------------- handlers */
 
 export function makeHandlers(deps) {
-  const { readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, catalogPath } = deps;
+  const { readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, catalogPath,
+          isAdmin, livePresence } = deps;
 
   async function list(req, res) {
     const user = readSession(req);
@@ -383,10 +384,10 @@ export function makeHandlers(deps) {
     if (!user) return json(res, 401, { error: 'not signed in' });
     const q = new URL(req.url, 'http://x').searchParams;
     const want = q.get('uid');
-    const isAdmin = !!user.admin;
-    if (want && want !== user.id && !isAdmin) return json(res, 403, { error: 'forbidden' });
-    const limit = Math.max(1, Math.min(500, +(q.get('limit') || 50)));
-    json(res, 200, readAudit(DATA, want && isAdmin ? want : user.id, limit));
+    const admin = isAdmin ? isAdmin(user) : !!user.admin;   // inclui ADMIN_UIDS, não só o campo
+    if (want && want !== user.id && !admin) return json(res, 403, { error: 'forbidden' });
+    const limit = Math.max(1, Math.min(500, +q.get('limit') || 50));
+    json(res, 200, readAudit(DATA, want && admin ? want : user.id, limit));
   }
 
   async function patch(req, res, params) {
@@ -447,6 +448,11 @@ export function makeHandlers(deps) {
     }
     const pre = checkIfMatch(S0, ifMatch);
     if (pre) return json(res, pre.code, pre.body);
+    // O treino em andamento é local do aparelho (o PUT tira `active` do estado): quem sabe dele é a
+    // presença. Ela não diz qual rotina está em uso, então qualquer treino vivo segura o DELETE.
+    if (!force && livePresence && livePresence(user.id)) {
+      return json(res, 409, { error: 'a workout is in progress on a device', code: 'ROUTINE_IN_USE' });
+    }
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'delete-routine', uid: user.id, dropActive: true },
       S => {

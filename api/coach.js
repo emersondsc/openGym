@@ -16,7 +16,9 @@ function isoWeekKeyUTC(dateStr){
   const d = new Date(dateStr + 'T12:00:00Z');
   const day = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - day + 3);
-  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  // Meio-dia, como `d`: com 00:00 sobrava meia semana exata nos anos em que a primeira quinta cai
+  // em 7/jan (2021, 2027), e o Math.round jogava o ano inteiro uma semana para frente.
+  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4, 12));
   const week = Math.round((d - firstThu) / 604800000) + 1;
   return `${d.getUTCFullYear()}-S${String(week).padStart(2,'0')}`;
 }
