@@ -9,6 +9,7 @@ import { dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan } from '../
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
+import ExerciseProgressCard from '../components/ExerciseProgressCard.jsx'
 
 // Home = what to do now + a quick glance. Deep charts & history live in Stats.
 export default function Home() {
@@ -213,5 +214,6 @@ export default function Home() {
         <div className="muted small" style={{ marginTop: 6 }}>{t('No plan this week yet.')}</div>
       </div>
     )}
+    <ExerciseProgressCard />
   </div>
 }
