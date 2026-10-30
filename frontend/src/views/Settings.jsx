@@ -309,13 +309,23 @@ function PasskeysCard({ toast }) {
     setBusy(false)
   }
   const start = () => attempt(async () => { setRemoving(null); setReady(await passkeyAddStart()) })
-  const finish = () => attempt(async () => {
-    const step = ready
-    setReady(null)
-    await passkeyAddFinish(step, deviceName())
-    await load()
-    toast(t('Passkey added'))
-  })
+  // Aqui o sistema não dá como separar "fechou a janela" de "este browser não salva passkey": os dois
+  // são NotAllowedError. Sem aviso, a linha só voltaria ao que era, como se nada tivesse acontecido.
+  const finish = async () => {
+    setBusy(true)
+    try {
+      await passkeyAddFinish(ready, deviceName())
+      setReady(null)
+      await load()
+      toast(t('Passkey added'))
+    } catch (e) {
+      if (e.status) setReady(null)                // o servidor recusou: a etapa precisa recomeçar
+      if (e.name === 'InvalidStateError') { setReady(null); toast(t('This device already has a passkey for this profile.')) }
+      else if (e.name === 'NotAllowedError') toast(t('The passkey was not created. The window was closed, or this browser cannot save passkeys here.'))
+      else toast(e.message || t('Could not change passkeys'))
+    }
+    setBusy(false)
+  }
   const remove = () => attempt(async () => {
     await passkeyRemove(removing.id)
     setRemoving(null)

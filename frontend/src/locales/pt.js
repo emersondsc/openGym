@@ -446,6 +446,7 @@ export default {
   'Added {0}': 'Adicionada em {0}',
   'Remove {0}': 'Remover {0}',
   'Passkey added': 'Passkey adicionada',
+  'The passkey was not created. The window was closed, or this browser cannot save passkeys here.': 'A passkey não foi criada. A janela foi fechada, ou este browser não consegue salvar passkeys aqui.',
   'Passkey removed': 'Passkey removida',
   'Could not change passkeys': 'Não foi possível alterar as passkeys',
   'This device already has a passkey for this profile.': 'Este aparelho já tem uma passkey deste perfil.',

@@ -115,6 +115,7 @@ describe('passkeys da conta', () => {
     const me = await signUp('Ana');
     const { key, options } = await add(me.cookie, me.key);
     assert.deepEqual(options.excludeCredentials.map(c => c.id), [b64u(me.key.id)]);
+    assert.equal(options.authenticatorSelection.authenticatorAttachment, 'platform');
     const keys = await list(me.cookie);
     assert.equal(keys.length, 2);
     assert.equal(keys[1].name, 'Windows');

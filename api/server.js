@@ -658,7 +658,9 @@ const routes = {
       rpName: RP_NAME, rpID: RP_ID,
       userID: Buffer.from(user.id), userName: user.name, userDisplayName: user.name,
       attestationType: 'none',
-      authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+      // `platform`: o botão promete "neste aparelho". Sem isto o Windows oferece salvar no celular,
+      // que já tem a passkey dele, e a pessoa não ganha nada no PC.
+      authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', userVerification: 'preferred' },
       excludeCredentials: credsOf(user).map(c => ({ id: c.id }))
     });
     const cid = putChallenge({ challenge: options.challenge, addFor: user.id });
