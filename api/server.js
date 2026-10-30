@@ -96,10 +96,31 @@ function checkState(s) {
 function readState(uid) {
   try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
 }
+// Para as rotas de /api/data: null é só "ainda não existe". Arquivo que existe e não dá para ler
+// lança, porque tratá-lo como vazio faria o próximo PUT apagar o que ainda dá para restaurar.
+function readStateStrict(uid) {
+  let txt;
+  try { txt = fs.readFileSync(stateFile(uid), 'utf8'); }
+  catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  return JSON.parse(txt);
+}
+const stateCorrupt = (res, uid, e) => {
+  console.error('[og-state] corrupt', uid, e.message);
+  json(res, 500, { error: 'state corrupt', code: 'STATE_CORRUPT', hint: 'restore backup' });
+};
+// O carimbo "ativado pelo assistente" só entra com assinatura (mesma regra de api/meso.js). O app
+// escreve mesociclo por aqui, então "user" passa, e o carimbo que já estava no disco é mantido.
+function guardMesoStamps(state, cur, actor) {
+  const before = new Map((cur?.mesos || []).map(m => [m.id, m]));
+  for (const m of state.mesos || []) {
+    if (m.activatedBy === 'assistant' && actor.verified !== 'signature'
+        && before.get(m.id)?.activatedBy !== 'assistant') m.activatedBy = 'user';
+  }
+}
 
 // Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
-         cleanPushSub, restSeconds, sameSiteWrite, saveDbQuiet,
+         cleanPushSub, restSeconds, sameSiteWrite, saveDbQuiet, readStateStrict, guardMesoStamps,
          readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
          ROUTINE_HANDLERS, meso, micro, livePresence };
 
@@ -595,13 +616,13 @@ const routes = {
   'GET /api/data': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    try {
-      const state = JSON.parse(fs.readFileSync(stateFile(user.id), 'utf8'));
-      // `rev` injetado (0 para um estado nunca escrito pela versão nova): sem isto o cliente não
-      // teria base para mandar If-Match no primeiro sync.
-      if (state && typeof state === 'object') state.rev = Number.isInteger(state.rev) ? state.rev : 0;
-      json(res, 200, { state });
-    } catch { json(res, 200, { state: null }); }
+    let state;
+    try { state = readStateStrict(user.id); }
+    catch (e) { return stateCorrupt(res, user.id, e); }
+    // `rev` injetado (0 para um estado nunca escrito pela versão nova): sem isto o cliente não
+    // teria base para mandar If-Match no primeiro sync.
+    if (state && typeof state === 'object') state.rev = Number.isInteger(state.rev) ? state.rev : 0;
+    json(res, 200, { state });
   },
 
   'PUT /api/data': async (req, res) => {
@@ -618,8 +639,9 @@ const routes = {
       console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid`);
       return json(res, 400, { error: bad });
     }
-    let cur = null;
-    try { cur = readState(user.id); } catch { /* first write */ }
+    let cur;
+    try { cur = readStateStrict(user.id); }
+    catch (e) { return stateCorrupt(res, user.id, e); }
     const badEx = checkRoutineFields(body.state, cur);
     if (badEx) {
       console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid code=${badEx.code}`);
@@ -628,6 +650,7 @@ const routes = {
     }
     const actor = readActor(req, user.id, raw, req.method, '/api/data');
     if (actor.err) return json(res, 400, { error: 'actor signature invalid', code: actor.err });
+    guardMesoStamps(body.state, cur, actor);
     // Token forte (igualdade) quando o cliente manda um; senão o guard por `_ts` de sempre, para
     // o PWA publicado seguir funcionando (spec_api_rotinas RF-5/RF-10).
     const curRev = (cur && Number.isInteger(cur.rev)) ? cur.rev : 0;
@@ -743,6 +766,8 @@ const routes = {
         exIdx: +body.exIdx || 0, exTotal: +body.exTotal || 0,
         setsDone: +body.setsDone || 0, setsTotal: +body.setsTotal || 0,
         startedAt: +body.startedAt || Date.now(),
+        // string = rotina em uso; null = treino livre; ausente = app antigo, que não sabe dizer
+        routineId: typeof body.routineId === 'string' ? body.routineId.slice(0, 64) : body.routineId === null ? null : undefined,
         updatedAt: Date.now()
       });
     } else presence.delete(user.id);

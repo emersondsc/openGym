@@ -138,7 +138,110 @@ describe('handlers de rotina', () => {
   });
 });
 
+describe('estado em /api/data', () => {
+  const file = S.stateFile('corrompido');
+  test('ausente é null; ilegível lança', () => {
+    assert.equal(S.readStateStrict('corrompido'), null);
+    fs.writeFileSync(file, '{ cortado');
+    assert.throws(() => S.readStateStrict('corrompido'));
+    fs.writeFileSync(file, '');
+    assert.throws(() => S.readStateStrict('corrompido'));
+    fs.rmSync(file);
+  });
+});
+
+describe('carimbo do mesociclo no PUT geral', () => {
+  const claimed = { verified: 'claimed' }, signed = { verified: 'signature' };
+  const state = by => ({ mesos: [{ id: 'm', activatedBy: by }] });
+  test('sem assinatura, "assistant" novo vira "user"', () => {
+    const s = state('assistant');
+    S.guardMesoStamps(s, { mesos: [] }, claimed);
+    assert.equal(s.mesos[0].activatedBy, 'user');
+  });
+  test('o que já estava no disco, a assinatura e "user" passam', () => {
+    const a = state('assistant'), b = state('assistant'), c = state('user');
+    S.guardMesoStamps(a, state('assistant'), claimed);
+    S.guardMesoStamps(b, null, signed);
+    S.guardMesoStamps(c, null, claimed);
+    assert.deepEqual([a, b, c].map(x => x.mesos[0].activatedBy), ['assistant', 'assistant', 'user']);
+  });
+});
+
+test('PATCH em rotina sem `ex` funciona', () => {
+  const cur = { id: 'a' };
+  const out = R.mergeRoutine(cur, { ex: { '0326': { sets: 3 } } }, new Map([['0326', { eq: 'dumbbell' }]]), new Set());
+  assert.equal(out, null);
+  assert.equal(cur.ex.length, 1);
+});
+
+describe('DELETE com a rotina do treino vivo', () => {
+  async function run(live) {
+    const res = {};
+    const H = R.makeHandlers({
+      readSession: () => ({ id: 'u1' }), readState: () => ({ rev: 3, routines: [{ id: 'a', ex: [] }] }),
+      stateFile: () => path.join(TMP, 'state-u1.json'), atomicWrite: () => {},
+      readRawBody: async () => '', DATA: TMP, livePresence: () => live,
+      readActor: () => ({ actor: 'hermes', verified: 'signature' }),
+      json: (_r, code, body) => { res.code = code; res.body = body; }
+    });
+    await H.deleteRoutine({ method: 'DELETE', url: '/api/routines/a', headers: { 'if-match': '3' } }, {}, ['a']);
+    return res.code;
+  }
+  test('segura só a rotina em uso', async () => {
+    assert.equal(await run({ routineId: 'a' }), 409);
+    assert.equal(await run({ routineId: 'b' }), 200);
+    assert.equal(await run({ routineId: null }), 200);      // treino livre
+    assert.equal(await run({ name: 'app antigo' }), 409);   // não sabe dizer: segura
+  });
+});
+
+describe('auditoria', () => {
+  const dirOf = () => fs.mkdtempSync(path.join(TMP, 'audit-'));
+  const fileOf = d => path.join(d, 'audit.jsonl');
+  test('encadeia passando por linha maior que o pedaço lido', () => {
+    const d = dirOf();
+    R.appendAudit(d, { uid: 'a', otp: '1', big: 'x'.repeat(70 * 1024) });
+    R.appendAudit(d, { uid: 'a', otp: '2', big: 'é'.repeat(70 * 1024) });
+    R.appendAudit(d, { uid: 'a', otp: '3' });
+    const r = R.readAudit(d, 'a', 10);
+    assert.equal(r.chainIntact, true);
+    assert.equal(r.linksIntact, true);
+  });
+  test('adulterar uma linha ou quebrar um elo é detectado', () => {
+    const d = dirOf();
+    for (const otp of ['1', '2', '3']) R.appendAudit(d, { uid: 'a', otp });
+    const lines = fs.readFileSync(fileOf(d), 'utf8').trim().split('\n');
+    fs.writeFileSync(fileOf(d), lines[0] + '\n' + lines[1].replace('"otp":"2"', '"otp":"9"') + '\n' + lines[2] + '\n');
+    assert.equal(R.readAudit(d, 'a', 10).linksIntact, false);
+    fs.writeFileSync(fileOf(d), lines[0] + '\n' + lines[2] + '\n');
+    assert.equal(R.readAudit(d, 'a', 10).linksIntact, false);
+  });
+  test('depois de cortar o começo, os elos seguem válidos e a cadeia não', () => {
+    const d = dirOf();
+    for (const otp of ['1', '2', '3']) R.appendAudit(d, { uid: 'a', otp });
+    const lines = fs.readFileSync(fileOf(d), 'utf8').trim().split('\n');
+    fs.writeFileSync(fileOf(d), lines.slice(1).join('\n') + '\n');
+    const r = R.readAudit(d, 'a', 10);
+    assert.equal(r.linksIntact, true);
+    assert.equal(r.chainIntact, false);
+  });
+  test('rotação mantém 5000 linhas, inclusive com o arquivo trocado por fora', () => {
+    const d = dirOf();
+    R.appendAudit(d, { uid: 'a', otp: '0' });
+    fs.writeFileSync(fileOf(d), Array.from({ length: 5000 }, (_, i) => JSON.stringify({ uid: 'a', i, h: 'h' + i })).join('\n') + '\n');
+    R.appendAudit(d, { uid: 'a', otp: '1' });
+    R.appendAudit(d, { uid: 'a', otp: '2' });
+    assert.equal(fs.readFileSync(fileOf(d), 'utf8').trim().split('\n').length, 5000);
+  });
+});
+
 describe('publicação: uma regra de modo só', () => {
+  test('`autorizar.datas` que não é lista é 400, não exceção', () => {
+    const b = { meso_id: 'meso-2026-10-27', semana: 1, autorizar: { datas: 5 },
+                routines: [{ id: 'a', name: 'A', emoji: 'x', ex: [{ id: '0326', sets: 3 }] }] };
+    const bad = M.validatePublish(b, new Map([['0326', {}]]), new Set(), '2026-10-30');
+    assert.equal(bad.code, 'BAD_AUTORIZAR');
+  });
   const catalog = new Map([['0326', { eq: 'dumbbell' }]]);
   const body = ex => ({ meso_id: 'meso-2026-10-27', semana: 1,
                         routines: [{ id: 'a', name: 'A', emoji: 'x', ex: [{ id: '0326', sets: 3, ...ex }] }] });

@@ -219,7 +219,7 @@ Quem vê o quê: o dono vê **só o dele**; admin (`user.admin` ou uid em `ADMIN
 `?uid=<outro>` e ver o daquele perfil. Pedir uid alheio sem ser admin → `403 forbidden`.
 
 ```
-200  { entries: [ …linhas do audit.jsonl… ], chainIntact: true }
+200  { entries: [ …linhas do audit.jsonl… ], chainIntact: true, linksIntact: true }
 401  { error: "not signed in" }
 403  { error: "forbidden" }
 ```
@@ -228,7 +228,10 @@ Cada `entry` tem: `otp` (= `etag` da escrita), `uid`, `rev`, `revBefore`, `revAf
 `actor`, `verified`, `stateHash`, `beforeHash`, `action`, `at`, `prev`, `h` — mais o que o handler
 acrescentou (ex.: `routines`, `weekCleaned`, e `ifMatch` no caso do `PUT`).
 
-`chainIntact: false` significa que a **primeira** linha do arquivo tem `prev` não-nulo: houve
+`linksIntact` confere cada linha que está no arquivo (o `h` e o `prev`), e continua útil depois da
+rotação. `chainIntact` exige isso e ainda que a cadeia venha desde o começo.
+
+`chainIntact: false` com `linksIntact: true` significa que a **primeira** linha tem `prev` não-nulo: houve
 rotação ou corte. É informação, não erro.
 
 ### 3.5 `PUT /api/data` — a porta antiga, ainda aberta

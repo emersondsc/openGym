@@ -19,6 +19,7 @@ const MODE_LEGACY = ['normal'];   // escrito por uma versão anterior do agente;
 const REP_RANGE = /^\s*(\d{1,3})\s*-\s*(\d{1,3})\s*$/;
 const MAX_SETS = 20, MAX_WEIGHT = 1000, MAX_REPS = 100, MAX_SEC = 3600;
 const AUDIT_MAX_LINES = 5000;     // rotação: mantém as últimas N linhas
+const AUDIT_TAIL = 64 * 1024;     // o bastante para achar a última linha sem ler o arquivo
 
 // O catálogo mora em api/catalog.js (leitor único, compartilhado com o coach.js).
 // IMPORTAR e re-exportar, nessa ordem: `loadCatalog` é chamado por nome local mais abaixo, e um
@@ -202,6 +203,7 @@ export function validateRoutineBody(body) {
  * O merge é SOBRE o item existente: o que a intenção não cita não muda (nem é normalizado).
  */
 export function mergeRoutine(cur, body, catalog, custom) {
+  if (!Array.isArray(cur.ex)) cur.ex = [];      // o PUT aceita rotina sem `ex`
   if (body.exRemoved !== undefined) {
     for (const id of body.exRemoved) {
       const i = cur.ex.findIndex(e => e.id === id);
@@ -253,23 +255,52 @@ export function sweepRoutineRefs(S, rid) {
 
 /* ---------------------------------------------------------------- auditoria */
 
+/** Última linha do arquivo, lendo só o fim dele; null quando não há nenhuma. */
+function lastAuditLine(f) {
+  let fd;
+  try { fd = fs.openSync(f, 'r'); } catch { return null; }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const n = Math.min(size, AUDIT_TAIL);
+    const buf = Buffer.alloc(n);
+    fs.readSync(fd, buf, 0, n, size - n);
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
+    // A primeira linha do pedaço pode estar cortada: só serve se for o arquivo inteiro.
+    if (lines.length >= 2 || n === size) return lines[lines.length - 1] ?? null;
+  } finally { fs.closeSync(fd); }
+  return fs.readFileSync(f, 'utf8').trimEnd().split('\n').pop();
+}
+
+// Quantas linhas o arquivo tem, por arquivo. Vale enquanto o tamanho for o que este processo
+// deixou; se alguém mexeu nele (um restore, por exemplo), recontar é uma leitura só.
+const auditSeen = new Map();
+const auditSize = f => { try { return fs.statSync(f).size; } catch { return 0; } };
+const auditCount = f => {
+  try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).length; } catch { return 0; }
+};
+
 export function appendAudit(dir, rec) {
   const f = path.join(dir, 'audit.jsonl');
   let prev = null;
   try {
-    const lines = fs.readFileSync(f, 'utf8').trimEnd().split('\n').filter(Boolean);
-    if (lines.length) prev = JSON.parse(lines[lines.length - 1]).h;
+    const last = lastAuditLine(f);
+    if (last) prev = JSON.parse(last).h;
   } catch { /* primeiro registro */ }
   const line = JSON.stringify({ ...rec, prev, h: sha256((prev || '') + JSON.stringify(rec)) });
   try {
+    const seen = auditSeen.get(f);
+    let lines = seen && seen.size === auditSize(f) ? seen.lines : auditCount(f);
     fs.appendFileSync(f, line + '\n', { mode: 0o600 });
-    const all = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean);
-    if (all.length > AUDIT_MAX_LINES) {
+    lines += 1;
+    if (lines > AUDIT_MAX_LINES) {
+      const all = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean);
       const keep = all.slice(-AUDIT_MAX_LINES).join('\n') + '\n';
       const tmp = f + '.tmp';
       fs.writeFileSync(tmp, keep);
       fs.renameSync(tmp, f);
+      lines = AUDIT_MAX_LINES;
     }
+    auditSeen.set(f, { lines, size: auditSize(f) });
   } catch (e) {
     console.error('[og-routine] audit write failed', e.message);
   }
@@ -280,7 +311,7 @@ export function readAudit(dir, uidFilter, limit) {
   const f = path.join(dir, 'audit.jsonl');
   let lines = [];
   try { lines = fs.readFileSync(f, 'utf8').split('\n').filter(Boolean); }
-  catch { return { entries: [], chainIntact: true }; }
+  catch { return { entries: [], chainIntact: true, linksIntact: true }; }
   const entries = [];
   for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
     try {
@@ -290,8 +321,17 @@ export function readAudit(dir, uidFilter, limit) {
   }
   let first = null;
   try { first = JSON.parse(lines[0]); } catch { /* */ }
-  // prev não-nulo na primeira linha = houve corte/rotação: a cadeia não é contínua.
-  return { entries, chainIntact: !(first && first.prev) };
+  // Confere cada elo do que está no arquivo: o `h` da linha e o `prev` apontando para a anterior.
+  let linksIntact = true, before = null;
+  for (const raw of lines) {
+    try {
+      const { prev, h, ...rec } = JSON.parse(raw);
+      if ((before !== null && prev !== before) || h !== sha256((prev || '') + JSON.stringify(rec))) linksIntact = false;
+      before = h;
+    } catch { linksIntact = false; before = null; }
+  }
+  // prev não-nulo na primeira linha = houve corte/rotação: a cadeia não vem desde o começo.
+  return { entries, chainIntact: linksIntact && !(first && first.prev), linksIntact };
 }
 
 /* ---------------------------------------------------------------- núcleo de escrita */
@@ -449,8 +489,9 @@ export function makeHandlers(deps) {
     const pre = checkIfMatch(S0, ifMatch);
     if (pre) return json(res, pre.code, pre.body);
     // O treino em andamento é local do aparelho (o PUT tira `active` do estado): quem sabe dele é a
-    // presença. Ela não diz qual rotina está em uso, então qualquer treino vivo segura o DELETE.
-    if (!force && livePresence && livePresence(user.id)) {
+    // presença. App antigo não diz a rotina (`undefined`), e aí qualquer treino vivo segura o DELETE.
+    const live = !force && livePresence ? livePresence(user.id) : null;
+    if (live && (live.routineId === undefined || live.routineId === rid)) {
       return json(res, 409, { error: 'a workout is in progress on a device', code: 'ROUTINE_IN_USE' });
     }
     const r = withState(deps, user.id,

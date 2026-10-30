@@ -187,6 +187,9 @@ export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) 
     if (!az || typeof az !== 'object' || Array.isArray(az)) {
       return bad('BAD_AUTORIZAR', 'autorizar', 'autorizar must be an object');
     }
+    if (az.datas !== undefined && !Array.isArray(az.datas)) {
+      return bad('BAD_AUTORIZAR', 'autorizar.datas', 'autorizar.datas must be an array');
+    }
     for (const d of az.datas || []) {
       if (!realDate(d)) return bad('BAD_AUTORIZAR', 'autorizar.datas', `"${d}" must be a real calendar date YYYY-MM-DD`);
       if (!seen.has(d)) {
