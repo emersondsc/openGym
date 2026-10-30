@@ -197,10 +197,19 @@ h4.sec{
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row{display:flex;align-items:center;gap:12px}
 .row.between{justify-content:space-between}
-/* Prev, Add exercise e Next na mesma linha: o do meio cede, e quebra em duas linhas no celular */
-.wnav{gap:4px}
-.wnav .btn{flex:0 0 auto;width:auto;padding-left:6px;padding-right:6px}
-.wnav .btn:nth-child(2){flex:1 1 0;min-width:0;line-height:1.2}
+/* Prev, Add exercise e Next na mesma linha, com texto menor para caber no celular */
+.wnav{
+  position:fixed;left:var(--pad);right:var(--pad);bottom:calc(66px + var(--sab));z-index:49;
+  margin:0 auto;max-width:calc(560px - 2*var(--pad));gap:4px;border-radius:var(--r);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+}
+/* O timer fica acima desta linha para nao cobrir os botoes */
+body:has(.wnav) #timer{bottom:calc(132px + var(--sab))}
+body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
+.wnav .btn{flex:0 0 auto;width:auto;padding-left:6px;padding-right:6px;font-size:14px;white-space:nowrap}
+.wnav .btn .icn{font-size:16px}
+.wnav .btn:nth-child(2){flex:1 1 0;min-width:0;line-height:1.2;white-space:normal}   /* idioma de texto longo */
 
 /* ----------------------------------------------------------------- card -- */
 .card{
@@ -298,25 +307,22 @@ h4.sec{
 #tabbar button .icn{font-size:25px;--icon-stroke:1.65;color:var(--label)}
 #tabbar button.on{color:var(--acc)}
 #tabbar button.on .icn{--icon-stroke:2;color:inherit;opacity:1}
-#tabbar button.start{margin-top:-24px}
-#tabbar button.start .cir{
-  width:52px;height:52px;border-radius:50%;background:var(--acc);color:var(--on-acc);
-  display:flex;align-items:center;justify-content:center;position:relative;
+/* O botão inteiro é a pílula: ícone e texto dentro, na altura da barra. */
+#tabbar button.start{
+  position:relative;align-self:stretch;justify-content:center;gap:1px;padding:3px 0 2px;
+  border-radius:12px;background:var(--acc);
   box-shadow:0 6px 18px -4px color-mix(in srgb,var(--acc) 55%,transparent);
   transition:transform var(--fast) var(--ease);
 }
-#tabbar button.start:active .cir{transform:scale(.93)}
-#tabbar button.start .cir .icn{font-size:26px;--icon-stroke:2;color:inherit;opacity:1}
-#tabbar button.start span{color:var(--acc);font-weight:600}
-/* `.cir` is itself a <span>, so the label rules above and below reach it too and
-   outrank the `.cir` block — which is how the running state ended up painting an
-   orange play glyph onto an orange disc. Both states restate their own colour.
-   The disc is orange in either theme, so its glyph is black, not `--on-acc`. */
-#tabbar button.start .cir{color:var(--on-acc)}
-#tabbar button.start.rec .cir{background:var(--orange);color:#000;box-shadow:0 6px 18px -4px color-mix(in srgb,var(--orange) 55%,transparent)}
-#tabbar button.start.rec span{color:var(--orange)}
-#tabbar button.start.rec .cir::after{
-  content:'';position:absolute;inset:0;border-radius:50%;
+#tabbar button.start .cir{display:flex;align-items:center;justify-content:center}
+#tabbar button.start:active{transform:scale(.96)}
+#tabbar button.start .cir .icn{font-size:20px;--icon-stroke:2;color:inherit;opacity:1}
+#tabbar button.start span{color:var(--on-acc);font-weight:600}
+/* The orange pill is the same in either theme, so its glyph and label are black, not `--on-acc`. */
+#tabbar button.start.rec{background:var(--orange);box-shadow:0 6px 18px -4px color-mix(in srgb,var(--orange) 55%,transparent)}
+#tabbar button.start.rec span{color:#000}
+#tabbar button.start.rec::after{
+  content:'';position:absolute;inset:0;border-radius:12px;
   border:2px solid var(--orange);animation:ping 1.9s var(--ease) infinite;
 }
 @keyframes ping{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.45);opacity:0}}
@@ -914,6 +920,8 @@ h4.sec{
   #app .list{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   #modal-root .list,.narrow .list{display:flex;flex-direction:column}
   .narrow{max-width:640px;margin:0 auto}
+  .wnav{max-width:640px;bottom:86px}
+  body:has(.wnav) #timer{bottom:152px}
   .tiles{grid-template-columns:repeat(4,1fr)}
   .cols .tiles{grid-template-columns:1fr 1fr}
   #tabbar{
@@ -921,7 +929,6 @@ h4.sec{
     border:var(--hair) solid var(--sep-op);border-radius:var(--r-xl);
     padding:7px 10px 9px;box-shadow:0 12px 40px -10px rgba(0,0,0,.5);
   }
-  #tabbar button.start{margin-top:-26px}
   .sheet{left:50%;right:auto;margin-left:-320px;width:640px;border-radius:var(--r-xl) var(--r-xl) 0 0}
   .center{width:340px}
   #timer{left:50%;right:auto;margin-left:-260px;width:520px;bottom:112px}
@@ -1053,8 +1060,8 @@ h4.sec{
 /* Barra de abas e folhas: solidas, com regua, sem vidro fosco. */
 :root[data-skin="paper"] #tabbar{background:var(--bg);border-top:1px solid var(--sep);backdrop-filter:none;-webkit-backdrop-filter:none}
 :root[data-skin="paper"] #tabbar button{letter-spacing:.04em}
-:root[data-skin="paper"] #tabbar button.start .cir,
-:root[data-skin="paper"] #tabbar button.start.rec .cir::after{border-radius:3px}
+:root[data-skin="paper"] #tabbar button.start,
+:root[data-skin="paper"] #tabbar button.start.rec::after{border-radius:3px}
 :root[data-skin="paper"] .sheet{border-top:1px solid var(--sep)}
 :root[data-skin="paper"] .sheet .grab{height:2px;border-radius:0}
 :root[data-skin="paper"] .center{background:var(--surface)}
@@ -1114,8 +1121,8 @@ h4.sec{
 :root[data-skin="grind"] #toast{border-radius:var(--r-sm)}
 :root[data-skin="grind"] #tabbar{background:var(--bg-el);border-top:1px solid var(--sep);backdrop-filter:none;-webkit-backdrop-filter:none}
 :root[data-skin="grind"] #tabbar button{text-transform:uppercase;letter-spacing:.09em;font-size:9px;font-weight:600}
-:root[data-skin="grind"] #tabbar button.start .cir,
-:root[data-skin="grind"] #tabbar button.start.rec .cir::after{border-radius:9px}
+:root[data-skin="grind"] #tabbar button.start,
+:root[data-skin="grind"] #tabbar button.start.rec::after{border-radius:9px}
 
 /* ---- Pulse - app moderno: azul-noite, canto grande, um gradiente so na acao ---- */
 :root[data-skin="pulse"],
@@ -1154,7 +1161,8 @@ h4.sec{
 :root[data-skin="pulse"] .setrow .rm-sp,
 :root[data-skin="pulse"] .pr{border-radius:var(--r-sm)}
 :root[data-skin="pulse"] #tabbar{background:rgba(8,11,20,.86);border-top:1px solid var(--sep-op)}
-:root[data-skin="pulse"] #tabbar button.start .cir{background:linear-gradient(135deg,#7c5cff,#31e1c4);color:#06121a;box-shadow:0 10px 26px -8px rgba(124,92,255,.75)}
+:root[data-skin="pulse"] #tabbar button.start{background:linear-gradient(135deg,#7c5cff,#31e1c4);box-shadow:0 10px 26px -8px rgba(124,92,255,.75)}
+:root[data-skin="pulse"] #tabbar button.start span{color:#06121a}
 
 /* ---- Sage - claro, calmo, minimal: verde profundo, mais ar, zero ruido ---- */
 :root[data-skin="sage"],
@@ -1204,7 +1212,7 @@ h4.sec{
 :root[data-skin="sage"] .pr,
 :root[data-skin="sage"] #toast{border-radius:var(--r)}
 :root[data-skin="sage"] #tabbar{background:rgba(246,247,246,.88);border-top:1px solid var(--sep)}
-:root[data-skin="sage"] #tabbar button.start .cir{box-shadow:0 8px 20px -8px color-mix(in srgb,var(--acc) 60%,transparent)}
+:root[data-skin="sage"] #tabbar button.start{box-shadow:0 8px 20px -8px color-mix(in srgb,var(--acc) 60%,transparent)}
 
 
 /* ============================================================================
