@@ -51,6 +51,28 @@ export async function passkeyRegister(name, code) {
   const res = await api('/api/register/verify', { method: 'POST', body: JSON.stringify({ cid, credential: credToJSON(cred) }) })
   return res.user
 }
+export const deviceName = () => (/Windows/.test(navigator.userAgent) ? 'Windows' : IS_ANDROID ? 'Android'
+  : /iPhone/.test(navigator.userAgent) ? 'iPhone' : /iPad/.test(navigator.userAgent) ? 'iPad'
+    : /Macintosh/.test(navigator.userAgent) ? 'Mac' : 'Device')
+export const listPasskeys = () => api('/api/passkeys').then(r => r.passkeys)
+// A assinatura com uma passkey da conta, que o servidor exige para adicionar ou remover outra.
+async function provePasskey() {
+  const { cid, options } = await api('/api/passkeys/reauth/options', { method: 'POST', body: '{}' })
+  const cred = await navigator.credentials.get({ publicKey: toRequestOptions(options) })
+  return { cid, credential: credToJSON(cred) }
+}
+// Em duas etapas de propósito: criar a passkey precisa de um toque novo, porque o Safari recusa
+// `credentials.create` que venha logo depois do `get`, sem gesto da pessoa no meio.
+export async function passkeyAddStart() {
+  return api('/api/passkeys/add/options', { method: 'POST', body: JSON.stringify(await provePasskey()) })
+}
+export async function passkeyAddFinish({ cid, options }, name) {
+  const cred = await navigator.credentials.create({ publicKey: toCreationOptions(options) })
+  await api('/api/passkeys/add', { method: 'POST', body: JSON.stringify({ cid, credential: credToJSON(cred), name }) })
+}
+export async function passkeyRemove(id) {
+  await api('/api/passkeys/remove', { method: 'POST', body: JSON.stringify({ ...(await provePasskey()), id }) })
+}
 export async function passkeyLogin() {
   const { cid, options } = await api('/api/login/options', { method: 'POST', body: '{}' })
   const cred = await navigator.credentials.get({ publicKey: toRequestOptions(options) })

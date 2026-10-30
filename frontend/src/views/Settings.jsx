@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { ACCENTS, SKINS, skinOf, effAccent, todayISO, localTZ } from '../lib/format.js'
+import { ACCENTS, SKINS, skinOf, effAccent, todayISO, localTZ, fmtDate } from '../lib/format.js'
 import { effortOf } from '../lib/history.js'
-import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
+import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID, deviceName, listPasskeys, passkeyAddStart, passkeyAddFinish, passkeyRemove } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
 import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS } from '../lib/i18n.js'
@@ -103,6 +103,7 @@ export default function Settings() {
         <Row icon="lock" iconTint="var(--grey)" title={t('Passkeys not supported in this browser.')} />
       )}
     </Section>
+    {user && !DEMO && !MOBILE && webauthnOK() && <PasskeysCard toast={toast} />}
     {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
 
     {/* ---------- general ---------- */}
@@ -287,6 +288,55 @@ function MobileReminderCard({ S, update, toast }) {
       )}
     </Section>
   )
+}
+
+function PasskeysCard({ toast }) {
+  const [keys, setKeys] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [ready, setReady] = useState(null)        // prova aceita, esperando o toque que cria a passkey
+  const [removing, setRemoving] = useState(null)
+  const load = () => listPasskeys().then(setKeys).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const attempt = async fn => {
+    setBusy(true)
+    try { await fn() }
+    catch (e) {
+      // NotAllowedError é a pessoa cancelando a janela do sistema: não é erro para mostrar.
+      if (e.name === 'InvalidStateError') toast(t('This device already has a passkey for this profile.'))
+      else if (e.name !== 'NotAllowedError') toast(e.message || t('Could not change passkeys'))
+    }
+    setBusy(false)
+  }
+  const start = () => attempt(async () => { setRemoving(null); setReady(await passkeyAddStart()) })
+  const finish = () => attempt(async () => {
+    const step = ready
+    setReady(null)
+    await passkeyAddFinish(step, deviceName())
+    await load()
+    toast(t('Passkey added'))
+  })
+  const remove = () => attempt(async () => {
+    await passkeyRemove(removing.id)
+    setRemoving(null)
+    await load()
+    toast(t('Passkey removed'))
+  })
+  if (!keys) return null
+  const label = k => k.name || t('Passkey')
+
+  return <Section title={t('Passkeys')} footer={t('Add one on each device you use. If you lose all of them, this profile cannot be recovered.')}>
+    {keys.map(k => <Row key={k.id} icon="lock" iconTint="var(--acc)" title={label(k)}
+      subtitle={k.created ? t('Added {0}', fmtDate(k.created.slice(0, 10))) : null}
+      accessory={keys.length > 1 ? 'chevron' : 'none'}
+      onClick={keys.length > 1 && !busy ? () => { setReady(null); setRemoving(removing?.id === k.id ? null : k) } : undefined} />)}
+    {removing && <Row icon="shield" iconTint="var(--red)" danger title={t('Remove {0}', label(removing))}
+      subtitle={t('Confirm with one of your passkeys.')} onClick={busy ? undefined : remove} />}
+    {ready
+      ? <Row icon="sparkles" iconTint="var(--acc)" title={t('Create the passkey on this device')} accessory="chevron" onClick={busy ? undefined : finish} />
+      : <Row icon="sparkles" iconTint="var(--acc)" title={t('Add passkey on this device')} subtitle={t('Confirm with one of your passkeys.')}
+          accessory="chevron" onClick={busy ? undefined : start} />}
+  </Section>
 }
 
 function PushCard({ S, update, toast }) {

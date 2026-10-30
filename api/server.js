@@ -414,6 +414,41 @@ async function readBody(req) {
 }
 const b64uToBuf = s => Buffer.from(s, 'base64url');
 
+/* ---------- passkeys da conta ---------- */
+const MAX_PASSKEYS = 10;
+const credsOf = user => db.creds.filter(x => x.userId === user.id);
+function checkAssertion(c, credential, cred) {
+  return verifyAuthenticationResponse({
+    response: credential,
+    expectedChallenge: c.challenge,
+    expectedOrigin: ORIGIN,
+    expectedRPID: RP_ID,
+    requireUserVerification: false,
+    credential: {
+      id: cred.id,
+      publicKey: b64uToBuf(cred.publicKey),
+      counter: cred.counter,
+      transports: cred.transports
+    }
+  });
+}
+// Mexer nas passkeys pede uma passkey da conta, não só o cookie: um cookie roubado não pode virar
+// acesso permanente, porque "sair de todos os aparelhos" encerra sessões, não passkeys.
+// Devolve null quando a prova vale, ou o texto do erro.
+async function proveOwner(body, user) {
+  const c = takeChallenge(body.cid);
+  if (!c || c.reauth !== user.id) return 'challenge expired — try again';
+  const cred = credsOf(user).find(x => x.id === body.credential?.id);
+  if (!cred) return 'that passkey is not on this profile';
+  let verification;
+  try { verification = await checkAssertion(c, body.credential, cred); }
+  catch (e) { return 'verification failed: ' + e.message; }
+  if (!verification.verified) return 'not verified';
+  cred.counter = verification.authenticationInfo.newCounter;
+  cred.lastUsed = new Date().toISOString();
+  return null;
+}
+
 /* ---------- live presence (in-memory) ---------- */
 // Clients heartbeat /api/activity while a workout is on screen; the admin dashboard reads who's
 // live. Purely ephemeral — never persisted. Expires shortly after the last ping.
@@ -554,7 +589,8 @@ const routes = {
       id: credential.id, userId: user.id,
       publicKey: Buffer.from(credential.publicKey).toString('base64url'),
       counter: credential.counter || 0,
-      transports: body.credential?.response?.transports || []
+      transports: body.credential?.response?.transports || [],
+      created: user.created
     });
     saveDb();
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
@@ -575,28 +611,106 @@ const routes = {
     const cred = db.creds.find(x => x.id === body.credential?.id);
     if (!cred) return json(res, 404, { error: 'unknown passkey — create a profile first' });
     let verification;
-    try {
-      verification = await verifyAuthenticationResponse({
-        response: body.credential,
-        expectedChallenge: c.challenge,
-        expectedOrigin: ORIGIN,
-        expectedRPID: RP_ID,
-        requireUserVerification: false,
-        credential: {
-          id: cred.id,
-          publicKey: b64uToBuf(cred.publicKey),
-          counter: cred.counter,
-          transports: cred.transports
-        }
-      });
-    } catch (e) { return json(res, 400, { error: 'verification failed: ' + e.message }); }
+    try { verification = await checkAssertion(c, body.credential, cred); }
+    catch (e) { return json(res, 400, { error: 'verification failed: ' + e.message }); }
     if (!verification.verified) return json(res, 400, { error: 'not verified' });
     cred.counter = verification.authenticationInfo.newCounter;
+    cred.lastUsed = new Date().toISOString();
     saveDb();
     const user = db.users.find(u => u.id === cred.userId);
     if (!user) return json(res, 500, { error: 'user missing' });
     if (user.disabled) return json(res, 403, { error: 'this account has been disabled' });
     json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
+  },
+
+  // Passkeys da própria conta. Uma conta pode ter várias: cada aparelho guarda a sua.
+  'GET /api/passkeys': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    json(res, 200, { passkeys: credsOf(user).map(c => ({
+      id: c.id, name: c.name || null, created: c.created || null, lastUsed: c.lastUsed || null
+    })) });
+  },
+
+  // Primeiro passo de adicionar ou remover: o desafio que uma passkey da conta tem de assinar.
+  'POST /api/passkeys/reauth/options': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    // Lista vazia, como no login: citar a passkey com `transports: ['internal']` faria o browser do
+    // PC esconder o QR Code, que é justamente o caminho de quem só tem passkey no celular. Quem
+    // confere se ela é desta conta é o proveOwner.
+    const options = await generateAuthenticationOptions({
+      rpID: RP_ID, userVerification: 'preferred', allowCredentials: []
+    });
+    const cid = putChallenge({ challenge: options.challenge, reauth: user.id });
+    json(res, 200, { cid, options });
+  },
+
+  'POST /api/passkeys/add/options': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const refused = await proveOwner(body, user);
+    if (refused) return json(res, 400, { error: refused });
+    saveDb();
+    if (credsOf(user).length >= MAX_PASSKEYS) return json(res, 409, { error: 'too many passkeys', code: 'TOO_MANY_PASSKEYS' });
+    const options = await generateRegistrationOptions({
+      rpName: RP_NAME, rpID: RP_ID,
+      userID: Buffer.from(user.id), userName: user.name, userDisplayName: user.name,
+      attestationType: 'none',
+      authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+      excludeCredentials: credsOf(user).map(c => ({ id: c.id }))
+    });
+    const cid = putChallenge({ challenge: options.challenge, addFor: user.id });
+    json(res, 200, { cid, options });
+  },
+
+  'POST /api/passkeys/add': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const c = takeChallenge(body.cid);
+    if (!c || c.addFor !== user.id) return json(res, 400, { error: 'challenge expired — try again' });
+    let verification;
+    try {
+      verification = await verifyRegistrationResponse({
+        response: body.credential,
+        expectedChallenge: c.challenge,
+        expectedOrigin: ORIGIN,
+        expectedRPID: RP_ID,
+        requireUserVerification: false
+      });
+    } catch (e) { return json(res, 400, { error: 'verification failed: ' + e.message }); }
+    if (!verification.verified) return json(res, 400, { error: 'not verified' });
+    const { credential } = verification.registrationInfo;
+    if (db.creds.find(x => x.id === credential.id)) return json(res, 409, { error: 'credential already registered' });
+    if (credsOf(user).length >= MAX_PASSKEYS) return json(res, 409, { error: 'too many passkeys', code: 'TOO_MANY_PASSKEYS' });
+    db.creds.push({
+      id: credential.id, userId: user.id,
+      publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+      counter: credential.counter || 0,
+      transports: body.credential?.response?.transports || [],
+      name: String(body.name || '').trim().slice(0, 40) || null,
+      created: new Date().toISOString()
+    });
+    saveDb();
+    json(res, 200, { ok: true });
+  },
+
+  'POST /api/passkeys/remove': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const refused = await proveOwner(body, user);
+    if (refused) return json(res, 400, { error: refused });
+    saveDb();
+    const mine = credsOf(user);
+    if (!mine.some(c => c.id === body.id)) return json(res, 404, { error: 'no such passkey' });
+    // Sem passkey ninguém entra de novo, e não existe recuperação.
+    if (mine.length <= 1) return json(res, 409, { error: 'cannot remove the last passkey', code: 'LAST_PASSKEY' });
+    db.creds = db.creds.filter(c => c.id !== body.id);
+    saveDb();
+    json(res, 200, { ok: true });
   },
 
   'POST /api/logout': async (req, res) => json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie }),

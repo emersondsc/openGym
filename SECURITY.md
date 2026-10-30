@@ -121,10 +121,11 @@ Read this before hosting openGym for anyone other than yourself.
   `requireUserVerification: false` (`api/server.js:297`, `api/server.js:343`), so a passkey
   released without a biometric or PIN is still accepted. In practice: unlocked device ≈ account
   access.
-- **One passkey per profile, and no recovery.** Every successful registration creates a *new*
-  profile (`api/server.js:309-319`); there is no route to attach a second passkey to an existing
-  one, and no email or reset path. Lose the passkey and that profile is unreachable — only direct
-  surgery on `./data` gets it back.
+- **No recovery.** A signed-in user can add a passkey for another device under Settings, after
+  signing with a passkey the profile already has, so a stolen cookie alone cannot add or remove
+  one. There is no email or reset path: lose every passkey and that profile is unreachable — only
+  direct surgery on `./data` gets it back. `POST /api/logout/all` ends sessions, not passkeys;
+  remove a lost device's passkey under Settings.
 - **Disabling someone isn't a ban.** They can still register a fresh profile with a new passkey
   unless `INVITE_ONLY=1` is set.
 - **HTTPS is required and the app doesn't provide it.** The API container speaks plain HTTP and
