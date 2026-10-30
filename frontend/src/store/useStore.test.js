@@ -194,3 +194,14 @@ describe('concorrência do sync (BACKLOG-09)', () => {
     expect(at('const prevBase = readBase()')).toBeLessThan(at('rememberBase(adopted.routines)'))
   })
 })
+
+describe('PUT recusado (400)', () => {
+  it('avisa a pessoa, com intervalo, e mantém a escrita pendente', () => {
+    const i = SRC.indexOf('e.status === 400')
+    expect(i).toBeGreaterThan(-1)
+    const bloco = SRC.slice(i, i + 500)
+    expect(bloco).toContain('toast(')
+    expect(bloco).toContain('600000')
+    expect(SRC.lastIndexOf("setItem('gym_dirty', '1')", i)).toBeGreaterThan(-1)
+  })
+})

@@ -59,6 +59,14 @@ describe('inscrição de push', () => {
   });
 });
 
+test('saveDbQuiet: falha de disco não vira exceção', () => {
+  const blocked = path.join(TMP, 'db.json.tmp');
+  fs.mkdirSync(blocked);                         // writeFileSync no .tmp agora dá EISDIR
+  assert.equal(S.saveDbQuiet(), false);
+  fs.rmdirSync(blocked);
+  assert.equal(S.saveDbQuiet(), true);
+});
+
 test('restSeconds: sem número não há alerta', () => {
   assert.equal(S.restSeconds(undefined), null);
   assert.equal(S.restSeconds('abc'), null);

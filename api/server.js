@@ -53,6 +53,12 @@ db.subs = db.subs || [];
 db.invites = db.invites || [];
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
 function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
+// Para quem roda fora de uma requisição (timer, push em segundo plano): lá não existe o catch do
+// servidor, e um disco cheio viraria exceção não tratada, que derruba o processo.
+function saveDbQuiet() {
+  try { saveDb(); return true; }
+  catch (e) { console.error('db save failed', e.message); return false; }
+}
 function atomicWrite(file, content) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, content);
@@ -93,7 +99,7 @@ function readState(uid) {
 
 // Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
-         cleanPushSub, restSeconds, sameSiteWrite,
+         cleanPushSub, restSeconds, sameSiteWrite, saveDbQuiet,
          readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
          ROUTINE_HANDLERS, meso, micro, livePresence };
 
@@ -143,7 +149,7 @@ async function sendPush(userId, payload) {
       }
     }
   }));
-  if (dirty) saveDb();
+  if (dirty) saveDbQuiet();
 }
 
 // Rest-timer alerts: client schedules on start/extend, cancels on skip or on-screen completion —
@@ -202,7 +208,7 @@ setInterval(() => {
     const routine = (S.routines || []).find(r => r.id === rid);
     console.log('reminder firing', user.id, rid);
     user.lastReminder = now.date;
-    saveDb();
+    saveDbQuiet();
     sendPush(user.id, {
       title: routine ? `${routine.emoji || '🏋️'} ${routine.name} today` : 'Workout planned today',
       body: "It's on your plan — let's go 💪",
@@ -608,11 +614,15 @@ const routes = {
     try { body = raw.length ? JSON.parse(raw) : {}; } catch { return json(res, 400, { error: 'bad json' }); }
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     const bad = checkState(body.state);
-    if (bad) return json(res, 400, { error: bad });
+    if (bad) {
+      console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid`);
+      return json(res, 400, { error: bad });
+    }
     let cur = null;
     try { cur = readState(user.id); } catch { /* first write */ }
     const badEx = checkRoutineFields(body.state, cur);
     if (badEx) {
+      console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid code=${badEx.code}`);
       return json(res, 400, { error: badEx.message, code: badEx.code, field: badEx.field,
                               allowed: badEx.allowed || null });
     }
@@ -678,6 +688,15 @@ const routes = {
     }
     saveDb();
     json(res, 200, { ok: true });
+  },
+
+  // O aparelho pergunta se o servidor ainda tem a inscrição dele: um 410 do serviço de push apaga o
+  // registro aqui, e o navegador continua achando que está inscrito.
+  'POST /api/push/check': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    json(res, 200, { known: db.subs.some(s => s.userId === user.id && s.endpoint === body.endpoint) });
   },
 
   'POST /api/push/unsubscribe': async (req, res) => {

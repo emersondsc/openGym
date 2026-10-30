@@ -125,6 +125,7 @@ export default {
   // BACKLOG-09: o aviso de "o plano foi atualizado" agora aparece de verdade (uma vez por
   // revisão), então precisa existir em português. A frase não nomeia autor de propósito.
   'Plan updated — your own edits were kept.': 'Plano atualizado — as tuas edições foram mantidas.',
+  'Could not save to the server. Your changes are kept on this device.': 'Não foi possível salvar no servidor. Suas alterações continuam neste aparelho.',
   'Today': 'Hoje',
   'Home': 'Início',
   'Start': 'Começar',

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api } from '../lib/api.js'
+import { syncPush } from '../lib/push.js'
 import { localTZ, SKINS } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { adoptServerRoutines, rememberBase, readBase, ifMatchFor, planChanged } from '../lib/plan-merge.js'
@@ -107,6 +108,7 @@ export const useStore = create((set, get) => {
   let pushTm = null
   let saveTm = null
   let lastPull = 0        // última releitura por volta ao app (RF-1)
+  let refusedAt = 0       // último aviso de escrita recusada (400)
 
   // Um treino editado tem o MESMO id de um que ja esta no servidor, e a mescla por id deixa a
   // copia do servidor vencer (e o que preserva o que o assistente escreveu). Para uma edicao
@@ -254,6 +256,17 @@ export const useStore = create((set, get) => {
       catch (e) {
         localStorage.setItem('gym_dirty', '1')
         if (e && e.status === 401) { get().setUser(null); return }
+        // 400 não se resolve sozinho: reenviar o mesmo estado dá o mesmo 400, e sem aviso a pessoa
+        // segue treinando achando que está salvo. Uma vez a cada 10 min, não a cada edição.
+        if (e && e.status === 400) {
+          console.error('[sync] PUT /api/data refused:', e.message)
+          if (Date.now() - refusedAt > 600000) {
+            refusedAt = Date.now()
+            import('./useUI.js')
+              .then(({ useUI }) => useUI.getState().toast(t('Could not save to the server. Your changes are kept on this device.')))
+              .catch(() => { /* sem UI montada não é erro */ })
+          }
+        }
         if (e && e.status === 409) {
           try {
             const prevBase = readBase()              // ANTES do rememberBase: é o que liga o aviso
@@ -388,6 +401,7 @@ export const useStore = create((set, get) => {
         const me = await api('/api/me')
         get().setUser(me.user)
         await get().pullState()
+        syncPush().catch(() => { /* a chave em Ajustes continua sendo o caminho manual */ })
         const tz = localTZ()
         if (get().S.reminder?.on && get().S.reminder.tz !== tz) {
           get().update(s => { s.reminder = { ...s.reminder, tz } })
