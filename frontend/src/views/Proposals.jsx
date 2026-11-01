@@ -172,7 +172,8 @@ export function ProposalDetail() {
     </div>
 
     {aberta && !recusando && <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
-      <Button variant="primary" disabled={!!trava || ocupado || p.status !== 'pending'} onClick={aprovar}>{t('Approve with passkey')}</Button>
+      <Button variant="primary" disabled={!!trava || ocupado || p.status !== 'pending'} style={trava ? { opacity: 0.45 } : undefined} onClick={aprovar}>{t('Approve with passkey')}</Button>
+      {trava && <div className="muted small" style={{ textAlign: 'center' }}>{trava}</div>}
       <Button variant="danger" disabled={ocupado} onClick={() => setRecusando(true)}>{t('Reject')}</Button>
     </div>}
     {aberta && recusando && <div style={{ marginTop: 14, display: 'grid', gap: 8 }}>
