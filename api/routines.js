@@ -253,6 +253,36 @@ export function sweepRoutineRefs(S, rid) {
   return { weekCleaned, dayPlanCleaned, orphanWorkouts };
 }
 
+/** Escritas de rotina sem HTTP: usadas pelas rotas e pela aprovação de propostas. Mutam `S`. */
+export function applyRoutinePatch(S, rid, body, catalog) {
+  const cur = (S.routines || []).find(x => x.id === rid);
+  if (!cur) {
+    return { error: `routine "${rid}" not found`, code: 'ROUTINE_NOT_FOUND', code_http: 404,
+             routines: (S.routines || []).map(x => x.id) };
+  }
+  // grava sempre o que veio declarado — inclusive prog 'off' (o editor faz o mesmo)
+  if (body.name !== undefined) cur.name = String(body.name).trim();
+  if (body.emoji !== undefined) cur.emoji = String(body.emoji).slice(0, 32);
+  if (body.prog !== undefined) cur.prog = body.prog;
+  const custom = new Set((S.customEx || []).map(c => c.id));
+  const out = mergeRoutine(cur, body, catalog, custom);
+  if (out) return out;
+  return { _meta: { routines: [rid] } };
+}
+
+export function applyRoutineDelete(S, rid, force) {
+  const i = (S.routines || []).findIndex(x => x.id === rid);
+  if (i < 0) return { error: `routine "${rid}" not found`, code: 'ROUTINE_NOT_FOUND', code_http: 404 };
+  // S.active = {id, d, start, routineId, name, bw, cur, entries} — sheets.jsx:841
+  if (S.active && S.active.routineId === rid && !force) {
+    return { error: 'routine is in an in-progress workout on a device', code: 'ROUTINE_IN_USE',
+             code_http: 409, active: S.active.id };
+  }
+  S.routines.splice(i, 1);
+  const swept = sweepRoutineRefs(S, rid);
+  return { _meta: { routines: [rid], ...swept } };
+}
+
 /* ---------------------------------------------------------------- auditoria */
 
 /** Última linha do arquivo, lendo só o fim dele; null quando não há nenhuma. */
@@ -454,21 +484,7 @@ export function makeHandlers(deps) {
     if (badBody) return json(res, 400, badBody);
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'patch-routine', uid: user.id, dropActive: false },
-      S => {
-        const cur = (S.routines || []).find(x => x.id === rid);
-        if (!cur) {
-          return { error: `routine "${rid}" not found`, code: 'ROUTINE_NOT_FOUND', code_http: 404,
-                   routines: (S.routines || []).map(x => x.id) };
-        }
-        // grava sempre o que veio declarado — inclusive prog 'off' (o editor faz o mesmo)
-        if (body.name !== undefined) cur.name = String(body.name).trim();
-        if (body.emoji !== undefined) cur.emoji = String(body.emoji).slice(0, 32);
-        if (body.prog !== undefined) cur.prog = body.prog;
-        const custom = new Set((S.customEx || []).map(c => c.id));
-        const out = mergeRoutine(cur, body, catalog, custom);
-        if (out) return out;
-        return { _meta: { routines: [rid] } };
-      });
+      S => applyRoutinePatch(S, rid, body, catalog));
     return json(res, r.code, r.body);
   }
 
@@ -496,18 +512,7 @@ export function makeHandlers(deps) {
     }
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'delete-routine', uid: user.id, dropActive: true },
-      S => {
-        const i = (S.routines || []).findIndex(x => x.id === rid);
-        if (i < 0) return { error: `routine "${rid}" not found`, code: 'ROUTINE_NOT_FOUND', code_http: 404 };
-        // S.active = {id, d, start, routineId, name, bw, cur, entries} — sheets.jsx:841
-        if (S.active && S.active.routineId === rid && !force) {
-          return { error: 'routine is in an in-progress workout on a device', code: 'ROUTINE_IN_USE',
-                   code_http: 409, active: S.active.id };
-        }
-        S.routines.splice(i, 1);
-        const swept = sweepRoutineRefs(S, rid);
-        return { _meta: { routines: [rid], ...swept } };
-      });
+      S => applyRoutineDelete(S, rid, force));
     return json(res, r.code, r.body);
   }
 

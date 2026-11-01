@@ -239,9 +239,12 @@ export const useStore = create((set, get) => {
       set({ user: u })
     },
 
+    // Devolve {ok, rev}: a aprovação de proposta precisa saber se o que está aqui já chegou ao
+    // servidor. Quem só agenda o envio continua ignorando o retorno.
     async pushState() {
-      if (!get().user) return
+      if (!get().user) return { ok: false }
       clearTimeout(pushTm)
+      pushTm = null
       const sanitized = JSON.parse(JSON.stringify(get().S))
       sanitized.routines?.forEach(r=> r.ex?.forEach(ex=>{ if('restSec' in ex && !isValidRest(ex.restSec)) delete ex.restSec }))
       if(sanitized.active?.entries) sanitized.active.entries.forEach(e=>{ if('restSec' in e && !isValidRest(e.restSec)) delete e.restSec })
@@ -252,10 +255,11 @@ export const useStore = create((set, get) => {
         adoptRev(res && res.rev)                     // RF-3: o próximo PUT já manda a base certa
         localStorage.removeItem('gym_dirty')
         try { const { clearCoachCache } = await import('../lib/coach.js'); clearCoachCache() } catch { /* */ }
+        return { ok: true, rev: res && res.rev }
       }
       catch (e) {
         localStorage.setItem('gym_dirty', '1')
-        if (e && e.status === 401) { get().setUser(null); return }
+        if (e && e.status === 401) { get().setUser(null); return { ok: false } }
         // 400 não se resolve sozinho: reenviar o mesmo estado dá o mesmo 400, e sem aviso a pessoa
         // segue treinando achando que está salvo. Uma vez a cada 10 min, não a cada edição.
         if (e && e.status === 400) {
@@ -298,10 +302,20 @@ export const useStore = create((set, get) => {
               adoptRev(res2 && res2.rev)             // RF-3: o reenvio também confirma revisão
               localStorage.removeItem('gym_dirty')
               try{ const {clearCoachCache}=await import('../lib/coach.js'); clearCoachCache(); }catch{}
+              return { ok: true, rev: res2 && res2.rev }
             }
           } catch { /* stays dirty, heals on next boot */ }
         }
+        return { ok: false }
       }
+    },
+
+    // Antes de aprovar uma proposta, o que está pendente neste aparelho tem de chegar ao servidor:
+    // é contra aquele estado que a aprovação vale.
+    async flushBeforeApproval() {
+      if (!pushTm && localStorage.getItem('gym_dirty') !== '1') return true
+      const r = await get().pushState()
+      return !!(r && r.ok)
     },
     async pullState(notify = false) {
       try {

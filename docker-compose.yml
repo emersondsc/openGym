@@ -47,6 +47,10 @@ services:
       - DATA_DIR=/data
     volumes:
       - /mnt/drivebackup/apps/openGym/data:/data         # users, passkeys, per-user state, session secret — BACK THIS UP
+      # Propostas do treinador: `pending` vem do MCP e é só leitura aqui; a API grava o resto.
+      - /mnt/drivebackup/apps/openGym/coach-proposals/pending:/coach-proposals/pending:ro
+      - /mnt/drivebackup/apps/openGym/coach-proposals/decisions:/coach-proposals/decisions
+      - /mnt/drivebackup/apps/openGym/coach-proposals/snapshots:/coach-proposals/snapshots
 
   # Builds the React frontend (multi-stage) and serves it, proxying /api → api
   # and the exercise media from the shared volume. Single origin for passkeys.

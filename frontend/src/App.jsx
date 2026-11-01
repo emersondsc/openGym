@@ -27,6 +27,7 @@ import WorkoutEdit from './views/WorkoutEdit.jsx'
 import Library from './views/Library.jsx'
 import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
+import Proposals, { ProposalDetail } from './views/Proposals.jsx'
 
 bindUI(useUI)   // lets the shared controls open sheets without importing the store at module scope
 
@@ -96,6 +97,8 @@ function Shell() {
               <Route path="/history/w/:id" element={<WorkoutEdit />} />
               <Route path="/library" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/proposals" element={user?.coachOwner ? <Proposals /> : <Navigate to="/home" replace />} />
+              <Route path="/proposals/:id" element={user?.coachOwner ? <ProposalDetail /> : <Navigate to="/home" replace />} />
               <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>

@@ -246,6 +246,28 @@ export function findConflicts(S, body) {
   return { datas };
 }
 
+/** A escrita da semana, sem HTTP: usada pela rota e pela aprovação de propostas. Muta `S`. */
+export function applyPublish(S, body, catalog) {
+  const list = Array.isArray(S.routines) ? S.routines : (S.routines = []);
+  const criadas = [], trocadas = [], progAntes = {}, progDepois = {};
+  for (const pub of body.routines) {
+    const i = list.findIndex(x => x.id === pub.id);
+    const mat = materializeRoutine(pub, catalog, i >= 0 ? list[i] : null);
+    if (i < 0) { list.push(mat); criadas.push(pub.id); } else {
+      progAntes[pub.id] = list[i].prog ?? null;
+      list[i] = mat;
+      trocadas.push(pub.id);
+      progDepois[pub.id] = mat.prog ?? null;
+    }
+  }
+  // RF-10: só `dayPlan`, e só para as datas declaradas; `week` nunca é tocado.
+  const dayPlan = S.dayPlan || (S.dayPlan = {});
+  const declaradas = datesOf(body);
+  for (const { date, routineId } of declaradas) dayPlan[date] = routineId;
+  const applied = Object.fromEntries(declaradas.map(d => [d.date, dayPlan[d.date]]));
+  return { criadas, trocadas, progAntes, progDepois, declaradas, applied };
+}
+
 /* ---------------------------------------------------------------- handler */
 
 export function makeHandlers(deps) {
@@ -327,23 +349,7 @@ export function makeHandlers(deps) {
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'publish-micro', uid: user.id, dropActive: false },
       S => {
-        const list = Array.isArray(S.routines) ? S.routines : (S.routines = []);
-        const criadas = [], trocadas = [], progAntes = {}, progDepois = {};
-        for (const pub of body.routines) {
-          const i = list.findIndex(x => x.id === pub.id);
-          const mat = materializeRoutine(pub, catalog, i >= 0 ? list[i] : null);
-          if (i < 0) { list.push(mat); criadas.push(pub.id); } else {
-            progAntes[pub.id] = list[i].prog ?? null;
-            list[i] = mat;
-            trocadas.push(pub.id);
-            progDepois[pub.id] = mat.prog ?? null;
-          }
-        }
-        // RF-10: só `dayPlan`, e só para as datas declaradas; `week` nunca é tocado.
-        const dayPlan = S.dayPlan || (S.dayPlan = {});
-        const declaradas = datesOf(body);
-        for (const { date, routineId } of declaradas) dayPlan[date] = routineId;
-        const applied = Object.fromEntries(declaradas.map(d => [d.date, dayPlan[d.date]]));
+        const { criadas, trocadas, progAntes, progDepois, declaradas, applied } = applyPublish(S, body, catalog);
         return {
           _meta: {
             meso_id: body.meso_id, semana: body.semana, report_id: body.report_id ?? null,

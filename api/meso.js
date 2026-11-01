@@ -125,6 +125,70 @@ export function checkMesos(list) {
   return null;
 }
 
+/* ---------------------------------------------------------------- escritas, sem HTTP */
+
+/** Usadas pelas rotas e pela aprovação de propostas. `agora` é parâmetro para a simulação ser
+ *  determinística. Mutam `S` e devolvem o que o `withState` espera. */
+export function applyPutMeso(S, body, activate, stamp, agora) {
+  const list = Array.isArray(S.mesos) ? S.mesos : (S.mesos = []);
+  const i = list.findIndex(m => m.id === body.id);
+  if (i < 0 && list.length >= MAX_MESOS) {
+    return { error: 'too many mesocycles', code: 'TOO_MANY_MESOS', code_http: 409 };
+  }
+  const created = i < 0;
+  const prev = created ? null : list[i];
+  // Os carimbos de ativação NUNCA vêm do corpo: sem isto, qualquer sessão manda
+  // `activatedBy: "assistant"` e a tela mostra "Ativado pelo assistente" sem assinatura.
+  const { activatedBy, activatedAt, ...rest } = body;
+  const meso = { ...rest, updatedAt: agora };
+  if (activate === 'now') {
+    // Republicar com `activate: "now"` o mesociclo que JÁ é o ativo não pode perder o
+    // carimbo: o carimbo é reescrito sempre; o ponteiro só se move quando muda de verdade.
+    meso.activatedAt = agora;
+    meso.activatedBy = stamp;
+  } else if (prev) {
+    if (prev.activatedAt) meso.activatedAt = prev.activatedAt;   // substituir não desativa
+    if (prev.activatedBy) meso.activatedBy = prev.activatedBy;
+  }
+  if (created) list.push(meso); else list[i] = meso;
+  const activated = activate === 'now' && S.activeMeso !== meso.id;
+  if (activated) {
+    S.mesoPrev = S.activeMeso || null;
+    S.activeMeso = meso.id;
+  }
+  return { _meta: { mesoId: meso.id, created, activated, activate } };
+}
+
+export function applyActivateMeso(S, mid, stamp, agora) {
+  const list = Array.isArray(S.mesos) ? S.mesos : [];
+  const meso = list.find(m => m.id === mid);
+  if (!meso) {
+    return { error: `mesocycle "${mid}" not found`, code: 'MESO_NOT_FOUND', code_http: 409,
+             mesos: list.map(m => m.id) };
+  }
+  if (S.activeMeso !== mid) {
+    S.mesoPrev = S.activeMeso || null;
+    S.activeMeso = mid;
+    meso.activatedAt = agora;
+    meso.activatedBy = stamp;
+  }
+  return { _meta: { mesoId: mid, activated: true } };
+}
+
+export function applyDeleteMeso(S, mid) {
+  const list = Array.isArray(S.mesos) ? S.mesos : (S.mesos = []);
+  const i = list.findIndex(m => m.id === mid);
+  if (i < 0) {
+    return { error: `mesocycle "${mid}" not found`, code: 'MESO_NOT_FOUND', code_http: 404,
+             mesos: list.map(m => m.id) };
+  }
+  const wasActive = S.activeMeso === mid;
+  list.splice(i, 1);
+  if (wasActive) S.activeMeso = null;
+  if (S.mesoPrev === mid) S.mesoPrev = null;
+  return { _meta: { mesoId: mid, deleted: true, wasActive } };
+}
+
 /* ---------------------------------------------------------------- handlers */
 
 export function makeHandlers(deps) {
@@ -169,35 +233,8 @@ export function makeHandlers(deps) {
 
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'put-meso', uid: user.id, dropActive: false },
-      S => {
-        const list = Array.isArray(S.mesos) ? S.mesos : (S.mesos = []);
-        const i = list.findIndex(m => m.id === body.meso.id);
-        if (i < 0 && list.length >= MAX_MESOS) {
-          return { error: 'too many mesocycles', code: 'TOO_MANY_MESOS', code_http: 409 };
-        }
-        const created = i < 0;
-        const prev = created ? null : list[i];
-        // Os carimbos de ativação NUNCA vêm do corpo: sem isto, qualquer sessão manda
-        // `activatedBy: "assistant"` e a tela mostra "Ativado pelo assistente" sem assinatura.
-        const { activatedBy, activatedAt, ...rest } = body.meso;
-        const meso = { ...rest, updatedAt: new Date().toISOString() };
-        if (activate === 'now') {
-          // Republicar com `activate: "now"` o mesociclo que JÁ é o ativo não pode perder o
-          // carimbo: o carimbo é reescrito sempre; o ponteiro só se move quando muda de verdade.
-          meso.activatedAt = new Date().toISOString();
-          meso.activatedBy = actor.verified === 'signature' ? 'assistant' : 'user';
-        } else if (prev) {
-          if (prev.activatedAt) meso.activatedAt = prev.activatedAt;   // substituir não desativa
-          if (prev.activatedBy) meso.activatedBy = prev.activatedBy;
-        }
-        if (created) list.push(meso); else list[i] = meso;
-        const activated = activate === 'now' && S.activeMeso !== meso.id;
-        if (activated) {
-          S.mesoPrev = S.activeMeso || null;
-          S.activeMeso = meso.id;
-        }
-        return { _meta: { mesoId: meso.id, created, activated, activate } };
-      });
+      S => applyPutMeso(S, body.meso, activate, actor.verified === 'signature' ? 'assistant' : 'user',
+        new Date().toISOString()));
 
     if (r.code === 200) {
       const m = r.body.meta || {};
@@ -231,21 +268,7 @@ export function makeHandlers(deps) {
 
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'activate-meso', uid: user.id, dropActive: false },
-      S => {
-        const list = Array.isArray(S.mesos) ? S.mesos : [];
-        const meso = list.find(m => m.id === mid);
-        if (!meso) {
-          return { error: `mesocycle "${mid}" not found`, code: 'MESO_NOT_FOUND', code_http: 409,
-                   mesos: list.map(m => m.id) };
-        }
-        if (S.activeMeso !== mid) {
-          S.mesoPrev = S.activeMeso || null;
-          S.activeMeso = mid;
-          meso.activatedAt = new Date().toISOString();
-          meso.activatedBy = actor.verified === 'signature' ? 'assistant' : 'user';
-        }
-        return { _meta: { mesoId: mid, activated: true } };
-      });
+      S => applyActivateMeso(S, mid, actor.verified === 'signature' ? 'assistant' : 'user', new Date().toISOString()));
 
     if (r.code === 200) {
       console.log(`[og-meso] op=activate-meso uid=${user.id} meso=${mid} `
@@ -273,19 +296,7 @@ export function makeHandlers(deps) {
 
     const r = withState(deps, user.id,
       { ifMatch: parseIfMatch(req.headers['if-match']), actor, action: 'delete-meso', uid: user.id, dropActive: false },
-      S => {
-        const list = Array.isArray(S.mesos) ? S.mesos : (S.mesos = []);
-        const i = list.findIndex(m => m.id === mid);
-        if (i < 0) {
-          return { error: `mesocycle "${mid}" not found`, code: 'MESO_NOT_FOUND', code_http: 404,
-                   mesos: list.map(m => m.id) };
-        }
-        const wasActive = S.activeMeso === mid;
-        list.splice(i, 1);
-        if (wasActive) S.activeMeso = null;
-        if (S.mesoPrev === mid) S.mesoPrev = null;
-        return { _meta: { mesoId: mid, deleted: true, wasActive } };
-      });
+      S => applyDeleteMeso(S, mid));
 
     if (r.code === 200) {
       console.log(`[og-meso] op=delete-meso uid=${user.id} meso=${mid} `

@@ -10,6 +10,7 @@ import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
 import ExerciseProgressCard from '../components/ExerciseProgressCard.jsx'
+import ProposalsCard from '../components/ProposalsCard.jsx'
 
 // Home = what to do now + a quick glance. Deep charts & history live in Stats.
 export default function Home() {
@@ -214,6 +215,7 @@ export default function Home() {
         <div className="muted small" style={{ marginTop: 6 }}>{t('No plan this week yet.')}</div>
       </div>
     )}
+    <ProposalsCard />
     <ExerciseProgressCard />
   </div>
 }

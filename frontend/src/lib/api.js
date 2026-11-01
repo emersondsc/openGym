@@ -8,7 +8,7 @@ export const webauthnOK = () => !!(window.PublicKeyCredential && navigator.crede
 export async function api(path, opts) {
   const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts))
   const data = await r.json().catch(() => ({}))
-  if (!r.ok) { const e = new Error(data.error || ('HTTP ' + r.status)); e.status = r.status; throw e }
+  if (!r.ok) { const e = new Error(data.error || ('HTTP ' + r.status)); e.status = r.status; e.code = data.code; throw e }
   return data
 }
 
@@ -72,6 +72,11 @@ export async function passkeyAddFinish({ cid, options }, name) {
 }
 export async function passkeyRemove(id) {
   await api('/api/passkeys/remove', { method: 'POST', body: JSON.stringify({ ...(await provePasskey()), id }) })
+}
+// Prova com o desafio que a aprovação de uma proposta recebeu do servidor.
+export async function proveChallenge({ cid, options }) {
+  const cred = await navigator.credentials.get({ publicKey: toRequestOptions(options) })
+  return { cid, credential: credToJSON(cred) }
 }
 export async function passkeyLogin() {
   const { cid, options } = await api('/api/login/options', { method: 'POST', body: '{}' })

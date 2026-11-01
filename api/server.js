@@ -16,6 +16,7 @@ import * as routines from './routines.js';
 import * as meso from './meso.js';
 import { checkMesos } from './meso.js';
 import * as micro from './micro.js';
+import * as proposals from './proposals.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -26,6 +27,8 @@ const CATALOG_PATH = catalog.CATALOG_PATH;
 const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.ORIGIN || 'http://localhost:8080';
 const RP_NAME = process.env.RP_NAME || 'openGym';
+// Dono das propostas do treinador. Sem esta variável as rotas respondem 404: é o desligamento.
+const COACH_OWNER_UID = (process.env.COACH_OWNER_UID || '').trim();
 // Admin dashboard (issue): admins are matched by uid; INVITE_ONLY gates new signups behind a
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -52,6 +55,8 @@ try { db = JSON.parse(fs.readFileSync(dbFile, 'utf8')); } catch {}
 db.subs = db.subs || [];
 db.invites = db.invites || [];
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
+const publicUser = user => ({ id: user.id, name: user.name, admin: isAdmin(user),
+  coachOwner: !!COACH_OWNER_UID && user.id === COACH_OWNER_UID });
 function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
 // Para quem roda fora de uma requisição (timer, push em segundo plano): lá não existe o catch do
 // servidor, e um disco cheio viraria exceção não tratada, que derruba o processo.
@@ -417,13 +422,13 @@ const b64uToBuf = s => Buffer.from(s, 'base64url');
 /* ---------- passkeys da conta ---------- */
 const MAX_PASSKEYS = 10;
 const credsOf = user => db.creds.filter(x => x.userId === user.id);
-function checkAssertion(c, credential, cred) {
+function checkAssertion(c, credential, cred, requireUserVerification = false) {
   return verifyAuthenticationResponse({
     response: credential,
     expectedChallenge: c.challenge,
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,
-    requireUserVerification: false,
+    requireUserVerification,
     credential: {
       id: cred.id,
       publicKey: b64uToBuf(cred.publicKey),
@@ -442,6 +447,31 @@ async function proveOwner(body, user) {
   if (!cred) return 'that passkey is not on this profile';
   let verification;
   try { verification = await checkAssertion(c, body.credential, cred); }
+  catch (e) { return 'verification failed: ' + e.message; }
+  if (!verification.verified) return 'not verified';
+  cred.counter = verification.authenticationInfo.newCounter;
+  cred.lastUsed = new Date().toISOString();
+  return null;
+}
+
+// Prova própria para aprovar proposta: o desafio é preso à proposta e ao conteúdo visto, usa campo
+// separado de `reauth` (não serve para mexer em passkeys) e exige biometria ou PIN.
+async function proposalChallenge(user, proposalId, approvalHash) {
+  const options = await generateAuthenticationOptions({
+    rpID: RP_ID, userVerification: 'required', allowCredentials: []
+  });
+  const cid = putChallenge({ challenge: options.challenge, proposalReauth: user.id, proposalId, approvalHash });
+  return { cid, options };
+}
+async function proveProposal(body, user, proposalId, approvalHash) {
+  const c = takeChallenge(body.cid);
+  if (!c || c.proposalReauth !== user.id || c.proposalId !== proposalId || c.approvalHash !== approvalHash) {
+    return 'challenge expired — try again';
+  }
+  const cred = credsOf(user).find(x => x.id === body.credential?.id);
+  if (!cred) return 'that passkey is not on this profile';
+  let verification;
+  try { verification = await checkAssertion(c, body.credential, cred, true); }
   catch (e) { return 'verification failed: ' + e.message; }
   if (!verification.verified) return 'not verified';
   cred.counter = verification.authenticationInfo.newCounter;
@@ -470,7 +500,11 @@ const PATTERNS = [
   { method: 'PATCH',  re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'patchRoutine' },
   { method: 'DELETE', re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'deleteRoutine' },
   { method: 'POST',   re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})\/activate$/, params: ['mid'], handler: 'activateMeso' },
-  { method: 'DELETE', re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})$/, params: ['mid'], handler: 'deleteMeso' }
+  { method: 'DELETE', re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})$/, params: ['mid'], handler: 'deleteMeso' },
+  { method: 'GET',  re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})$/, params: ['pid'], handler: 'getProposal' },
+  { method: 'POST', re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})\/challenge$/, params: ['pid'], handler: 'challengeProposal' },
+  { method: 'POST', re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})\/approve$/, params: ['pid'], handler: 'approveProposal' },
+  { method: 'POST', re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})\/reject$/, params: ['pid'], handler: 'rejectProposal' }
 ];
 // Preenchido depois de `R()`, porque os handlers de rotina precisam do roteador pronto.
 const ROUTINE_HANDLERS = {};
@@ -530,6 +564,7 @@ const routes = {
   // usuário (docs/specs/spec_publicacao_micro.md v6). Mesmo mapa de handlers: o matchRoute procura
   // handler de padrão só em ROUTINE_HANDLERS.
   'POST /api/plan/micro': (req, res) => ROUTINE_HANDLERS.publishMicro(req, res),
+  'GET /api/proposals': (req, res) => ROUTINE_HANDLERS.listProposals(req, res),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -537,7 +572,7 @@ const routes = {
   'GET /api/me': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } });
+    json(res, 200, { user: publicUser(user) });
   },
 
   'POST /api/register/options': async (req, res) => {
@@ -593,7 +628,7 @@ const routes = {
       created: user.created
     });
     saveDb();
-    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
+    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
   },
 
   'POST /api/login/options': async (req, res) => {
@@ -620,7 +655,7 @@ const routes = {
     const user = db.users.find(u => u.id === cred.userId);
     if (!user) return json(res, 500, { error: 'user missing' });
     if (user.disabled) return json(res, 403, { error: 'this account has been disabled' });
-    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) } }, { 'Set-Cookie': sessionCookie(user) });
+    json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
   },
 
   // Passkeys da própria conta. Uma conta pode ter várias: cada aparelho guarda a sua.
@@ -991,6 +1026,12 @@ Object.assign(ROUTINE_HANDLERS, meso.makeHandlers({
 // Map cru: a checagem de treino em andamento não pode ler entrada velha de até ~100 s (A17).
 Object.assign(ROUTINE_HANDLERS, micro.makeHandlers({
   readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, livePresence, CATALOG_PATH
+}));
+
+// Propostas do treinador: mesmo mapa. Os nomes não podem colidir com `list` das rotinas.
+Object.assign(ROUTINE_HANDLERS, proposals.makeHandlers({
+  readSession, readState, stateFile, atomicWrite, readBody, json, DATA, livePresence, CATALOG_PATH,
+  ownerUid: COACH_OWNER_UID, proposalChallenge, proveProposal, saveDb
 }));
 
 // Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo
