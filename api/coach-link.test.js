@@ -4,12 +4,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as L from './coach-link.js';
+import { lerLiberados } from './coach-access.js';
 
 function ambiente({ prova = () => null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'link-'));
   for (const d of ['requests', 'state/results']) fs.mkdirSync(path.join(dir, d), { recursive: true });
+  // Maria já ativou o treinador no app com o e-mail que os pedidos usam (spec_liberacao_pelo_app.md).
+  fs.writeFileSync(path.join(dir, 'state', 'allowed.json'), JSON.stringify({ version: 1, allowed: [{ uid: 'maria', email: 'pessoa@ex.com', enabled_at: 'x' }] }));
   let t = Date.parse('2026-11-06T12:00:00Z');
-  const users = [{ id: 'dono', name: 'Emerson' }, { id: 'maria', name: 'Maria' }, { id: 'off', name: 'X', disabled: true }];
+  const users = [{ id: 'dono', name: 'Emerson' }, { id: 'maria', name: 'Maria' }, { id: 'ana', name: 'Ana' }, { id: 'off', name: 'X', disabled: true }];
   const h = L.makeHandlers({
     dir, ownerUid: 'dono', users: () => users, agora: () => t, saveDb: () => {},
     readSession: req => req.user ?? null, readBody: async req => req.body ?? {},
@@ -25,7 +28,7 @@ function ambiente({ prova = () => null } = {}) {
     return JSON.parse(fs.readFileSync(path.join(dir, 'state', 'results', `${id}.json`), 'utf8'));
   };
   const codigo = async uid => (await chama('startLink', { id: uid, name: uid })).body.code;
-  return { dir, h, chama, pedir, codigo, avancar: ms => { t += ms; }, links: () => L.lerLinks(dir) };
+  return { dir, h, chama, pedir, codigo, avancar: ms => { t += ms; }, links: () => L.lerLinks(dir), liberados: () => lerLiberados(dir) };
 }
 
 test('codigo: alfabeto sem ambiguidade, 8 letras, formato XXXX-XXXX', () => {
@@ -109,4 +112,56 @@ test('pedido malformado, velho ou de conta desativada nao liga', async () => {
   e.h.varrerPedidos();
   assert.equal(JSON.parse(fs.readFileSync(path.join(e.dir, 'state', 'results', 'req-lixo.json'), 'utf8')).code, 'BAD_REQUEST');
   assert.deepEqual(e.links(), []);
+});
+
+/* ---------- fase 3: ativar pelo app (spec_liberacao_pelo_app.md) ---------- */
+
+test('ativar exige passkey e e-mail valido; grava a lista e ja devolve o codigo', async () => {
+  assert.equal((await ambiente({ prova: () => 'nao' }).chama('activateLink', { id: 'ana' }, { email: 'ana@ex.com' })).body.code, 'PASSKEY_REFUSED');
+  const e = ambiente();
+  for (const email of ['', 'sem-arroba', 'a@b', 'a b@ex.com', 'x'.repeat(250) + '@ex.com']) {
+    assert.equal((await e.chama('activateLink', { id: 'ana' }, { email })).body.code, 'INVALID_EMAIL', email);
+  }
+  const r = await e.chama('activateLink', { id: 'ana' }, { email: ' Ana@Ex.com ' });
+  assert.equal(r.code, 200);
+  assert.equal(r.body.email, 'ana@ex.com');
+  assert.match(r.body.code, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  assert.deepEqual(e.liberados().find(a => a.uid === 'ana').email, 'ana@ex.com');
+  const g = (await e.chama('getLink', { id: 'ana' })).body;
+  assert.deepEqual([g.linked, g.allowed.email, g.owner], [null, 'ana@ex.com', false]);
+  assert.equal((await e.chama('getLink', { id: 'dono' })).body.owner, true);
+});
+
+test('um e-mail serve a uma conta so', async () => {
+  const e = ambiente();
+  const r = await e.chama('activateLink', { id: 'ana' }, { email: 'PESSOA@ex.com' });
+  assert.deepEqual([r.code, r.body.code], [409, 'EMAIL_IN_USE']);
+  assert.equal(e.liberados().length, 1);
+});
+
+test('o login tem de ser com o e-mail ativado; sem ativar, convidado nao liga', async () => {
+  const e = ambiente();
+  const c = await e.codigo('maria');
+  assert.equal(e.pedir('sub-m', c, { email: 'outro@ex.com' }).code, 'EMAIL_MISMATCH');
+  assert.equal(e.pedir('sub-m', c).ok, true, 'o codigo nao foi gasto pela tentativa errada');
+  const ana = await e.codigo('ana');
+  assert.equal(e.pedir('sub-ana', ana, { email: 'ana@ex.com' }).code, 'EMAIL_MISMATCH');
+  assert.equal(e.pedir('sub-d', await e.codigo('dono'), { email: 'qualquer@ex.com' }).ok, true, 'o dono nao precisa ativar');
+});
+
+test('trocar de e-mail desfaz a ligacao antiga; desativar e desabilitar tiram tudo', async () => {
+  const e = ambiente();
+  assert.equal(e.pedir('sub-m', await e.codigo('maria')).ok, true);
+  await e.chama('activateLink', { id: 'maria' }, { email: 'pessoa@ex.com' });
+  assert.equal(e.links().length, 1, 'mesmo e-mail mantem a ligacao');
+  const r = await e.chama('activateLink', { id: 'maria' }, { email: 'nova@ex.com' });
+  assert.deepEqual(e.links(), []);
+  assert.equal(e.pedir('sub-m2', r.body.code, { email: 'nova@ex.com' }).ok, true);
+  await e.chama('unlink', { id: 'maria' });
+  assert.deepEqual([e.links(), e.liberados()], [[], []]);
+  await e.chama('activateLink', { id: 'maria' }, { email: 'nova@ex.com' });
+  const vivo = await e.codigo('maria');
+  e.h.removerUsuario('maria');
+  assert.deepEqual(e.liberados(), []);
+  assert.equal(e.pedir('sub-m3', vivo, { email: 'nova@ex.com' }).code, 'INVALID_CODE');
 });

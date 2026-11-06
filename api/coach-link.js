@@ -1,5 +1,5 @@
 // api/coach-link.js — liga a identidade do Cloudflare Access (`sub`) a um usuário do app.
-// Especificado em docs/specs/spec_treinador_por_usuario.md.
+// Especificado em docs/specs/spec_treinador_por_usuario.md e spec_liberacao_pelo_app.md.
 //
 // A pessoa gera um código no app, com passkey, e o informa ao treinador no chat. O MCP não tem
 // credencial do app: só grava o pedido em `requests/` e lê `state/`. Quem confere o código e grava a
@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { EMAIL_RE, gravarLiberados, lerLiberados } from './coach-access.js';
 
 export const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // sem I, L, O, 0 e 1
 export const CODIGO_LEN = 8;
@@ -60,10 +61,34 @@ export function makeHandlers(deps) {
   };
   const publico = l => (l ? { email: l.email, linked_at: l.linked_at, access: l.access } : null);
 
+  /** Um código vivo por pessoa: gerar outro invalida o anterior. */
+  function novoCodigo(user) {
+    for (const [c, v] of codigos) if (v.uid === user.id) codigos.delete(c);
+    let code;
+    do { code = gerarCodigo(); } while (codigos.has(code));
+    const exp = agora() + CODIGO_MS;
+    codigos.set(code, { uid: user.id, exp });
+    console.log(`[og-link] op=code uid=${user.id}`);
+    return { code: formatarCodigo(code), expires_at: new Date(exp).toISOString() };
+  }
+  const tirarLigacao = uid => {
+    const links = lerLinks(dir);
+    const resto = links.filter(l => l.uid !== uid);
+    if (resto.length !== links.length) gravarLinks(dir, resto);
+    return links.length - resto.length;
+  };
+  const tirarLiberado = uid => {
+    const lista = lerLiberados(dir);
+    const resto = lista.filter(a => a.uid !== uid);
+    if (resto.length !== lista.length) gravarLiberados(dir, resto);
+  };
+
   async function getLink(req, res) {
     const user = sessao(req, res);
     if (!user) return;
-    json(res, 200, { linked: publico(lerLinks(dir).find(l => l.uid === user.id)) });
+    const a = lerLiberados(dir).find(x => x.uid === user.id);
+    json(res, 200, { linked: publico(lerLinks(dir).find(l => l.uid === user.id)),
+      allowed: a ? { email: a.email, enabled_at: a.enabled_at } : null, owner: !!ownerUid && user.id === ownerUid });
   }
 
   async function challengeLink(req, res) {
@@ -79,23 +104,46 @@ export function makeHandlers(deps) {
     const recusada = await proveLink(body, user);
     if (recusada) return json(res, 400, { error: recusada, code: 'PASSKEY_REFUSED' });
     saveDb();
-    for (const [c, v] of codigos) if (v.uid === user.id) codigos.delete(c);   // um código vivo por pessoa
-    let code;
-    do { code = gerarCodigo(); } while (codigos.has(code));
-    const exp = agora() + CODIGO_MS;
-    codigos.set(code, { uid: user.id, exp });
-    console.log(`[og-link] op=code uid=${user.id}`);
-    json(res, 200, { code: formatarCodigo(code), expires_at: new Date(exp).toISOString() });
+    json(res, 200, novoCodigo(user));
+  }
+
+  /** Ativar (spec_liberacao_pelo_app.md): o e-mail entra na lista que o Cloudflare consulta no login
+   *  e já sai o código, com a mesma passkey. Trocar de e-mail desfaz a ligação antiga. */
+  async function activateLink(req, res) {
+    const user = sessao(req, res);
+    if (!user) return;
+    const body = await readBody(req);
+    const email = normEmail(body.email);
+    if (email.length > 254 || !EMAIL_RE.test(email)) return json(res, 400, { error: 'invalid email', code: 'INVALID_EMAIL' });
+    const recusada = await proveLink(body, user);
+    if (recusada) return json(res, 400, { error: recusada, code: 'PASSKEY_REFUSED' });
+    saveDb();
+    const lista = lerLiberados(dir);
+    if (lista.some(a => a.uid !== user.id && normEmail(a.email) === email)) {
+      return json(res, 409, { error: 'email already used by another account', code: 'EMAIL_IN_USE' });
+    }
+    const atual = lista.find(a => a.uid === user.id);
+    const mesmo = atual && normEmail(atual.email) === email;
+    if (atual && !mesmo) tirarLigacao(user.id);
+    gravarLiberados(dir, [...lista.filter(a => a.uid !== user.id),
+      { uid: user.id, email, enabled_at: mesmo ? atual.enabled_at : new Date(agora()).toISOString() }]);
+    console.log(`[og-link] op=activate uid=${user.id} new=${!mesmo}`);
+    json(res, 200, { email, ...novoCodigo(user) });
+  }
+
+  /** Sair de tudo: códigos, ligação e lista. Usado pelo Desativar e pelo admin ao desabilitar. */
+  function removerUsuario(uid) {
+    for (const [c, v] of codigos) if (v.uid === uid) codigos.delete(c);
+    const n = tirarLigacao(uid);
+    tirarLiberado(uid);
+    return n;
   }
 
   async function unlink(req, res) {
     const user = sessao(req, res);
     if (!user) return;
-    for (const [c, v] of codigos) if (v.uid === user.id) codigos.delete(c);
-    const links = lerLinks(dir);
-    const resto = links.filter(l => l.uid !== user.id);
-    if (resto.length !== links.length) gravarLinks(dir, resto);
-    console.log(`[og-link] op=unlink uid=${user.id} had=${links.length - resto.length}`);
+    const had = removerUsuario(user.id);
+    console.log(`[og-link] op=unlink uid=${user.id} had=${had}`);
     json(res, 200, { ok: true });
   }
 
@@ -116,11 +164,17 @@ export function makeHandlers(deps) {
     if (!c || c.exp < t) { codigos.delete(codigo); return falha('INVALID_CODE'); }
     const user = users().find(u => u.id === c.uid);
     if (!user || user.disabled) { codigos.delete(codigo); return falha('INVALID_CODE'); }
+    const dono = !!ownerUid && user.id === ownerUid;
+    // O e-mail do login tem de ser o que a conta ativou: um código vazado não serve a outra pessoa.
+    // O dono entra pela política própria e por acesso.json, sem ativação.
+    if (!dono) {
+      const a = lerLiberados(dir).find(x => x.uid === user.id);
+      if (!a || normEmail(a.email) !== normEmail(p.email)) return falha('EMAIL_MISMATCH');
+    }
     const links = lerLinks(dir);
     if (links.some(l => l.sub === p.sub && l.uid !== user.id)) return { ok: false, code: 'LOGIN_ALREADY_LINKED' };
     if (links.some(l => l.uid === user.id && l.sub !== p.sub)) return { ok: false, code: 'ACCOUNT_ALREADY_LINKED' };
     codigos.delete(codigo);                                   // uso único
-    const dono = !!ownerUid && user.id === ownerUid;
     const entrada = { sub: p.sub, email: normEmail(p.email), uid: user.id, name: user.name, owner: dono,
       access: dono ? 'write' : 'read', linked_at: new Date(t).toISOString() };
     gravarLinks(dir, [...links.filter(l => l.uid !== user.id), entrada]);
@@ -158,5 +212,5 @@ export function makeHandlers(deps) {
     return n;
   }
 
-  return { getLink, challengeLink, startLink, unlink, varrerPedidos };
+  return { getLink, challengeLink, startLink, activateLink, unlink, removerUsuario, varrerPedidos };
 }

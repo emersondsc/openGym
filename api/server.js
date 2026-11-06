@@ -18,6 +18,7 @@ import { checkMesos } from './meso.js';
 import * as micro from './micro.js';
 import * as proposals from './proposals.js';
 import * as coachLink from './coach-link.js';
+import * as coachAccess from './coach-access.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -594,6 +595,11 @@ const routes = {
   'POST /api/coach-link/challenge': (req, res) => COACH_LINK.challengeLink(req, res),
   'POST /api/coach-link/start': (req, res) => COACH_LINK.startLink(req, res),
   'POST /api/coach-link/unlink': (req, res) => COACH_LINK.unlink(req, res),
+  'POST /api/coach-link/activate': (req, res) => COACH_LINK.activateLink(req, res),
+  // Chamadas pelo Cloudflare Access no login do conector (spec_liberacao_pelo_app.md). Sem sessão:
+  // a entrada vem assinada pelo time e a resposta sai assinada pela chave do app.
+  'GET /api/coach-access/keys': (req, res) => COACH_ACCESS.keys(req, res),
+  'POST /api/coach-access/evaluate': (req, res) => COACH_ACCESS.evaluate(req, res),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -999,7 +1005,10 @@ const routes = {
     if (!u) return json(res, 404, { error: 'no such user' });
     if (isAdmin(u)) return json(res, 400, { error: 'cannot disable an admin' });
     u.disabled = !!body.disabled;
-    if (u.disabled) presence.delete(u.id);   // drop them off "training now" at once
+    if (u.disabled) {
+      presence.delete(u.id);   // drop them off "training now" at once
+      COACH_LINK.removerUsuario(u.id);   // e do treinador do chat: lista do Cloudflare e ligação
+    }
     saveDb();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
   },
@@ -1067,6 +1076,7 @@ Object.assign(ROUTINE_HANDLERS, proposals.makeHandlers({
 const COACH_LINK = coachLink.makeHandlers({
   readSession, readBody, json, linkChallenge, proveLink, saveDb, users: () => db.users, ownerUid: COACH_OWNER_UID
 });
+const COACH_ACCESS = coachAccess.makeHandlers({ readBody, json, chaveArq: path.join(DATA, 'coach-access-key.pem') });
 
 // Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo
 // a validação de rotina aceita id inexistente e a análise devolve o id no lugar do nome, as duas

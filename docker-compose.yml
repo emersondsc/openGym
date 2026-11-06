@@ -45,6 +45,8 @@ services:
     environment:
       - PORT=3000            # internal port (nginx proxies here) — do not change
       - DATA_DIR=/data
+      # Time do Cloudflare Access que assina o login do conector (spec_liberacao_pelo_app.md). Nao e segredo.
+      - COACH_ACCESS_TEAM=flat-snowflake-0a35.cloudflareaccess.com
     volumes:
       - /mnt/drivebackup/apps/openGym/data:/data         # users, passkeys, per-user state, session secret — BACK THIS UP
       # Propostas do treinador: `pending` vem do MCP e é só leitura aqui; a API grava o resto.
