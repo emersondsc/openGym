@@ -18,6 +18,9 @@ export const LIMITES = { abertas: 20, bytes: 128 * 1024, title: 200, summary: 20
 export const SALTO_MAX = 0.15;
 const RESTRICOES = ['hernia', 'joelho'];
 const SNAPSHOTS_MAX = 10;
+export const AUTO_MAX_24H = 10;
+/** Tipos que podem entrar sem passkey. O resto sempre pede a passkey do dono no app. */
+export const AUTO_KINDS = ['week', 'mesocycle'];
 const SNAPSHOTS_DIAS = 30;
 
 const CAMPOS_ROTINA = ['id', 'name', 'emoji', 'prog'];
@@ -144,6 +147,59 @@ export function validarPlano(S, kind, plan, catalog) {
   return { code: 'BAD_KIND', error: 'unknown kind', field: 'kind' };
 }
 
+/**
+ * Gravação direta (spec_gravacao_direta_treinador.md): só criar entra sem passkey. Pura e sem disco,
+ * para o MCP prever o mesmo resultado. `autoHoje` = gravações diretas nas últimas 24 h.
+ * Devolve {modo: 'auto'} ou {modo: 'passkey', motivo}.
+ */
+export function modoDe(S, p, { ligado = true, autoHoje = 0 } = {}) {
+  const passkey = motivo => ({ modo: 'passkey', motivo });
+  if (!ligado) return passkey('AUTO_OFF');
+  if (!AUTO_KINDS.includes(p.kind)) return passkey('KIND_NEEDS_PASSKEY');
+  const av = avisos(S, p.kind, p.plan);
+  if (p.kind === 'week') {
+    if (findConflicts(S, p.plan).datas.length) return passkey('REPLACES_DAYS');
+    if (av.some(w => w.code === 'WEIGHT_JUMP' && w.pct > 0)) return passkey('WEIGHT_JUMP');
+  }
+  if (p.kind === 'mesocycle') {
+    if (av.some(w => w.code === 'MESO_OVERWRITE')) return passkey('MESO_OVERWRITE');
+    if (av.some(w => w.code === 'RESTRICTION_DROPPED')) return passkey('RESTRICTION_DROPPED');
+  }
+  if (autoHoje >= AUTO_MAX_24H) return passkey('AUTO_LIMIT');
+  return { modo: 'auto' };
+}
+
+/**
+ * A chave da gravação direta fica visível ao MCP em `decisions/auto-apply.json`, que ele só lê: assim
+ * ele não promete "entra sozinha" quando a API está com a chave desligada.
+ */
+export const ARQ_POLITICA = 'auto-apply.json';
+export function gravarPolitica(dir, ligado) {
+  const f = path.join(dir, 'decisions', ARQ_POLITICA);
+  if (!ligado) { fs.rmSync(f, { force: true }); return; }
+  const tmp = `${f}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ on: true, max_24h: AUTO_MAX_24H, kinds: AUTO_KINDS }), { mode: 0o644 });
+  fs.renameSync(tmp, f);
+}
+export function lerPolitica(dir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'decisions', ARQ_POLITICA), 'utf8')).on === true; } catch { return false; }
+}
+
+/** Quantas propostas foram gravadas direto nas últimas 24 h, pelas decisões em disco. */
+export function contarAuto(dir, agora = Date.now()) {
+  let nomes = [];
+  try { nomes = fs.readdirSync(path.join(dir, 'decisions')); } catch { return 0; }
+  let n = 0;
+  for (const nome of nomes) {
+    if (!/^prop-[a-z0-9-]{1,40}\.json$/.test(nome)) continue;
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(dir, 'decisions', nome), 'utf8'));
+      if (d.mode === 'auto' && agora - Date.parse(d.at) < 86400000) n++;
+    } catch { /* ilegivel nao conta */ }
+  }
+  return n;
+}
+
 const acaoDe = (kind, plan) => ({
   week: 'publish-micro', routine_patch: 'patch-routine', routine_delete: 'delete-routine', mesocycle: 'put-meso',
   mesocycle_action: plan.action === 'delete' ? 'delete-meso' : 'activate-meso', history_fix: 'history-fix'
@@ -259,6 +315,7 @@ function gravarSnapshot(dir, id, S) {
 
 export function makeHandlers(deps) {
   const { readSession, readState, readBody, json, DATA, livePresence, ownerUid, proposalChallenge, proveProposal, saveDb } = deps;
+  const autoApply = !!deps.autoApply;
   const dir = deps.dir || process.env.PROPOSALS_DIR || '/coach-proposals';
   const catalogo = () => deps.catalog || loadCatalog(deps.CATALOG_PATH);
 
@@ -299,7 +356,68 @@ export function makeHandlers(deps) {
     return () => (cache ??= readAudit(DATA, ownerUid, 500).entries);
   };
   const resumo = (p, a) => ({ id: p.id, kind: p.kind, title: p.title, created_at: p.created_at, expires_at: p.expires_at,
-    status: a.status, blocked_reason: a.blocked_reason ?? null });
+    status: a.status, blocked_reason: a.blocked_reason ?? null, mode: a.decision?.mode ?? null, decided_at: a.decision?.at ?? null });
+
+  /**
+   * A escrita de uma proposta já avaliada como `pending`, igual para passkey e gravação direta.
+   * Síncrona do começo ao fim: nada intercala com outra decisão nem com um PUT do app.
+   */
+  function aplicarProposta(p, S, a, modo) {
+    gravarSnapshot(dir, p.id, S);
+    const agora = new Date().toISOString();
+    const catalog = catalogo();
+    const r = withState(deps, ownerUid, {
+      ifMatch: String(stateMeta(S).rev), actor: { actor: 'claude', verified: modo }, action: acaoDe(p.kind, p.plan),
+      uid: ownerUid, dropActive: p.kind === 'routine_delete'
+    }, work => {
+      const out = aplicar(work, p.kind, a.sim.plano, catalog, agora);
+      return out?.error ? out : { _meta: { ...(out?._meta || {}), proposalId: p.id } };
+    });
+    if (r.code !== 200) return r;
+    const S1 = readState(ownerUid) || {};
+    const decisao = { status: 'applied', mode: modo, rev: r.body.rev, at: agora, result_hash: hashBase(S1, p.kind, p.plan) };
+    try {
+      if (!gravarDecisao(dir, p.id, decisao)) console.error('[og-proposal] decisao ja existia', p.id);
+    } catch (e) { console.error('[og-proposal] decisao', p.id, e.message); }   // a auditoria recupera
+    console.log(`[og-proposal] op=${modo === 'auto' ? 'auto-apply' : 'approve'} id=${p.id} kind=${p.kind} rev=${r.body.meta.revBefore}->${r.body.meta.revAfter}`);
+    return r;
+  }
+
+  /**
+   * Gravação direta: aplica o que `modoDe` libera. Chamada pelo relógio e pelo `fs.watch` do
+   * server.js e pelo teste. Devolve os ids aplicados.
+   */
+  const descartadas = new Map();   // id -> rev em que a proposta já foi vista como "passkey"
+  function varrerAutomaticas() {
+    if (!ownerUid || !autoApply) return [];
+    let nomes = [];
+    try { nomes = fs.readdirSync(path.join(dir, 'pending')); } catch { return []; }
+    const props = nomes.map(n => /^(prop-[a-z0-9-]{1,40})\.json$/.exec(n)?.[1]).filter(Boolean)
+      .filter(id => !lerDecisao(dir, id)).map(id => lerProposta(dir, id))
+      .filter(p => p && AUTO_KINDS.includes(p.kind)).sort((x, y) => x.created_at.localeCompare(y.created_at));
+    const feitas = [];
+    for (const p of props) {
+      const S = readState(ownerUid);
+      if (!S) return feitas;
+      if (descartadas.get(p.id) === S.rev) continue;
+      try {
+        const a = avaliar(S, p, leitorAuditoria());
+        if (a.status !== 'pending') {
+          if (a.blocked_reason !== 'WORKOUT_IN_PROGRESS') descartadas.set(p.id, S.rev);
+          continue;
+        }
+        const m = modoDe(S, p, { autoHoje: contarAuto(dir) });
+        if (m.modo !== 'auto') {
+          if (m.motivo !== 'AUTO_LIMIT') descartadas.set(p.id, S.rev);
+          continue;
+        }
+        const r = aplicarProposta(p, S, a, 'auto');
+        if (r.code === 200) feitas.push(p.id);
+        else console.error('[og-proposal] auto-apply recusado', p.id, r.code, r.body?.code);
+      } catch (e) { console.error('[og-proposal] auto-apply', p.id, e.message); }
+    }
+    return feitas;
+  }
 
   async function listProposals(req, res) {
     if (!dono(req, res)) return;
@@ -332,7 +450,7 @@ export function makeHandlers(deps) {
     const sim = a.sim;
     json(res, 200, { ...meta, status: a.status, blocked_reason: a.blocked_reason ?? null, blocked_message: a.blocked_message ?? null,
       decision: a.decision ?? null, changes: sim?.changes ?? [], dates_replaced: sim?.dates_replaced ?? [],
-      warnings: avisos(S, p.kind, p.plan),
+      warnings: avisos(S, p.kind, p.plan), mode: a.decision?.mode ?? null,
       approval_hash: sim ? approvalHash(p, a.base, sim.changes, sim.dates_replaced) : null });
   }
 
@@ -372,23 +490,8 @@ export function makeHandlers(deps) {
     if (approvalHash(p, a.base, a.sim.changes, a.sim.dates_replaced) !== hash) {
       return json(res, 409, { error: 'proposal changed', code: 'PROPOSAL_CHANGED' });
     }
-    gravarSnapshot(dir, id, S);
-    const agora = new Date().toISOString();
-    const catalog = catalogo();
-    const r = withState(deps, user.id, {
-      ifMatch: String(stateMeta(S).rev), actor: { actor: 'claude', verified: 'passkey' }, action: acaoDe(p.kind, p.plan),
-      uid: user.id, dropActive: p.kind === 'routine_delete'
-    }, work => {
-      const out = aplicar(work, p.kind, a.sim.plano, catalog, agora);
-      return out?.error ? out : { _meta: { ...(out?._meta || {}), proposalId: id } };
-    });
+    const r = aplicarProposta(p, S, a, 'passkey');
     if (r.code !== 200) return json(res, r.code, r.body);
-    const S1 = readState(ownerUid) || {};
-    const decisao = { status: 'applied', rev: r.body.rev, at: agora, result_hash: hashBase(S1, p.kind, p.plan) };
-    try {
-      if (!gravarDecisao(dir, id, decisao)) console.error('[og-proposal] decisao ja existia', id);
-    } catch (e) { console.error('[og-proposal] decisao', id, e.message); }   // a auditoria recupera
-    console.log(`[og-proposal] op=approve id=${id} kind=${p.kind} rev=${r.body.meta.revBefore}->${r.body.meta.revAfter}`);
     json(res, 200, { ok: true, rev: r.body.rev });
   }
 
@@ -402,5 +505,5 @@ export function makeHandlers(deps) {
     json(res, 200, { ok: true });
   }
 
-  return { listProposals, getProposal, challengeProposal, approveProposal, rejectProposal };
+  return { listProposals, getProposal, challengeProposal, approveProposal, rejectProposal, varrerAutomaticas };
 }

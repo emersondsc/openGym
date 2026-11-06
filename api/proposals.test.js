@@ -269,3 +269,120 @@ test('hash usa so a projecao: campo oculto nao muda a base', () => {
   assert.equal(a, b);
   assert.ok(sha256(canon({})));
 });
+
+/* ---------------------------------------------------------------- gravação direta (spec_gravacao_direta_treinador.md) */
+
+const mesoNovo = (extra = {}) => ({ meso: { id: 'meso-2026-12-01', name: 'N', start: '2026-12-01', weeks: [{ n: 1 }], rules: { Hernia: 'a' }, ...extra }, activate: 'now' });
+const decisao = (e, id) => JSON.parse(fs.readFileSync(path.join(e.dir, 'decisions', `${id}.json`), 'utf8'));
+
+test('modoDe: so semana e mesociclo novo entram direto', () => {
+  const e = ambiente();
+  const S = e.S();
+  const m = (kind, plan, o) => P.modoDe(S, { kind, plan }, o);
+  assert.deepEqual(m('week', semana()), { modo: 'auto' });
+  assert.deepEqual(m('week', semana(30)), { modo: 'auto' }, 'reducao de carga nao pede passkey');
+  assert.equal(m('week', semana(50)).motivo, 'WEIGHT_JUMP');
+  assert.deepEqual(m('mesocycle', mesoNovo()), { modo: 'auto' });
+  assert.equal(m('mesocycle', { meso: { ...mesoNovo().meso, id: 'meso-2026-10-27' }, activate: 'none' }).motivo, 'MESO_OVERWRITE');
+  assert.equal(m('mesocycle', mesoNovo({ rules: {} })).motivo, 'RESTRICTION_DROPPED');
+  for (const [k, plan] of [['routine_patch', { routine_id: 'r1', patch: {} }], ['routine_delete', { routine_id: 'r1' }],
+    ['mesocycle_action', { meso_id: 'meso-2026-10-27', action: 'activate' }], ['history_fix', { ops: [] }]]) {
+    assert.equal(m(k, plan).motivo, 'KIND_NEEDS_PASSKEY', k);
+  }
+  assert.equal(m('week', semana(), { ligado: false }).motivo, 'AUTO_OFF');
+  assert.equal(m('week', semana(), { autoHoje: P.AUTO_MAX_24H }).motivo, 'AUTO_LIMIT');
+  const amanha = addDias(todaySP(), 1);
+  S.dayPlan[amanha] = 'outra';
+  assert.equal(m('week', semana(42.5, { dias: [amanha] })).motivo, 'REPLACES_DAYS');
+});
+
+test('a chave fica visivel ao MCP em decisions/', () => {
+  const e = ambiente();
+  assert.equal(P.lerPolitica(e.dir), false);
+  P.gravarPolitica(e.dir, true);
+  assert.equal(P.lerPolitica(e.dir), true);
+  assert.equal(P.contarAuto(e.dir), 0, 'o arquivo da chave nao conta como decisao');
+  P.gravarPolitica(e.dir, false);
+  assert.equal(P.lerPolitica(e.dir), false);
+});
+
+test('sem a chave ligada nada entra direto', () => {
+  const e = ambiente();
+  e.proposta('week', semana());
+  assert.deepEqual(e.h.varrerAutomaticas(), []);
+  assert.equal(e.S().routines[0].ex[0].weight, 40);
+});
+
+test('semana entra direto, com snapshot, auditoria auto e decisao auto', async () => {
+  const e = ambiente({ autoApply: true });
+  e.proposta('week', semana());
+  assert.deepEqual(e.h.varrerAutomaticas(), ['prop-week']);
+  assert.equal(e.S().routines[0].ex[0].weight, 42.5);
+  assert.equal(e.S().routines[0].ex[0].bodyweight, true);
+  const a = auditoria(e.DATA).at(-1);
+  assert.deepEqual([a.actor, a.verified, a.proposalId, a.action], ['claude', 'auto', 'prop-week', 'publish-micro']);
+  assert.equal(decisao(e, 'prop-week').mode, 'auto');
+  assert.equal(fs.readdirSync(path.join(e.dir, 'snapshots')).length, 1);
+  const lista = (await e.chama('listProposals')).body;
+  assert.equal(lista.proposals.length, 0);
+  assert.deepEqual(e.h.varrerAutomaticas(), [], 'nao aplica duas vezes');
+  const r = await e.aprova('prop-week');
+  assert.equal(r.code, 409, 'passkey depois da gravacao direta nao aplica de novo');
+});
+
+test('mesociclo novo entra direto e ja fica ativo', () => {
+  const e = ambiente({ autoApply: true });
+  e.proposta('mesocycle', mesoNovo());
+  assert.deepEqual(e.h.varrerAutomaticas(), ['prop-mesocycle']);
+  const S = e.S();
+  assert.equal(S.activeMeso, 'meso-2026-12-01');
+  assert.equal(S.mesos.find(m => m.id === 'meso-2026-12-01').activatedBy, 'assistant');
+});
+
+test('alterar, apagar, trocar mesociclo, corrigir historico e remarcar dia continuam com passkey', () => {
+  const e = ambiente({ autoApply: true });
+  const amanha = addDias(todaySP(), 1);
+  const s = e.S(); s.dayPlan[amanha] = 'outra'; fs.writeFileSync(e.stateFile(OWNER), JSON.stringify(s));
+  e.proposta('routine_patch', { routine_id: 'r1', patch: { name: 'B' } });
+  e.proposta('routine_delete', { routine_id: 'r1' });
+  e.proposta('mesocycle_action', { meso_id: 'meso-2026-10-27', action: 'delete' });
+  e.proposta('history_fix', { ops: [{ workout_id: 'w1', exercise_id: '0584', set_index: 0, field: 'r', from: 10, to: 11 }] });
+  e.proposta('mesocycle', { meso: { ...mesoNovo().meso, id: 'meso-2026-10-27' }, activate: 'none' }, { id: 'prop-meso-troca' });
+  e.proposta('mesocycle', mesoNovo({ rules: {} }), { id: 'prop-meso-sem-regra' });
+  e.proposta('week', semana(42.5, { dias: [amanha] }), { id: 'prop-semana-dia' });
+  e.proposta('week', semana(50), { id: 'prop-semana-salto' });
+  const antes = JSON.stringify(e.S());
+  assert.deepEqual(e.h.varrerAutomaticas(), []);
+  assert.equal(JSON.stringify(e.S()), antes);
+  assert.deepEqual(fs.readdirSync(path.join(e.dir, 'decisions')), []);
+});
+
+test('treino em andamento: espera e entra quando o treino termina', () => {
+  const e = ambiente({ autoApply: true });
+  e.proposta('week', semana());
+  e.setPresenca({});
+  assert.deepEqual(e.h.varrerAutomaticas(), []);
+  e.setPresenca(null);
+  assert.deepEqual(e.h.varrerAutomaticas(), ['prop-week']);
+});
+
+test('limite de gravacoes diretas em 24 h', () => {
+  const e = ambiente({ autoApply: true });
+  const agora = new Date().toISOString();
+  for (let i = 0; i < P.AUTO_MAX_24H; i++) {
+    fs.writeFileSync(path.join(e.dir, 'decisions', `prop-velha-${i}.json`), JSON.stringify({ status: 'applied', mode: 'auto', at: agora }));
+  }
+  assert.equal(P.contarAuto(e.dir), P.AUTO_MAX_24H);
+  e.proposta('week', semana());
+  assert.deepEqual(e.h.varrerAutomaticas(), []);
+  assert.equal(P.contarAuto(e.dir, Date.now() + 86400001), 0);
+});
+
+test('aprovacao por passkey grava mode passkey e a varredura nao repete', async () => {
+  const e = ambiente({ autoApply: true });
+  e.proposta('routine_patch', { routine_id: 'r1', patch: { name: 'B' } });
+  assert.equal((await e.aprova('prop-routine-patch')).code, 200);
+  assert.equal(decisao(e, 'prop-routine-patch').mode, 'passkey');
+  assert.equal(auditoria(e.DATA).at(-1).verified, 'passkey');
+  assert.deepEqual(e.h.varrerAutomaticas(), []);
+});

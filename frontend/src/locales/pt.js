@@ -757,6 +757,7 @@ export default {
   'Out of date': 'Desatualizada',
   'Blocked': 'Bloqueada',
   'Applied': 'Aplicada',
+  'Saved from chat': 'Gravada pelo chat',
   'Rejected': 'Recusada',
   'Canceled': 'Cancelada',
   'Expired': 'Expirada',

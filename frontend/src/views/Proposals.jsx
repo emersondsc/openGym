@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { approveProposal, getProposal, listProposals, rejectProposal } from '../lib/proposals.js'
 import { fmtValue, groupChanges } from '../lib/proposal-diff.js'
+import { savedFromChat } from '../lib/proposal-card.js'
 import { EXIDX } from '../lib/exercises.js'
 import { t } from '../lib/i18n.js'
 import { Button, TextArea } from '../components/ui.jsx'
@@ -24,8 +25,8 @@ const linha = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap:
 
 const nomeEx = id => EXIDX[id]?.n || id
 
-function Status({ value }) {
-  const [txt, cor] = STATUS[value] || [value, 'var(--grey)']
+function Status({ value, mode }) {
+  const [txt, cor] = savedFromChat({ status: value, mode }) ? ['Saved from chat', 'var(--acc)'] : STATUS[value] || [value, 'var(--grey)']
   return <span className="small" style={{ color: cor, whiteSpace: 'nowrap' }}>{t(txt)}</span>
 }
 
@@ -42,7 +43,7 @@ export default function Proposals() {
         <span style={{ display: 'block', fontWeight: 600 }}>{p.title}</span>
         <span className="muted small">{new Date(p.created_at).toLocaleDateString()}</span>
       </span>
-      <Status value={p.status} />
+      <Status value={p.status} mode={p.mode} />
     </button>
   )
   return <div className="view">
@@ -153,7 +154,7 @@ export function ProposalDetail() {
     <button onClick={() => nav('/proposals')} style={{ all: 'unset', cursor: 'pointer', color: 'var(--acc)' }}>‹ {t('Proposals')}</button>
     <h1 style={{ margin: '8px 0 2px' }}>{p.title}</h1>
     <div className="muted small" style={{ marginBottom: 10 }}>
-      {t('Coach')} · {new Date(p.created_at).toLocaleString()} · <Status value={p.status} />
+      {t('Coach')} · {new Date(p.created_at).toLocaleString()} · <Status value={p.status} mode={p.mode} />
     </div>
 
     {aberta && trava && <div style={aviso('var(--red)')}>{trava}</div>}

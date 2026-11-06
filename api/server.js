@@ -29,6 +29,8 @@ const ORIGIN = process.env.ORIGIN || 'http://localhost:8080';
 const RP_NAME = process.env.RP_NAME || 'openGym';
 // Dono das propostas do treinador. Sem esta variável as rotas respondem 404: é o desligamento.
 const COACH_OWNER_UID = (process.env.COACH_OWNER_UID || '').trim();
+// Gravação direta do treinador (spec_gravacao_direta_treinador.md). Sem a variável, tudo pede passkey.
+const COACH_AUTO_APPLY = process.env.COACH_AUTO_APPLY === '1';
 // Admin dashboard (issue): admins are matched by uid; INVITE_ONLY gates new signups behind a
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -1031,7 +1033,7 @@ Object.assign(ROUTINE_HANDLERS, micro.makeHandlers({
 // Propostas do treinador: mesmo mapa. Os nomes não podem colidir com `list` das rotinas.
 Object.assign(ROUTINE_HANDLERS, proposals.makeHandlers({
   readSession, readState, stateFile, atomicWrite, readBody, json, DATA, livePresence, CATALOG_PATH,
-  ownerUid: COACH_OWNER_UID, proposalChallenge, proveProposal, saveDb
+  ownerUid: COACH_OWNER_UID, proposalChallenge, proveProposal, saveDb, autoApply: COACH_AUTO_APPLY
 }));
 
 // Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo
@@ -1074,4 +1076,20 @@ const server = http.createServer(async (req, res) => {
 // Importado por um teste, o módulo não abre porta nenhuma.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   server.listen(PORT, () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})`));
+  if (COACH_AUTO_APPLY && COACH_OWNER_UID) {
+    // Relógio de 3 s e aviso da pasta: o que chegar em `pending/` e puder entrar direto entra.
+    const varrer = () => { try { ROUTINE_HANDLERS.varrerAutomaticas(); } catch (e) { console.error('[og-proposal] varrer', e.message); } };
+    setInterval(varrer, 3000).unref();
+    let tm = null;
+    try {
+      fs.watch(path.join(process.env.PROPOSALS_DIR || '/coach-proposals', 'pending'), () => {
+        clearTimeout(tm); tm = setTimeout(varrer, 300);
+      }).on('error', e => console.error('[og-proposal] watch', e.message));
+    } catch (e) { console.error('[og-proposal] watch', e.message); }
+    console.log('[og-proposal] gravacao direta ligada');
+  }
+  if (COACH_OWNER_UID) {
+    try { proposals.gravarPolitica(process.env.PROPOSALS_DIR || '/coach-proposals', COACH_AUTO_APPLY); }
+    catch (e) { console.error('[og-proposal] politica', e.message); }
+  }
 }
