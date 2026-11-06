@@ -28,6 +28,7 @@ import Library from './views/Library.jsx'
 import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
 import Proposals, { ProposalDetail } from './views/Proposals.jsx'
+import CoachLink from './views/CoachLink.jsx'
 
 bindUI(useUI)   // lets the shared controls open sheets without importing the store at module scope
 
@@ -87,6 +88,7 @@ function Shell() {
           {!authed ? <Login /> : (
             <Routes>
               <Route path="/home" element={<Home />} />
+              <Route path="/coach-link" element={<CoachLink />} />
               <Route path="/plan" element={<Plan />} />
               <Route path="/plan/r/:id" element={<RoutineEdit />} />
               <Route path="/plan/meso/:id" element={<MesoEdit />} />

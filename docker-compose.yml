@@ -51,6 +51,9 @@ services:
       - /mnt/drivebackup/apps/openGym/coach-proposals/pending:/coach-proposals/pending:ro
       - /mnt/drivebackup/apps/openGym/coach-proposals/decisions:/coach-proposals/decisions
       - /mnt/drivebackup/apps/openGym/coach-proposals/snapshots:/coach-proposals/snapshots
+      # Ligacao ao treinador do chat: o MCP grava pedidos em `requests`; a API grava `state` (links.json).
+      - /mnt/drivebackup/apps/openGym/coach-links/requests:/coach-links/requests:ro
+      - /mnt/drivebackup/apps/openGym/coach-links/state:/coach-links/state
 
   # Builds the React frontend (multi-stage) and serves it, proxying /api → api
   # and the exercise media from the shared volume. Single origin for passkeys.

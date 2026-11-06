@@ -17,6 +17,7 @@ import * as meso from './meso.js';
 import { checkMesos } from './meso.js';
 import * as micro from './micro.js';
 import * as proposals from './proposals.js';
+import * as coachLink from './coach-link.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -465,6 +466,28 @@ async function proposalChallenge(user, proposalId, approvalHash) {
   const cid = putChallenge({ challenge: options.challenge, proposalReauth: user.id, proposalId, approvalHash });
   return { cid, options };
 }
+// Ligação ao treinador do chat (spec_treinador_por_usuario.md): desafio próprio, com biometria ou PIN.
+// Campo `linkReauth`: não serve para passkeys nem para propostas, e os desafios delas não servem aqui.
+async function linkChallenge(user) {
+  const options = await generateAuthenticationOptions({
+    rpID: RP_ID, userVerification: 'required', allowCredentials: []
+  });
+  const cid = putChallenge({ challenge: options.challenge, linkReauth: user.id });
+  return { cid, options };
+}
+async function proveLink(body, user) {
+  const c = takeChallenge(body.cid);
+  if (!c || c.linkReauth !== user.id) return 'challenge expired — try again';
+  const cred = credsOf(user).find(x => x.id === body.credential?.id);
+  if (!cred) return 'that passkey is not on this profile';
+  let verification;
+  try { verification = await checkAssertion(c, body.credential, cred, true); }
+  catch (e) { return 'verification failed: ' + e.message; }
+  if (!verification.verified) return 'not verified';
+  cred.counter = verification.authenticationInfo.newCounter;
+  cred.lastUsed = new Date().toISOString();
+  return null;
+}
 async function proveProposal(body, user, proposalId, approvalHash) {
   const c = takeChallenge(body.cid);
   if (!c || c.proposalReauth !== user.id || c.proposalId !== proposalId || c.approvalHash !== approvalHash) {
@@ -567,6 +590,10 @@ const routes = {
   // handler de padrão só em ROUTINE_HANDLERS.
   'POST /api/plan/micro': (req, res) => ROUTINE_HANDLERS.publishMicro(req, res),
   'GET /api/proposals': (req, res) => ROUTINE_HANDLERS.listProposals(req, res),
+  'GET /api/coach-link': (req, res) => COACH_LINK.getLink(req, res),
+  'POST /api/coach-link/challenge': (req, res) => COACH_LINK.challengeLink(req, res),
+  'POST /api/coach-link/start': (req, res) => COACH_LINK.startLink(req, res),
+  'POST /api/coach-link/unlink': (req, res) => COACH_LINK.unlink(req, res),
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -1036,6 +1063,11 @@ Object.assign(ROUTINE_HANDLERS, proposals.makeHandlers({
   ownerUid: COACH_OWNER_UID, proposalChallenge, proveProposal, saveDb, autoApply: COACH_AUTO_APPLY
 }));
 
+// Ligação ao treinador do chat: rotas no mapa exato acima, chamadas só depois do boot.
+const COACH_LINK = coachLink.makeHandlers({
+  readSession, readBody, json, linkChallenge, proveLink, saveDb, users: () => db.users, ownerUid: COACH_OWNER_UID
+});
+
 // Carrega o catálogo já no boot. Ausente ou ilegível = o servidor NÃO sobe: com o catálogo nulo
 // a validação de rotina aceita id inexistente e a análise devolve o id no lugar do nome, as duas
 // em silêncio. Contagem diferente do esperado é aviso, não erro: a base pode legitimamente
@@ -1087,6 +1119,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       }).on('error', e => console.error('[og-proposal] watch', e.message));
     } catch (e) { console.error('[og-proposal] watch', e.message); }
     console.log('[og-proposal] gravacao direta ligada');
+  }
+  {
+    // Pedidos de ligação do MCP: mesmo esquema das propostas, relógio e aviso da pasta.
+    const varrer = () => { try { COACH_LINK.varrerPedidos(); } catch (e) { console.error('[og-link] varrer', e.message); } };
+    setInterval(varrer, 2000).unref();
+    let tm = null;
+    try {
+      fs.watch(path.join(process.env.COACH_LINKS_DIR || '/coach-links', 'requests'), () => {
+        clearTimeout(tm); tm = setTimeout(varrer, 200);
+      }).on('error', e => console.error('[og-link] watch', e.message));
+    } catch (e) { console.error('[og-link] watch', e.message); }
   }
   if (COACH_OWNER_UID) {
     try { proposals.gravarPolitica(process.env.PROPOSALS_DIR || '/coach-proposals', COACH_AUTO_APPLY); }
