@@ -112,11 +112,11 @@ export function makeHandlers(deps) {
     const body = await readBody(req);
     const token = body && body.token;
     let entrada = null;
-    if (time && typeof token === 'string') {
-      try {
-        const kid = json64(token.split('.')[0]).kid;
-        entrada = conferir(token, await chavesDoTime(kid), Math.floor(agora() / 1000));
-      } catch (e) { console.error('[og-access] certs', e.message); }
+    let kid = null;
+    try { kid = json64(String(token).split('.')[0]).kid; } catch { /* token ilegivel: recusa, sem culpar as chaves */ }
+    if (time && typeof token === 'string' && typeof kid === 'string') {
+      try { entrada = conferir(token, await chavesDoTime(kid), Math.floor(agora() / 1000)); }
+      catch (e) { console.error('[og-access] certs', e.message); }
     }
     const email = normEmail(entrada?.identity?.email ?? entrada?.email);
     const quem = entrada && email ? lerLiberados(dir).find(a => normEmail(a.email) === email) : null;
