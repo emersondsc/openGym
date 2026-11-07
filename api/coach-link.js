@@ -147,14 +147,33 @@ export function makeHandlers(deps) {
     json(res, 200, { ok: true });
   }
 
+  /** Ligação automática (adendo v2 de spec_liberacao_pelo_app.md): o e-mail foi ativado com passkey
+   *  no app e o login do Access provou que é da pessoa, então não há código. Não conta como tentativa
+   *  errada: não há o que adivinhar. */
+  function ligarAuto(p, t) {
+    const email = normEmail(p.email);
+    const a = email ? lerLiberados(dir).find(x => normEmail(x.email) === email) : null;
+    const user = a ? users().find(u => u.id === a.uid) : null;
+    if (!user || user.disabled) return { ok: false, code: 'NOT_ACTIVATED' };
+    const links = lerLinks(dir);
+    if (links.some(l => l.sub === p.sub && l.uid !== user.id)) return { ok: false, code: 'LOGIN_ALREADY_LINKED' };
+    const dono = !!ownerUid && user.id === ownerUid;
+    const entrada = { sub: p.sub, email, uid: user.id, name: user.name, owner: dono,
+      access: dono ? 'write' : 'read', linked_at: new Date(t).toISOString() };
+    gravarLinks(dir, [...links.filter(l => l.uid !== user.id), entrada]);
+    console.log(`[og-link] op=link uid=${user.id} owner=${dono} via=auto`);
+    return { ok: true, name: user.name, owner: dono, access: entrada.access };
+  }
+
   /** Confere um pedido do MCP. Devolve o resultado que o MCP vai ler. */
   function processar(p) {
     const t = agora();
     if (!p || typeof p.sub !== 'string' || !SUB_RE.test(p.sub) || typeof p.email !== 'string' || p.email.length > 254
-        || typeof p.code !== 'string' || p.code.length > 40 || Number.isNaN(Date.parse(p.at))) {
+        || (p.auto !== true && (typeof p.code !== 'string' || p.code.length > 40)) || Number.isNaN(Date.parse(p.at))) {
       return { ok: false, code: 'BAD_REQUEST' };
     }
     if (t - Date.parse(p.at) > PEDIDO_MS) return { ok: false, code: 'REQUEST_EXPIRED' };
+    if (p.auto === true) return ligarAuto(p, t);
     const recentes = (falhas.get(p.sub) || []).filter(x => t - x < 3600000);
     falhas.set(p.sub, recentes);
     if (recentes.length >= TENTATIVAS_HORA) return { ok: false, code: 'TOO_MANY_TRIES' };

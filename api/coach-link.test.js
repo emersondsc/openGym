@@ -28,7 +28,13 @@ function ambiente({ prova = () => null } = {}) {
     return JSON.parse(fs.readFileSync(path.join(dir, 'state', 'results', `${id}.json`), 'utf8'));
   };
   const codigo = async uid => (await chama('startLink', { id: uid, name: uid })).body.code;
-  return { dir, h, chama, pedir, codigo, avancar: ms => { t += ms; }, links: () => L.lerLinks(dir), liberados: () => lerLiberados(dir) };
+  const auto = (sub, email) => {
+    const id = `req-t${n++}`;
+    fs.writeFileSync(path.join(dir, 'requests', `${id}.json`), JSON.stringify({ sub, email, auto: true, at: new Date(t).toISOString() }));
+    h.varrerPedidos();
+    return JSON.parse(fs.readFileSync(path.join(dir, 'state', 'results', `${id}.json`), 'utf8'));
+  };
+  return { dir, h, chama, pedir, codigo, auto, avancar: ms => { t += ms; }, links: () => L.lerLinks(dir), liberados: () => lerLiberados(dir) };
 }
 
 test('codigo: alfabeto sem ambiguidade, 8 letras, formato XXXX-XXXX', () => {
@@ -164,4 +170,31 @@ test('trocar de e-mail desfaz a ligacao antiga; desativar e desabilitar tiram tu
   e.h.removerUsuario('maria');
   assert.deepEqual(e.liberados(), []);
   assert.equal(e.pedir('sub-m3', vivo, { email: 'nova@ex.com' }).code, 'INVALID_CODE');
+});
+
+/* ---------- adendo v2: ligação automática pelo e-mail ativado ---------- */
+
+test('auto: e-mail ativado liga sem codigo, como convidado', () => {
+  const e = ambiente();
+  assert.deepEqual(e.auto('sub-m', ' Pessoa@Ex.com'), { ok: true, name: 'Maria', owner: false, access: 'read' });
+  const [l] = e.links();
+  assert.deepEqual([l.sub, l.uid, l.email, l.access], ['sub-m', 'maria', 'pessoa@ex.com', 'read']);
+});
+
+test('auto: e-mail nao ativado ou conta desabilitada nao liga e nao conta como erro', () => {
+  const e = ambiente();
+  for (let i = 0; i < L.TENTATIVAS_HORA + 2; i++) assert.equal(e.auto('sub-x', 'ninguem@ex.com').code, 'NOT_ACTIVATED');
+  fs.writeFileSync(path.join(e.dir, 'state', 'allowed.json'), JSON.stringify({ version: 1, allowed: [{ uid: 'off', email: 'off@ex.com' }] }));
+  assert.equal(e.auto('sub-off', 'off@ex.com').code, 'NOT_ACTIVATED');
+  assert.deepEqual(e.links(), []);
+});
+
+test('auto: login de outra conta nao muda de dono; a conta troca de login com o mesmo e-mail', async () => {
+  const e = ambiente();
+  assert.equal(e.pedir('sub-d', await e.codigo('dono')).ok, true);
+  assert.equal(e.auto('sub-d', 'pessoa@ex.com').code, 'LOGIN_ALREADY_LINKED');
+  assert.equal(e.auto('sub-m1', 'pessoa@ex.com').ok, true);
+  assert.equal(e.auto('sub-m2', 'pessoa@ex.com').ok, true);
+  assert.deepEqual(e.links().filter(l => l.uid === 'maria').map(l => l.sub), ['sub-m2']);
+  assert.equal(e.pedir('sub-x', 'AAAA-AAAA', { auto: 'sim' }).code, 'INVALID_CODE', 'so true liga sem codigo');
 });

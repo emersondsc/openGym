@@ -96,3 +96,20 @@ indicar), ativar, entrar no conector, ligar, ver só dados dela; desativar e ver
 um e-mail não ativado é recusado no login; conferir o contador de usuários do Access.
 Reversão: apagar a política nova no Cloudflare (com confirmação) e voltar as tags. O acesso do
 Emerson não depende de nada desta fase.
+
+## Adendo v2 (07/11/2026, aprovado pelo Emerson): ligação automática, sem código
+O código de 8 letras ficou redundante: a ativação no app já liga o e-mail à conta com passkey (um
+e-mail por conta) e o login do Access prova que o e-mail é da pessoa.
+- **Conector:** no primeiro pedido de um login sem ligação cujo e-mail está em `allowed.json`, grava um
+  pedido `{sub, email, auto: true}` e espera a API (até ~8 s). Ligou → o mesmo pedido já sai com as
+  ferramentas do papel. Falhou → segue sem ligação e só tenta de novo depois de 60 s para aquele `sub`.
+- **API:** pedido `auto` liga o `sub` à conta que ativou aquele e-mail (conta ativa, não
+  desabilitada). `sub` ligado a outra conta → `LOGIN_ALREADY_LINKED`. A conta ligada a outro `sub`
+  troca para o novo (o e-mail é o mesmo e foi provado). E-mail não ativado → `NOT_ACTIVATED`, sem contar
+  como tentativa errada.
+- **Tela:** quem não é dono vê, depois de ativar, os dois passos do Claude (adicionar o conector e entrar
+  com o e-mail) e o estado "esperando o Claude" até ligar. Sem código. O dono continua com o código.
+- `link_account` com código continua existindo como reserva.
+- Testes: API (auto liga, e-mail não ativado, conta desabilitada, `sub` de outra conta, troca de `sub`);
+  conector (primeiro pedido de e-mail ativado já lista as ferramentas de convidado; e-mail fora da lista
+  não pede ligação; falha não repete antes de 60 s); tela.
