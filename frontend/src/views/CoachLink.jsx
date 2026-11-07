@@ -16,6 +16,7 @@ export default function CoachLink() {
   const [info, setInfo] = useState(undefined)
   const [code, setCode] = useState(null)
   const [email, setEmail] = useState('')
+  const [editing, setEditing] = useState(false)   // trocar o e-mail sem criar outra conta
   const [, tick] = useState(0)
   const [busy, setBusy] = useState(false)
   const load = () => getCoachAccess().then(setInfo).catch(() => setInfo(null))
@@ -33,11 +34,13 @@ export default function CoachLink() {
     catch (e) { toast(errorText(e, t)) }
     finally { setBusy(false) }
   }
-  const activate = () => run(async () => { setCode(await activateCoach(email)); await load() })
+  const activate = () => run(async () => { setCode(await activateCoach(email)); setEditing(false); await load() })
+  const edit = () => { setEmail(info?.allowed?.email || ''); setCode(null); setEditing(true) }
   const newCode = () => run(async () => setCode(await startCoachLink()))
   const stop = () => run(async () => { await unlinkCoach(); setCode(null); await load(); toast(t('Coach disconnected')) })
 
-  const stage = coachStage(info, code)
+  // Trocar de e-mail é ativar de novo: a API troca o anterior e desfaz a ligação antiga.
+  const stage = editing && info ? 'activate' : coachStage(info, code)
   const left = code ? minutesLeft(code.expires_at) : 0
   const guest = info && !info.owner
 
@@ -58,7 +61,8 @@ export default function CoachLink() {
       <div style={{ fontWeight: 600 }}>{t('Connected')}</div>
       <div className="muted small">{info.linked.email} · {new Date(info.linked.linked_at).toLocaleDateString()}</div>
       <div className="muted small">{info.linked.access === 'write' ? t('The coach can save to your plan') : t('Read only')}</div>
-      <Button variant="danger" disabled={busy} style={{ marginTop: 10 }} onClick={stop}>{guest ? t('Turn off') : t('Disconnect')}</Button>
+      {guest && <Button disabled={busy} style={{ marginTop: 10 }} onClick={edit}>{t('Change e-mail')}</Button>}
+      <Button variant="danger" disabled={busy} style={{ marginTop: guest ? 8 : 10 }} onClick={stop}>{guest ? t('Turn off') : t('Disconnect')}</Button>
     </div>}
 
     {stage === 'activate' && <div style={card}>
@@ -69,6 +73,10 @@ export default function CoachLink() {
         {t('Privacy: your training data goes to the Claude account you use, under your own Claude account terms. You can turn it off here at any time.')}
       </div>
       <Button variant="primary" disabled={busy || !email.trim()} style={{ marginTop: 10 }} onClick={activate}>{t('Turn on with passkey')}</Button>
+      {editing && <>
+        <div className="muted small" style={{ marginTop: 8 }}>{t('Changing the e-mail disconnects the current login in Claude. Sign in again with the new one.')}</div>
+        <Button disabled={busy} style={{ marginTop: 8 }} onClick={() => setEditing(false)}>{t('Cancel')}</Button>
+      </>}
     </div>}
 
     {stage === 'ready' && <div style={card}>
@@ -78,11 +86,13 @@ export default function CoachLink() {
       </>}
       {!guest && <div className="muted small">{t('Not connected')}</div>}
       <Button variant="primary" disabled={busy} style={{ marginTop: 10 }} onClick={newCode}>{guest ? t('New code') : t('Connect with passkey')}</Button>
+      {guest && <Button disabled={busy} style={{ marginTop: 8 }} onClick={edit}>{t('Change e-mail')}</Button>}
       {guest && <Button variant="danger" disabled={busy} style={{ marginTop: 8 }} onClick={stop}>{t('Turn off')}</Button>}
     </div>}
 
     {stage === 'code' && <div style={card}>
       {guest && steps}
+      {guest && <Button disabled={busy} style={{ marginTop: 8 }} onClick={edit}>{t('Change e-mail')}</Button>}
       {left > 0 ? <>
         <div className="muted small" style={{ marginTop: guest ? 10 : 0 }}>{t('In Claude, with the OpenGym connector, say:')}</div>
         <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: '.08em', margin: '8px 0', fontVariantNumeric: 'tabular-nums' }}>{code.code}</div>

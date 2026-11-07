@@ -774,6 +774,8 @@ export default {
   'Turn on with passkey': 'Ativar com a passkey',
   'Turned on for {0}': 'Ativado para {0}',
   'Turn off': 'Desativar',
+  'Change e-mail': 'Trocar e-mail',
+  'Changing the e-mail disconnects the current login in Claude. Sign in again with the new one.': 'Trocar o e-mail desliga o login atual no Claude. Entre de novo com o novo.',
   'Check the e-mail address.': 'Confira o endereço de e-mail.',
   'This e-mail is already used by another account.': 'Este e-mail já é usado por outra conta.',
   'The passkey was not confirmed. Try again.': 'A passkey não foi confirmada. Tente de novo.',
