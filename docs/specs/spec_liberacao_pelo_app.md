@@ -38,6 +38,20 @@ Quem não tem conta no app, ou não ativou, não passa da porta do conector.
 - **Papel:** quem ativa entra como convidado, só leitura, como na fase 2.
 - **Limite do plano gratuito:** 50 pessoas no Access. Quem tenta entrar e é recusado não deveria
   contar; isso é conferido no teste real.
+## Como ficou no Cloudflare (teste real, 07/11/2026)
+O Cloudflare só manda o código de login para e-mails que uma regra cita de forma explícita: "Everyone"
+não conta, e uma regra de bloqueio com a pergunta ao app trava o envio para todos. O que funciona:
+- regra 1 "Emerson da Silva Cardozo" (compartilhada com o `hermes`), intocada;
+- regra 3 "Liberados pelo app": inclui **domínios** de e-mail (`gmail.com`; outlook, hotmail e live
+  aprovados pelo Emerson, a acrescentar) e **exige** a avaliação externa. O código vai para o domínio;
+  no login o app decide.
+Consequência: e-mail de outro domínio não recebe código até o domínio entrar na regra (mudança na
+Cloudflare, com confirmação).
+Teste real: conta "teste" ativada com um Gmail; login no conector → `op=eval ok=true`; antes de ligar
+só `get_status` e `link_account`; `link_account` → convidado, só leitura, dados vazios e nenhum dado do
+Emerson; "Desativar" no app → o pedido seguinte ao conector volta 401 com o login do Access ainda válido.
+Vagas do Access usadas: 2 de 50.
+
 ## Implementação
 ### App (API)
 - `api/coach-access.js` (novo):
