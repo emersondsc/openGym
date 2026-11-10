@@ -197,7 +197,7 @@ h4.sec{
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row{display:flex;align-items:center;gap:12px}
 .row.between{justify-content:space-between}
-/* Prev, Add exercise e Next na mesma linha, com texto menor para caber no celular */
+/* Prev, Add exercise, Swap exercise e Next na mesma linha, com texto menor para caber no celular */
 .wnav{
   position:fixed;left:var(--pad);right:var(--pad);bottom:calc(66px + var(--sab));z-index:49;
   margin:0 auto;max-width:calc(560px - 2*var(--pad));gap:4px;border-radius:var(--r);
@@ -209,7 +209,7 @@ body:has(.wnav) #timer{bottom:calc(132px + var(--sab))}
 body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .wnav .btn{flex:0 0 auto;width:auto;padding-left:6px;padding-right:6px;font-size:14px;white-space:nowrap}
 .wnav .btn .icn{font-size:16px}
-.wnav .btn:nth-child(2){flex:1 1 0;min-width:0;line-height:1.2;white-space:normal}   /* idioma de texto longo */
+.wnav .btn.mid{flex:1 1 0;min-width:0;line-height:1.2;white-space:normal}   /* Adicionar/Trocar exercicio: dividem o meio e quebram linha em idioma de texto longo */
 
 /* ----------------------------------------------------------------- card -- */
 .card{

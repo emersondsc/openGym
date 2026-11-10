@@ -823,4 +823,8 @@ export default {
   'Weight': 'Carga',
   'Unit': 'Unidade',
   'Mode': 'Modo',
+  'Swap exercise?': 'Trocar exercício?',
+  'The sets you logged for this exercise will be discarded.': 'As séries que você registrou neste exercício serão descartadas.',
+  'Swap which exercise?': 'Trocar qual exercício?',
+  'Exercise swapped for this session only': 'Exercício trocado só neste treino',
 }

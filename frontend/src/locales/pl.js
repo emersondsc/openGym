@@ -553,4 +553,9 @@ export default {
   '{0} sets of {1} — time to add weight or move to a harder variation.': '{0} × {1} powt. — czas dodać ciężar albo przejść na trudniejszy wariant.',
   '{0} per side': '{0} na stronę',
   'You still log the total: {0} is {1} per side.': 'Nadal zapisujesz łączną liczbę: {0} to {1} na stronę.',
+  'Swap exercise': 'Zamień ćwiczenie',
+  'Swap exercise?': 'Zamienić ćwiczenie?',
+  'The sets you logged for this exercise will be discarded.': 'Serie zapisane dla tego ćwiczenia zostaną odrzucone.',
+  'Swap which exercise?': 'Które ćwiczenie zamienić?',
+  'Exercise swapped for this session only': 'Ćwiczenie zamienione tylko na ten trening',
 }

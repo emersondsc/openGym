@@ -432,7 +432,7 @@ function usageMap(st) {
   st.workouts.forEach(w => w.entries.forEach(e => { u[e.id] = (u[e.id] || 0) + 1 }))
   return u
 }
-function ExercisePicker({ onPick, close, exclude }) {
+function ExercisePicker({ onPick, close, exclude, title }) {
   const st = useStore(s => s.S)
   const usage = usageMap(st)
   // Ja estao neste treino: id repetido envenena topW/exWeights (a leitura por id pega a primeira
@@ -454,7 +454,7 @@ function ExercisePicker({ onPick, close, exclude }) {
   const f = eqOn ? base.filter(e => e.eq === eqOn) : base
   const chosenCount = Object.keys(usage).length
   return <>
-    <h3>{t('Add exercise')}</h3>
+    <h3>{title || t('Add exercise')}</h3>
     <div className="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
       <input className="input" placeholder={t('Search {0} exercises…', all.length)} value={q} onChange={e => { setQ(e.target.value); setShown(50) }} /></div>
     <div className="chips" style={{ margin: eqOpts.length > 1 ? '10px 0 6px' : '10px 0' }}>
@@ -480,7 +480,7 @@ function ExercisePicker({ onPick, close, exclude }) {
     {f.length > shown && <><div style={{ height: 8 }} /><Button onClick={() => setShown(s => s + 50)}>{t('Show more')}</Button></>}
   </>
 }
-export const exercisePicker = (onPick, exclude) => ui().openSheet(close => <ExercisePicker onPick={onPick} exclude={exclude} close={close} />)
+export const exercisePicker = (onPick, exclude, title) => ui().openSheet(close => <ExercisePicker onPick={onPick} exclude={exclude} title={title} close={close} />)
 
 /* ============================ exercise config ============================ */
 // Progression settings for one exercise (issue #17). Shown inside the config sheet because

@@ -553,4 +553,9 @@ export default {
   '{0} sets of {1} — time to add weight or move to a harder variation.': '{0} × {1} — пора добавить вес или перейти к более сложному варианту.',
   '{0} per side': '{0} на сторону',
   'You still log the total: {0} is {1} per side.': 'Ты по-прежнему записываешь общее число: {0} — это {1} на сторону.',
+  'Swap exercise': 'Заменить упражнение',
+  'Swap exercise?': 'Заменить упражнение?',
+  'The sets you logged for this exercise will be discarded.': 'Подходы, записанные для этого упражнения, будут удалены.',
+  'Swap which exercise?': 'Какое упражнение заменить?',
+  'Exercise swapped for this session only': 'Упражнение заменено только в этой тренировке',
 }

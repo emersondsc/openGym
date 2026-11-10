@@ -553,4 +553,9 @@ export default {
   '{0} sets of {1} — time to add weight or move to a harder variation.': '{1}회 {0}세트 — 이제 무게를 올리거나 더 어려운 동작으로 넘어가세요.',
   '{0} per side': '한쪽당 {0}회',
   'You still log the total: {0} is {1} per side.': '기록은 그대로 합계로 합니다: {0}회는 한쪽당 {1}회입니다.',
+  'Swap exercise': '운동 교체',
+  'Swap exercise?': '운동을 교체할까요?',
+  'The sets you logged for this exercise will be discarded.': '이 운동에 기록한 세트는 삭제됩니다.',
+  'Swap which exercise?': '어떤 운동을 교체할까요?',
+  'Exercise swapped for this session only': '이번 운동에서만 교체되었습니다',
 }
