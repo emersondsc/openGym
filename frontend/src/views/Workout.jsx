@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
-import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf } from '../lib/history.js'
+import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf } from '../lib/history.js'
 import { fmtNum, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
@@ -298,6 +298,56 @@ function ActiveWorkout() {
   })
   const removeSet = idx => mutEntry(idx, e => { if (e.sets.length > 1) e.sets.pop() })
 
+  // Trocar um exercicio vale SO para esta sessao: a entrada da sessao e reescrita no lugar,
+  // e a rotina de origem (`S.routines`) nao e tocada — na proxima vez o treino volta com o
+  // exercicio original. A entrada nova mantem a posicao e o grupo de superset (`sg`) da
+  // antiga; do alvo leva so o formato (series, reps, segundos...) e so quando o tipo de serie
+  // e o mesmo. O peso nao vem junto: e outro exercicio, entao a prescricao parte do
+  // historico dele, como se ele estivesse na rotina.
+  const swapEntry = idx => {
+    const old = A.entries[idx]
+    if (!old) return
+    const oldId = old.id
+    const doSwap = () => {
+      const h = exercisePicker(ex => {
+        h.close()
+        update(s => {
+          const e = s.active?.entries[idx]
+          // A sessao pode ter mudado com o picker aberto: so troca se ainda for a mesma entrada.
+          if (!e || e.id !== oldId) return
+          const sameKind = modeOf({ ...(e.target || {}), id: e.id }) === modeOf({ id: ex.id })
+          const keep = sameKind ? ['mode', 'sets', 'reps', 'repsMin', 'repsMax', 'sec', 'min', 'speed'] : []
+          const carried = Object.fromEntries(keep.filter(k => (e.target || {})[k] != null).map(k => [k, e.target[k]]))
+          const target = { ...defaultConfig(ex.id), sets: e.sets.length, ...carried }
+          const full = { ...target, id: ex.id }
+          const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
+          const next = { id: ex.id, target, plan, sets: applyPrescription(buildSets(s, full), plan) }
+          if (e.sg) next.sg = e.sg
+          s.active.entries[idx] = next
+        })
+        useUI.getState().toast(t('Exercise swapped for this session only'))
+      }, A.entries.filter((_, j) => j !== idx).map(e => e.id), t('Swap exercise'))
+    }
+    // Series ja marcadas deste exercicio somem com a troca — pergunta antes.
+    if (old.sets.some(x => x.done)) confirmSheet({
+      title: t('Swap exercise?'), message: t('The sets you logged for this exercise will be discarded.'),
+      confirmText: t('Swap exercise'), danger: true, onConfirm: doSwap
+    })
+    else doSwap()
+  }
+  // Num superset a linha de baixo nao sabe qual dos exercicios trocar: pergunta.
+  const swapCurrent = () => {
+    if (unit.length <= 1) return swapEntry(cur)
+    useUI.getState().openSheet(close => <>
+      <h3>{t('Swap which exercise?')}</h3>
+      <div className="list">
+        {unit.map(i => <div key={i} className="item" onClick={() => { close(); swapEntry(i) }}>
+          <div className="grow"><div className="tt capitalize">{exOr(A.entries[i].id).n}</div></div><Icon name="shuffle" className="chev" />
+        </div>)}
+      </div>
+    </>)
+  }
+
   // A timed set is held, not typed. The work timer records what was actually held — an early
   // finish logs 0:38 of a 0:45 target rather than crediting the full prescription — and then
   // checks the set off through the normal path, so rest, supersets and the finish prompt all
@@ -419,7 +469,8 @@ function ActiveWorkout() {
         const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
         s.active.entries.push({ id: ex.id, target: { ...cfg }, plan, sets: applyPrescription(buildSets(s, full), plan) })
         s.active.cur = s.active.entries.length - 1
-      }), null, S.routines.find(r => r.id === A.routineId)), S.active.entries.map(e => e.id))} icon="plus">{t('Add exercise')}</Button>
+      }), null, S.routines.find(r => r.id === A.routineId)), S.active.entries.map(e => e.id))} icon="plus" className="mid">{t('Add exercise')}</Button>
+      {A.entries.length > 0 && <Button onClick={swapCurrent} icon="shuffle" className="mid">{t('Swap exercise')}</Button>}
       <Button trailingIcon="chevronRight" disabled={unitIdx < 0 || unitIdx >= units.length - 1} onClick={() => update(s => { s.active.cur = units[unitIdx + 1][0] })}>{t('Next')}</Button>
     </div>
     <div style={{ height: 10 }} />
