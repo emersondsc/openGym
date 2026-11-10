@@ -1,5 +1,22 @@
 # Changelog
 
+## Não lançado — nota por série
+
+Cada série ganha uma **nota de texto livre**, que o treinador do chat lê
+(`docs/specs/spec_nota_por_serie.md`).
+
+- 💬 **Balão na linha da série:** tocar no balão abre a caixa da nota, com até 1000 caracteres e
+  contador. Funciona na tela do treino e na edição de um treino terminado, em séries de reps,
+  tempo e cardio, feitas ou não. A série com nota mostra o balão preenchido na cor do tema.
+- ⌨️ **Sem − e + nas séries:** para o balão caber no celular, os botões saíram das linhas de série.
+  Peso, reps, segundos e minutos agora são digitados. O campo seleciona o valor ao ser tocado e a
+  linha rola para ficar acima do teclado. As folhas de configuração continuam com o − e o +.
+- 🗂️ **Dado:** campo opcional `note` na série (string de 1 a 1000 caracteres; vazia = sem a chave).
+  `PUT /api/data` recusa uma nota inválida com 400 `SET_NOTE_INVALID`, e o log mostra só o tamanho.
+  Dados antigos não precisam de migração.
+- 🤖 **Treinador:** o espelho do MCP (repositório opengym-mcp) passa a levar `note`, e
+  `get_session` e `get_sets` passam a devolvê-la.
+
 ## v1.4.0 — 2026-09-15
 
 O plano da semana passa a chegar ao app **numa publicação só**, e o agente deixa de escrever o estado

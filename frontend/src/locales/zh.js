@@ -555,7 +555,14 @@ export default {
   'You still log the total: {0} is {1} per side.': '你记录的仍然是总数：{0} 表示每侧 {1} 次。',
   'Swap exercise': '替换动作',
   'Swap exercise?': '替换动作？',
-  'The sets you logged for this exercise will be discarded.': '此动作已记录的组将被丢弃。',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': '第 {0} 组备注',
+  'Add a note to set {0}': '为第 {0} 组添加备注',
+  'Edit the note for set {0}': '编辑第 {0} 组备注',
+  'The chat coach reads this note.': '聊天教练会读取这条备注。',
+  'Delete note': '删除备注',
+  'Note text': '备注内容',
+  'The sets and notes you logged for this exercise will be discarded.': '此动作已记录的组和备注将被丢弃。',
   'Swap which exercise?': '替换哪个动作？',
   'Exercise swapped for this session only': '仅在本次训练中替换了动作',
 }

@@ -13,11 +13,12 @@ import { fmtDate, todayISO } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import {
   modeOf, isBw, repStep, defaultConfig, buildSets,
-  EFFORT, effortOf, stepEffort, capEffort
+  EFFORT, effortOf, capEffort
 } from '../lib/history.js'
 import { applyWorkoutEdit, removeWorkout, shiftWorkoutDate, setShape } from '../lib/workout-edit.js'
 import { normUnit } from '../lib/units.js'
-import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet, workoutUnitSheet } from '../sheets.jsx'
+import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet, workoutUnitSheet, noteSheet } from '../sheets.jsx'
+import { withNote, hasNote } from '../lib/set-note.js'
 import { Button, Check, NumberField, Row } from '../components/ui.jsx'
 import Icon from '../components/Icon.jsx'
 import { Thumb } from '../components/Media.jsx'
@@ -40,7 +41,7 @@ const clearDraft = id => { try { sessionStorage.removeItem(DRAFT_KEY(id)) } catc
 /* ---------- um exercício do treino, em modo edição ----------
    Mesma grade da tela de treino (`.setrow`/`.sethead`), com a coluna do `×` por série e sem o
    que só faz sentido durante a sessão: descanso, "última vez", prescrição e cronômetro. */
-function EditBlock({ entry, S, isFirst, isLast, onField, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onRemove, onUnit }) {
+function EditBlock({ entry, S, isFirst, isLast, onField, onNote, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onRemove, onUnit }) {
   const ex = exOr(entry.id)
   const cfg = { ...(entry.target || {}), id: entry.id }     // treino antigo pode não ter `target`
   const mode = modeOf(cfg)
@@ -61,18 +62,19 @@ function EditBlock({ entry, S, isFirst, isLast, onField, onToggle, onAddSet, onR
   const eff = EFFORT[kind]
   const col3 = mode === 'reps' && eff ? { ...eff, eff: kind, dec: true, opt: true, hd: t(eff.hd) } : null
 
-  const bump = (s, i, col, dir) => {
-    if (col.eff) return onField(i, col.f, stepEffort(col.eff, s[col.f], dir))
-    onField(i, col.f, Math.max(0, Math.round(((s[col.f] || 0) + dir * col.step) * 100) / 100))
-  }
+  // Sem −/+, como na tela de treino (spec_nota_por_serie): o espaço foi para o balão da nota.
   const cell = (s, i, col, cls) => (
     <div className={'stp ' + cls}>
-      <button aria-label="Decrease" onClick={() => bump(s, i, col, -1)}><Icon name="minus" /></button>
-      <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''}
-        onChange={v => onField(i, col.f, col.eff ? capEffort(col.eff, v) : v)} /></span>
-      <button aria-label="Increase" onClick={() => bump(s, i, col, 1)}><Icon name="plus" /></button>
+      <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''} scrollOnFocus
+        aria-label={col.hd} onChange={v => onField(i, col.f, col.eff ? capEffort(col.eff, v) : v)} /></span>
     </div>
   )
+  const openNote = (s, i) => noteSheet({
+    title: t('Note for set {0}', i + 1),
+    context: ex.n,
+    note: s.note || '',
+    onSave: text => onNote(i, text),
+  })
 
   return <div className="card" style={{ marginBottom: 12 }}>
     <div className="row" style={{ gap: 10, marginBottom: 8 }}>
@@ -91,7 +93,7 @@ function EditBlock({ entry, S, isFirst, isLast, onField, onToggle, onAddSet, onR
       <span className="n-sp" /><span className="w-sp">{col1.hd}</span>
       {col2 && <span className="r-sp">{col2.hd}</span>}
       {col3 && <span className="eff-sp">{col3.hd}</span>}
-      <span className="ck-sp" /><span className="rm-sp" />
+      <span className="ck-sp" /><span className="nt-sp" /><span className="rm-sp" />
     </div>
     {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
       <div className="n">{i + 1}</div>
@@ -99,6 +101,8 @@ function EditBlock({ entry, S, isFirst, isLast, onField, onToggle, onAddSet, onR
       {col2 && cell(s, i, col2, 'r')}
       {col3 && cell(s, i, col3, 'eff')}
       <Check checked={s.done} onChange={() => onToggle(i)} />
+      <button className={'notebtn' + (hasNote(s) ? ' on' : '')} onClick={() => openNote(s, i)}
+        aria-label={hasNote(s) ? t('Edit the note for set {0}', i + 1) : t('Add a note to set {0}', i + 1)}><Icon name="note" /></button>
       {/* O × por série é o que a tela de treino não tem: lá a série acabou de ser feita e
           "Remove set" tira a última; aqui você está corrigindo um registro, e a série errada
           pode ser a do meio. Com uma série só ele fica desabilitado — um treino não pode ficar
@@ -289,6 +293,7 @@ export default function WorkoutEdit() {
       ? draft.entries.map((e, i) => <EditBlock key={i} entry={e} S={S}
           isFirst={i === 0} isLast={i === draft.entries.length - 1}
           onField={(k, f, v) => mutEntry(i, en => { if (v == null) delete en.sets[k][f]; else en.sets[k][f] = v })}
+          onNote={(k, text) => mutEntry(i, en => { en.sets[k] = withNote(en.sets[k], text) })}
           onToggle={k => mutEntry(i, en => { en.sets[k].done = !en.sets[k].done })}
           onAddSet={() => mutEntry(i, en => en.sets.push(setShape(modeOf({ ...(en.target || {}), id: en.id }), en.sets[en.sets.length - 1], en.target || {})))}
           onRemoveSet={k => mutEntry(i, en => { if (en.sets.length > 1) en.sets.splice(k, 1) })}

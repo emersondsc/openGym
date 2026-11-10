@@ -555,7 +555,14 @@ export default {
   'You still log the total: {0} is {1} per side.': 'Sigues registrando el total: {0} son {1} por lado.',
   'Swap exercise': 'Cambiar ejercicio',
   'Swap exercise?': '¿Cambiar ejercicio?',
-  'The sets you logged for this exercise will be discarded.': 'Las series que registraste en este ejercicio se descartarán.',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': 'Nota de la serie {0}',
+  'Add a note to set {0}': 'Añadir una nota a la serie {0}',
+  'Edit the note for set {0}': 'Editar la nota de la serie {0}',
+  'The chat coach reads this note.': 'El entrenador del chat lee esta nota.',
+  'Delete note': 'Borrar nota',
+  'Note text': 'Texto de la nota',
+  'The sets and notes you logged for this exercise will be discarded.': 'Las series y notas que registraste en este ejercicio se descartarán.',
   'Swap which exercise?': '¿Qué ejercicio cambiar?',
   'Exercise swapped for this session only': 'Ejercicio cambiado solo en este entrenamiento',
 }

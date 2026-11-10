@@ -555,7 +555,14 @@ export default {
   'You still log the total: {0} is {1} per side.': 'आप कुल ही दर्ज करते हैं: {0} यानी प्रति तरफ़ {1}।',
   'Swap exercise': 'व्यायाम बदलें',
   'Swap exercise?': 'व्यायाम बदलें?',
-  'The sets you logged for this exercise will be discarded.': 'इस व्यायाम के लिए दर्ज किए गए सेट हटा दिए जाएंगे।',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': 'सेट {0} का नोट',
+  'Add a note to set {0}': 'सेट {0} में नोट जोड़ें',
+  'Edit the note for set {0}': 'सेट {0} का नोट बदलें',
+  'The chat coach reads this note.': 'चैट कोच यह नोट पढ़ता है।',
+  'Delete note': 'नोट हटाएँ',
+  'Note text': 'नोट का पाठ',
+  'The sets and notes you logged for this exercise will be discarded.': 'इस व्यायाम के लिए दर्ज किए गए सेट और नोट हटा दिए जाएँगे।',
   'Swap which exercise?': 'कौन सा व्यायाम बदलें?',
   'Exercise swapped for this session only': 'व्यायाम केवल इस सत्र के लिए बदला गया',
 }

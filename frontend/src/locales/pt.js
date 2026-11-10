@@ -824,7 +824,14 @@ export default {
   'Unit': 'Unidade',
   'Mode': 'Modo',
   'Swap exercise?': 'Trocar exercício?',
-  'The sets you logged for this exercise will be discarded.': 'As séries que você registrou neste exercício serão descartadas.',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': 'Nota da série {0}',
+  'Add a note to set {0}': 'Adicionar nota à série {0}',
+  'Edit the note for set {0}': 'Editar nota da série {0}',
+  'The chat coach reads this note.': 'O treinador do chat lê esta nota.',
+  'Delete note': 'Apagar nota',
+  'Note text': 'Texto da nota',
+  'The sets and notes you logged for this exercise will be discarded.': 'As séries e notas que você registrou neste exercício serão descartadas.',
   'Swap which exercise?': 'Trocar qual exercício?',
   'Exercise swapped for this session only': 'Exercício trocado só neste treino',
 }

@@ -100,6 +100,27 @@ function checkState(s) {
     const bad = checkMesos(s.mesos);
     if (bad) return bad;
   }
+  if (badSetNote(s)) return SET_NOTE_ERR;
+  return null;
+}
+// Nota por série (docs/specs/spec_nota_por_serie.md): `note` é opcional; quando existe, é string
+// de até SET_NOTE_MAX pontos de código (um emoji conta 1, como no contador do app). O app corta
+// antes de enviar, então uma recusa aqui é cliente com defeito ou script. Devolve { len } da
+// primeira nota inválida — o log registra o tamanho, nunca o texto.
+const SET_NOTE_MAX = 1000;
+const SET_NOTE_ERR = 'set note must be a string of at most 1000 characters';
+function badSetNote(s) {
+  const entries = [];
+  for (const w of Array.isArray(s.workouts) ? s.workouts : []) if (w && Array.isArray(w.entries)) entries.push(...w.entries);
+  if (s.active && Array.isArray(s.active.entries)) entries.push(...s.active.entries);
+  for (const e of entries) {
+    for (const set of (e && Array.isArray(e.sets)) ? e.sets : []) {
+      if (!set || typeof set !== 'object' || set.note === undefined) continue;
+      if (typeof set.note !== 'string') return { len: -1 };
+      const len = [...set.note].length;
+      if (len > SET_NOTE_MAX) return { len };
+    }
+  }
   return null;
 }
 function readState(uid) {
@@ -821,6 +842,10 @@ const routes = {
     try { body = raw.length ? JSON.parse(raw) : {}; } catch { return json(res, 400, { error: 'bad json' }); }
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     const bad = checkState(body.state);
+    if (bad === SET_NOTE_ERR) {
+      console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid code=SET_NOTE_INVALID len=${badSetNote(body.state).len}`);
+      return json(res, 400, { error: bad, code: 'SET_NOTE_INVALID' });
+    }
     if (bad) {
       console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid`);
       return json(res, 400, { error: bad });

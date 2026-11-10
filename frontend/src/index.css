@@ -577,28 +577,35 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .setrow .stp.w{flex:1.4;min-width:0}
 .setrow .stp.r{flex:1;min-width:0}
 .setrow .stp.eff{flex:1.1;min-width:0}
-.setrow .stp button{width:32px;height:40px}
-/* a 3rd stepper (RIR) needs narrower buttons and a tighter row gap to fit next to weight+reps
-   on narrow phones, same technique as the exercise-config sheet's three-steppers-in-a-row
-   (.cfgrow below) — RIR's own value is short ("1.5") so its buttons shrink the most, weight/reps
-   just enough to make room since their values ("82.5", "12") need more of what's left.
-   The header shares the numbers so its labels stay centred over the steppers they name. */
+/* Set rows have no −/+ (spec_nota_por_serie): the box keeps the stepper's height on its own,
+   and the room the buttons took now goes to the values and to the note button. */
+.setrow .stp{height:40px}
+/* With a 3rd column (RIR) the row gap tightens to fit next to weight+reps on narrow phones.
+   The header shares the numbers so its labels stay centred over the fields they name. */
 .setrow.eff3,.sethead.eff3{gap:6px}
 .setrow.eff3 .stp.w,.sethead.eff3 .w-sp{flex:1.2}
 .setrow.eff3 .stp.r,.sethead.eff3 .r-sp{flex:1}
 .setrow.eff3 .stp.eff,.sethead.eff3 .eff-sp{flex:.85}
-.setrow.eff3 .stp button{width:23px}
 /* coluna Previous: o RIR virou campo sem botões, e é dele que sai a largura */
 .setrow.pv,.sethead.pv{gap:4px}
 .setrow.pv.eff3 .stp.eff,.sethead.pv.eff3 .eff-sp{flex:.6}
 .setrow.pv.eff3 .stp.w,.sethead.pv.eff3 .w-sp{flex:1.5}
 .setrow.pv.eff3 .stp.r,.sethead.pv.eff3 .r-sp{flex:1}
-.setrow.pv.eff3 .stp button{width:20px}
 .setrow .prev,.sethead .p-sp{width:50px;flex:none;text-align:center}
 .setrow .prev{font-size:12px;line-height:1.2;color:var(--label-2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
 .setrow .prev i{display:block;font-style:normal;font-size:11px;color:var(--label-3)}
-.setrow.eff3 .stp.eff button{width:20px}
-.setrow.eff3 .stp .num{font-size:14px}
+.setrow.pv.eff3 .stp .num{font-size:15px}
+/* note button (spec_nota_por_serie): grey outline when empty, accent with a light fill when
+   the set has a note — the two states differ by shape too, not by colour alone. */
+.sethead .nt-sp{width:32px;flex:none}
+.notebtn{
+  width:32px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;
+  padding:0;border:0;background:none;color:var(--label-2);border-radius:8px;font-size:21px;
+}
+.notebtn:active{background:var(--surface-2)}
+.notebtn.on{color:var(--acc)}
+.notebtn.on .icn path:first-child{fill:currentColor;fill-opacity:.22}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 /* a coluna do × por serie existe so na tela de edicao de um treino finalizado; o espacador do
    cabecalho precisa da MESMA largura, ou os rotulos saem de cima dos steppers */
 .sethead .rm-sp{width:26px;flex:none}

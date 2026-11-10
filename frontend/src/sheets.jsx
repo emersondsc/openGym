@@ -17,6 +17,7 @@ import BodyMap from './components/BodyMap.jsx'
 import StylePreview from './components/StylePreview.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
 import { removeWorkout } from './lib/workout-edit.js'
+import { NOTE_MAX, noteLength } from './lib/set-note.js'
 import { parseImport, mergeImport } from './lib/import-csv.js'
 import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
@@ -62,6 +63,33 @@ function ConfirmDialog({ title, message, confirmText, cancelText, danger, onConf
 // Themed replacement for window.confirm — callback-based (no blocking).
 export function confirmSheet(opts) {
   ui().openSheet(close => <ConfirmDialog {...opts} close={close} />, { kind: 'center' })
+}
+
+/* ============================ set note (spec_nota_por_serie) ============================ */
+// Free text about one set, read by the chat coach. Save writes through `onSave` (the caller
+// applies `withNote`, so "" drops the key); closing any other way discards the edit.
+function NoteDialog({ title, context, note, onSave, close }) {
+  const [text, setText] = useState(note || '')
+  const len = noteLength(text)
+  return <>
+    <h3 style={{ marginBottom: 4 }}>{title}</h3>
+    {context && <div className="small dim" style={{ marginBottom: 12 }}>{context}</div>}
+    <label htmlFor="set-note" className="sr-only">{t('Note text')}</label>
+    <TextArea id="set-note" data-nodrag rows={7} autoFocus maxLength={NOTE_MAX} value={text}
+      onChange={e => setText(e.target.value)} />
+    <div className="row between small dim" style={{ margin: '8px 2px 14px', gap: 12 }}>
+      <span>{t('The chat coach reads this note.')}</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{len} / {NOTE_MAX}</span>
+    </div>
+    <Button variant="primary" onClick={() => { close(); onSave(text) }}>{t('Save')}</Button>
+    <div style={{ height: 8 }} />
+    {note && <><Button variant="danger" onClick={() => { close(); onSave('') }}>{t('Delete note')}</Button>
+      <div style={{ height: 8 }} /></>}
+    <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
+  </>
+}
+export function noteSheet(opts) {
+  ui().openSheet(close => <NoteDialog {...opts} close={close} />)
 }
 
 /* ============================ starter plan ============================ */

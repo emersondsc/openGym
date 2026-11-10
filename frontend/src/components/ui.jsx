@@ -23,7 +23,9 @@ import Icon from './Icon.jsx'
 // 0). Keeps a local string draft while focused so partial input like "33," survives.
 // `nullable` is for fields where "nothing entered" and 0 mean different things (RIR: a
 // logged 0 is a set taken to failure). Those clear back to null instead of snapping to 0.
-export function NumberField({ value, onChange, decimal = true, nullable = false, className = '', ...rest }) {
+// `scrollOnFocus` is for the set rows, which have no −/+ any more: every edit opens the
+// keyboard, so the row centres itself instead of hiding behind it.
+export function NumberField({ value, onChange, decimal = true, nullable = false, scrollOnFocus = false, className = '', ...rest }) {
   const [draft, setDraft] = useState(null)
   const committed = useRef(null)
   // null and undefined are the same "empty" here — a nullable field's key is dropped once cleared.
@@ -43,7 +45,10 @@ export function NumberField({ value, onChange, decimal = true, nullable = false,
       inputMode={decimal ? 'decimal' : 'numeric'}
       className={'num ' + className}
       value={draft ?? (value ?? '')}
-      onFocus={e => e.target.select()}
+      onFocus={e => {
+        e.target.select()
+        if (scrollOnFocus) { const el = e.target; setTimeout(() => el.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 250) }
+      }}
       onChange={e => commit(e.target.value)}
       onBlur={() => { setDraft(null); committed.current = null }}
       {...rest}

@@ -555,7 +555,14 @@ export default {
   'You still log the total: {0} is {1} per side.': 'Ты по-прежнему записываешь общее число: {0} — это {1} на сторону.',
   'Swap exercise': 'Заменить упражнение',
   'Swap exercise?': 'Заменить упражнение?',
-  'The sets you logged for this exercise will be discarded.': 'Подходы, записанные для этого упражнения, будут удалены.',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': 'Заметка к подходу {0}',
+  'Add a note to set {0}': 'Добавить заметку к подходу {0}',
+  'Edit the note for set {0}': 'Изменить заметку к подходу {0}',
+  'The chat coach reads this note.': 'Тренер в чате читает эту заметку.',
+  'Delete note': 'Удалить заметку',
+  'Note text': 'Текст заметки',
+  'The sets and notes you logged for this exercise will be discarded.': 'Подходы и заметки, записанные для этого упражнения, будут удалены.',
   'Swap which exercise?': 'Какое упражнение заменить?',
   'Exercise swapped for this session only': 'Упражнение заменено только в этой тренировке',
 }

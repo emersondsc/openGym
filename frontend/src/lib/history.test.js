@@ -507,3 +507,18 @@ describe('unidade por exercício (BACKLOG-01)', () => {
     expect(workoutVolume(w)).toBe(600)
   })
 })
+
+// Nota por série (docs/specs/spec_nota_por_serie.md): a nota é daquela série, naquele treino.
+describe('set note does not travel', () => {
+  it('buildSets never carries last time\'s note into the new session', () => {
+    const reps = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 8, done: true, note: 'ombro' }] }] }] }
+    expect(buildSets(reps, { id: LIFT, sets: 2, reps: 8, weight: 50 }).some(s => 'note' in s)).toBe(false)
+    const timed = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, target: { mode: 'time' }, sets: [{ sec: 70, w: 10, done: true, note: 'tremeu' }] }] }] }
+    expect(buildSets(timed, { id: LIFT, mode: 'time', sets: 1, sec: 45, weight: 0 }).some(s => 'note' in s)).toBe(false)
+    const cardio = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: CARDIO, sets: [{ min: 20, speed: 9, done: true, note: 'calor' }] }] }] }
+    expect(buildSets(cardio, { id: CARDIO, sets: 1, min: 25, speed: 9 }).some(s => 'note' in s)).toBe(false)
+  })
+  it('setLabel ignores the note', () => {
+    expect(setLabel(LIFT, { w: 60, r: 8, done: true, note: 'pegada aberta' })).toBe(setLabel(LIFT, { w: 60, r: 8, done: true }))
+  })
+})

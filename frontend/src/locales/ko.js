@@ -555,7 +555,14 @@ export default {
   'You still log the total: {0} is {1} per side.': '기록은 그대로 합계로 합니다: {0}회는 한쪽당 {1}회입니다.',
   'Swap exercise': '운동 교체',
   'Swap exercise?': '운동을 교체할까요?',
-  'The sets you logged for this exercise will be discarded.': '이 운동에 기록한 세트는 삭제됩니다.',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': '{0}세트 메모',
+  'Add a note to set {0}': '{0}세트에 메모 추가',
+  'Edit the note for set {0}': '{0}세트 메모 편집',
+  'The chat coach reads this note.': '채팅 코치가 이 메모를 읽습니다.',
+  'Delete note': '메모 삭제',
+  'Note text': '메모 내용',
+  'The sets and notes you logged for this exercise will be discarded.': '이 운동에 기록한 세트와 메모는 삭제됩니다.',
   'Swap which exercise?': '어떤 운동을 교체할까요?',
   'Exercise swapped for this session only': '이번 운동에서만 교체되었습니다',
 }

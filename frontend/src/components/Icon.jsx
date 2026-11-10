@@ -76,6 +76,9 @@ const P = {
   checkCircle: <><circle cx="12" cy="12" r="8.2" /><path d="m8.2 12.2 2.7 2.7 5.1-5.4" /></>,
   xmark: <path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8" />,
   pencil: <><path d="M17.1 3.9a2.1 2.1 0 0 1 3 3l-9.9 9.9-4 1 1-4Z" /><path d="m15.1 5.9 3 3" /></>,
+  // Nota da série: balão com duas linhas. O primeiro path é o contorno — `.notebtn.on` o
+  // preenche de leve, para "tem nota" se ler pela forma e não só pela cor.
+  note: <><path d="M5.6 4.6h12.8a2.2 2.2 0 0 1 2.2 2.2v8a2.2 2.2 0 0 1-2.2 2.2h-8.2l-3.8 3.2V17h-.8a2.2 2.2 0 0 1-2.2-2.2v-8a2.2 2.2 0 0 1 2.2-2.2Z" /><path d="M8 9.4h8M8 12.8h5" /></>,
   trash: <><path d="M4.8 6.6h14.4M9.4 6.6V4.8a1.2 1.2 0 0 1 1.2-1.2h2.8a1.2 1.2 0 0 1 1.2 1.2v1.8" /><path d="M6.6 6.6 7.4 19a1.6 1.6 0 0 0 1.6 1.4h6a1.6 1.6 0 0 0 1.6-1.4l.8-12.4" /><path d="M10.4 10.2v6.4M13.6 10.2v6.4" /></>,
   link: <><path d="M10.2 13.8a3.6 3.6 0 0 0 5.4.4l2.6-2.6a3.6 3.6 0 0 0-5.1-5.1l-1.5 1.5" /><path d="M13.8 10.2a3.6 3.6 0 0 0-5.4-.4l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1l1.5-1.5" /></>,
   play: <path d="M8.4 5.6 18 12l-9.6 6.4Z" />,

@@ -305,3 +305,17 @@ describe('bestEntryFor', () => {
     expect(bestEntryFor(S, 'nao-existe')).toEqual({ w: 0, d: null, src: null })
   })
 })
+
+// Nota por série (docs/specs/spec_nota_por_serie.md): a mescla troca o treino inteiro, então a
+// nota vem junto — do servidor quando o aparelho não editou, do aparelho quando a marca manda.
+describe('mescla preserva a nota da série', () => {
+  const comNota = (w, note) => ({ id: 'w2', d: '2026-09-12', name: 'Push C', entries: [{ id: 'bench', sets: [{ w, r: 6, done: true, note }] }] })
+  it('treino do servidor que o aparelho não editou mantém a nota', () => {
+    expect(mergeWorkouts([comNota(110, 'ombro')], [], null)[0].entries[0].sets[0].note).toBe('ombro')
+  })
+  it('edição local com marca válida leva a nota nova', () => {
+    const local = comNota(110, 'nota nova')
+    const mark = { id: 'w2', at: Date.now(), sig: sigOf(local), ex: ['bench'], moved: false, deleted: false }
+    expect(mergeWorkouts([comNota(110, 'antiga')], [local], mark)[0].entries[0].sets[0].note).toBe('nota nova')
+  })
+})

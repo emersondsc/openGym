@@ -555,7 +555,14 @@ export default {
   'You still log the total: {0} is {1} per side.': 'Toplamı kaydetmeye devam ediyorsun: {0}, taraf başına {1} demek.',
   'Swap exercise': 'Egzersizi değiştir',
   'Swap exercise?': 'Egzersiz değiştirilsin mi?',
-  'The sets you logged for this exercise will be discarded.': 'Bu egzersiz için kaydettiğin setler silinecek.',
+  // nota por série (spec_nota_por_serie)
+  'Note for set {0}': '{0}. set notu',
+  'Add a note to set {0}': '{0}. sete not ekle',
+  'Edit the note for set {0}': '{0}. setin notunu düzenle',
+  'The chat coach reads this note.': 'Sohbet koçu bu notu okur.',
+  'Delete note': 'Notu sil',
+  'Note text': 'Not metni',
+  'The sets and notes you logged for this exercise will be discarded.': 'Bu egzersiz için kaydettiğin setler ve notlar silinecek.',
   'Swap which exercise?': 'Hangi egzersiz değiştirilsin?',
   'Exercise swapped for this session only': 'Egzersiz yalnızca bu antrenman için değiştirildi',
 }
