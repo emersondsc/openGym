@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   canon, sha256, parseIfMatch, checkIfMatch, withState, cleanupSg,
-  validateExEntry, defaultExFields, stripCrossModeFields, loadCatalog, PROG_ALLOWED, CATALOG_PATH
+  validateExEntry, defaultExFields, stripCrossModeFields, loadCatalog, PROG_ALLOWED, CATALOG_PATH, NOTE_READ_ONLY_MSG
 } from './routines.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;        // igual ao PATTERNS do server.js
@@ -151,6 +151,10 @@ export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) 
       }
       if (exIds.has(raw.id)) return bad('DUPLICATE_EX', exWhere, `duplicate exercise "${raw.id}"`);
       exIds.add(raw.id);
+      // Nota fixa da rotina: é do usuário (spec_tipos_de_nota). Devolver a mesma que leu passa.
+      if (raw.note !== undefined && raw.note !== (prevEx.get(raw.id) || {}).note) {
+        return bad('NOTE_READ_ONLY', `${exWhere}.note`, NOTE_READ_ONLY_MSG);
+      }
       // Defaults do app antes de validar, com o modo efetivo e o `eq` do catálogo (M17).
       const meta = catalog ? (catalog.get(raw.id) || {}) : {};
       const mode = effectiveMode(raw, prevEx.get(raw.id) || {}, meta);
@@ -212,6 +216,11 @@ export function materializeRoutine(r, catalog, prev) {
     const mode = effectiveMode(raw, prevEx.get(raw.id) || {}, meta);
     const merged = stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...raw, id: raw.id, mode }, mode);
     if (merged.sg === 0 || merged.sg === '') delete merged.sg; // marcador de legado, sem significado
+    // A substituição total apagaria a nota fixa da rotina, que é do usuário: ela vem sempre do
+    // exercício que já estava na rotina, nunca do payload (spec_tipos_de_nota).
+    delete merged.note;
+    const pn = (prevEx.get(raw.id) || {}).note;
+    if (typeof pn === 'string' && pn) merged.note = pn;
     return merged;
   });
   cleanupSg(ex);

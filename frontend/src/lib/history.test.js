@@ -509,6 +509,7 @@ describe('unidade por exercício (BACKLOG-01)', () => {
 })
 
 // Nota por série (docs/specs/spec_nota_por_serie.md): a nota é daquela série, naquele treino.
+// Notas antigas de série (spec_nota_por_serie) não passam adiante; as do treino ficam no exercício.
 describe('set note does not travel', () => {
   it('buildSets never carries last time\'s note into the new session', () => {
     const reps = { exWeights: {}, workouts: [{ d: '2026-01-01', entries: [{ id: LIFT, sets: [{ w: 60, r: 8, done: true, note: 'ombro' }] }] }] }

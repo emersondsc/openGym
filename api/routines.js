@@ -202,6 +202,7 @@ export function validateRoutineBody(body) {
  * Aplica `body` sobre a rotina `cur` (MUTA cur). Devolve null ou {error, code, ...}.
  * O merge é SOBRE o item existente: o que a intenção não cita não muda (nem é normalizado).
  */
+export const NOTE_READ_ONLY_MSG = 'note is written by the user in the app; the coach can read it but not change it';
 export function mergeRoutine(cur, body, catalog, custom) {
   if (!Array.isArray(cur.ex)) cur.ex = [];      // o PUT aceita rotina sem `ex`
   if (body.exRemoved !== undefined) {
@@ -217,6 +218,11 @@ export function mergeRoutine(cur, body, catalog, custom) {
         return { error: `ex.${eid} must be an object`, code: 'BAD_EX', field: `ex.${eid}` };
       }
       const target = cur.ex.find(e => e.id === eid);
+      // A nota fixa da rotina é do usuário (spec_tipos_de_nota): o treinador lê, não escreve. Mandar
+      // de volta a mesma nota que leu passa; qualquer outra é recusada, e a que estava fica.
+      if (fields.note !== undefined && fields.note !== target?.note) {
+        return { error: NOTE_READ_ONLY_MSG, code: 'NOTE_READ_ONLY', field: `ex.${eid}.note` };
+      }
       const meta = catalog ? (catalog.get(eid) || {}) : {};
       const declared = fields.mode;
       const mode = declared

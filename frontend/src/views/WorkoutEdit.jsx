@@ -17,8 +17,9 @@ import {
 } from '../lib/history.js'
 import { applyWorkoutEdit, removeWorkout, shiftWorkoutDate, setShape } from '../lib/workout-edit.js'
 import { normUnit } from '../lib/units.js'
-import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet, workoutUnitSheet, noteSheet } from '../sheets.jsx'
-import { withNote, hasNote } from '../lib/set-note.js'
+import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet, workoutUnitSheet, openNotes } from '../sheets.jsx'
+import { notesOf, applyNote } from '../lib/notes.js'
+import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import { Button, Check, NumberField, Row } from '../components/ui.jsx'
 import Icon from '../components/Icon.jsx'
 import { Thumb } from '../components/Media.jsx'
@@ -41,7 +42,7 @@ const clearDraft = id => { try { sessionStorage.removeItem(DRAFT_KEY(id)) } catc
 /* ---------- um exercício do treino, em modo edição ----------
    Mesma grade da tela de treino (`.setrow`/`.sethead`), com a coluna do `×` por série e sem o
    que só faz sentido durante a sessão: descanso, "última vez", prescrição e cronômetro. */
-function EditBlock({ entry, S, isFirst, isLast, onField, onNote, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onRemove, onUnit }) {
+function EditBlock({ entry, S, routineId, isFirst, isLast, onField, onNote, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onRemove, onUnit }) {
   const ex = exOr(entry.id)
   const cfg = { ...(entry.target || {}), id: entry.id }     // treino antigo pode não ter `target`
   const mode = modeOf(cfg)
@@ -62,19 +63,18 @@ function EditBlock({ entry, S, isFirst, isLast, onField, onNote, onToggle, onAdd
   const eff = EFFORT[kind]
   const col3 = mode === 'reps' && eff ? { ...eff, eff: kind, dec: true, opt: true, hd: t(eff.hd) } : null
 
-  // Sem −/+, como na tela de treino (spec_nota_por_serie): o espaço foi para o balão da nota.
+  // Sem −/+, como na tela de treino (spec_nota_por_serie): cada valor é digitado.
   const cell = (s, i, col, cls) => (
     <div className={'stp ' + cls}>
       <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''} scrollOnFocus
         aria-label={col.hd} onChange={v => onField(i, col.f, col.eff ? capEffort(col.eff, v) : v)} /></span>
     </div>
   )
-  const openNote = (s, i) => noteSheet({
-    title: t('Note for set {0}', i + 1),
-    context: ex.n,
-    note: s.note || '',
-    onSave: text => onNote(i, text),
-  })
+  // As notas são do exercício (spec_tipos_de_nota). A do treino vai para o rascunho e sobe ao
+  // salvar a edição; as fixas vão direto para o estado, como na tela de treino.
+  const notes = notesOf(S, { exId: entry.id, routineId, entry })
+  const openNote = type => openNotes({ exId: entry.id, exName: ex.n, routineId, entryNote: entry.note,
+    saveWorkout: onNote, initialType: type })
 
   return <div className="card" style={{ marginBottom: 12 }}>
     <div className="row" style={{ gap: 10, marginBottom: 8 }}>
@@ -83,17 +83,19 @@ function EditBlock({ entry, S, isFirst, isLast, onField, onNote, onToggle, onAdd
         <div style={{ fontWeight: 600, fontSize: 17, textTransform: 'capitalize' }}>{ex.n}</div>
         <div className="small dim">{t('{0} sets', entry.sets.length)}</div>
       </div>
+      <NoteChip onClick={() => openNote()} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <button className="iconbtn mini" disabled={isFirst} aria-label="Move up" onClick={() => onMove(-1)}><Icon name="chevronUp" /></button>
         <button className="iconbtn mini" disabled={isLast} aria-label="Move down" onClick={() => onMove(1)}><Icon name="chevronDown" /></button>
       </div>
     </div>
 
+    <NoteLines notes={notes} onOpen={openNote} />
     <div className={'sethead' + (col3 ? ' eff3' : '')}>
       <span className="n-sp" /><span className="w-sp">{col1.hd}</span>
       {col2 && <span className="r-sp">{col2.hd}</span>}
       {col3 && <span className="eff-sp">{col3.hd}</span>}
-      <span className="ck-sp" /><span className="nt-sp" /><span className="rm-sp" />
+      <span className="ck-sp" /><span className="rm-sp" />
     </div>
     {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
       <div className="n">{i + 1}</div>
@@ -101,8 +103,6 @@ function EditBlock({ entry, S, isFirst, isLast, onField, onNote, onToggle, onAdd
       {col2 && cell(s, i, col2, 'r')}
       {col3 && cell(s, i, col3, 'eff')}
       <Check checked={s.done} onChange={() => onToggle(i)} />
-      <button className={'notebtn' + (hasNote(s) ? ' on' : '')} onClick={() => openNote(s, i)}
-        aria-label={hasNote(s) ? t('Edit the note for set {0}', i + 1) : t('Add a note to set {0}', i + 1)}><Icon name="note" /></button>
       {/* O × por série é o que a tela de treino não tem: lá a série acabou de ser feita e
           "Remove set" tira a última; aqui você está corrigindo um registro, e a série errada
           pode ser a do meio. Com uma série só ele fica desabilitado — um treino não pode ficar
@@ -290,10 +290,10 @@ export default function WorkoutEdit() {
     </div>}
 
     {draft.entries.length
-      ? draft.entries.map((e, i) => <EditBlock key={i} entry={e} S={S}
+      ? draft.entries.map((e, i) => <EditBlock key={i} entry={e} S={S} routineId={draft.routineId || null}
           isFirst={i === 0} isLast={i === draft.entries.length - 1}
           onField={(k, f, v) => mutEntry(i, en => { if (v == null) delete en.sets[k][f]; else en.sets[k][f] = v })}
-          onNote={(k, text) => mutEntry(i, en => { en.sets[k] = withNote(en.sets[k], text) })}
+          onNote={text => mutEntry(i, en => { applyNote(null, { entry: en }, 'workout', text) })}
           onToggle={k => mutEntry(i, en => { en.sets[k].done = !en.sets[k].done })}
           onAddSet={() => mutEntry(i, en => en.sets.push(setShape(modeOf({ ...(en.target || {}), id: en.id }), en.sets[en.sets.length - 1], en.target || {})))}
           onRemoveSet={k => mutEntry(i, en => { if (en.sets.length > 1) en.sets.splice(k, 1) })}

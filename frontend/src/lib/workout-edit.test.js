@@ -306,16 +306,17 @@ describe('bestEntryFor', () => {
   })
 })
 
-// Nota por série (docs/specs/spec_nota_por_serie.md): a mescla troca o treino inteiro, então a
-// nota vem junto — do servidor quando o aparelho não editou, do aparelho quando a marca manda.
-describe('mescla preserva a nota da série', () => {
-  const comNota = (w, note) => ({ id: 'w2', d: '2026-09-12', name: 'Push C', entries: [{ id: 'bench', sets: [{ w, r: 6, done: true, note }] }] })
+// Nota do treino (docs/specs/spec_tipos_de_nota.md): a mescla troca o treino inteiro, então a
+// nota do exercício vem junto — do servidor quando o aparelho não editou, do aparelho quando a
+// marca manda. A assinatura (sigOf) inclui `entries`, então editar só a nota já conta como edição.
+describe('mescla preserva a nota do treino', () => {
+  const comNota = (w, note) => ({ id: 'w2', d: '2026-09-12', name: 'Push C', entries: [{ id: 'bench', note, sets: [{ w, r: 6, done: true }] }] })
   it('treino do servidor que o aparelho não editou mantém a nota', () => {
-    expect(mergeWorkouts([comNota(110, 'ombro')], [], null)[0].entries[0].sets[0].note).toBe('ombro')
+    expect(mergeWorkouts([comNota(110, 'ombro')], [], null)[0].entries[0].note).toBe('ombro')
   })
-  it('edição local com marca válida leva a nota nova', () => {
+  it('edição local só da nota, com marca válida, leva a nota nova', () => {
     const local = comNota(110, 'nota nova')
     const mark = { id: 'w2', at: Date.now(), sig: sigOf(local), ex: ['bench'], moved: false, deleted: false }
-    expect(mergeWorkouts([comNota(110, 'antiga')], [local], mark)[0].entries[0].sets[0].note).toBe('nota nova')
+    expect(mergeWorkouts([comNota(110, 'antiga')], [local], mark)[0].entries[0].note).toBe('nota nova')
   })
 })

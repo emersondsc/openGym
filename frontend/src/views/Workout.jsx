@@ -9,8 +9,9 @@ import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
 import { api } from '../lib/api.js'
 import Media from '../components/Media.jsx'
-import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet, noteSheet } from '../sheets.jsx'
-import { withNote, hasNote } from '../lib/set-note.js'
+import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet, openNotes } from '../sheets.jsx'
+import { notesOf, applyNote } from '../lib/notes.js'
+import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Check, NumberField } from '../components/ui.jsx'
 import { nextPrescription, applyPrescription } from '../lib/progression.js'
@@ -141,8 +142,8 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
   const kind = effortOf(S)
   const eff = EFFORT[kind]
   const col3 = mode === 'reps' && eff ? { ...eff, eff: kind, dec: true, opt: true, hd: t(eff.hd) } : null
-  // The set row keeps the stepper's box but has no −/+ (spec_nota_por_serie): the room went to
-  // the note button, and every value is typed — the field selects itself and scrolls into view.
+  // The set row keeps the stepper's box but has no −/+ (spec_nota_por_serie): every value is
+  // typed — the field selects itself and scrolls into view.
   const rowCls = (col3 ? ' eff3' : '') + (last ? ' pv' : '')
   // A série de mesmo número no último treino. O esforço vem do próprio rótulo, "12×8 (RIR 0)",
   // e desce para a segunda linha porque a coluna é estreita.
@@ -164,12 +165,12 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
         aria-label={col.hd} onChange={v => onField(i, col.f, v)} /></span>
     </div>
   )
-  const openNote = (s, i) => noteSheet({
-    title: t('Note for set {0}', i + 1),
-    context: ex.n + ' · ' + setLabel(entry.id, s, entry.target, S),
-    note: s.note || '',
-    onSave: text => onNote(i, text),
-  })
+  // Notes belong to the exercise (spec_tipos_de_nota): pinned to the exercise, pinned to this
+  // exercise in the routine the workout came from, and this workout's own.
+  const routineId = S.active.routineId || null
+  const notes = notesOf(S, { exId: entry.id, routineId, entry })
+  const openNote = type => openNotes({ exId: entry.id, exName: ex.n, routineId, entryNote: entry.note,
+    saveWorkout: onNote, initialType: type })
   return <>
     <Media ex={ex} key={entry.id} compact={compact} minimizable />
     <div className="row between" style={{ marginBottom: 6 }}>
@@ -212,6 +213,7 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
             ? t('Unit saved for {0} — {1}', routineName, v)
             : t('Unit saved for this session — {0}', v))
       }} />
+      <NoteChip onClick={() => openNote()} />
       <RestChip entry={entry} onChange={v=>{
   if(v!=null && !isValidRest(v)){
     useUI.getState().toast(t('Rest must be between 30 and 300s')); return
@@ -236,13 +238,14 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
   }
 }} />
     </div>
+    <NoteLines notes={notes} onOpen={openNote} />
     {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
       <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
       <span>{t(...plan.why)}</span>
     </div>}
     <div className="card" style={{ marginTop: 10, marginBottom: 0 }}>
       {/* the header carries the same eff3 sizing as the rows, or the labels drift off their columns */}
-      <div className={'sethead' + rowCls}><span className="n-sp" />{last && <span className="p-sp">{t('Previous')}</span>}<span className="w-sp">{col1.hd}</span>{col2 && <span className="r-sp">{col2.hd}</span>}{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="nt-sp" /><span className="ck-sp" /></div>
+      <div className={'sethead' + rowCls}><span className="n-sp" />{last && <span className="p-sp">{t('Previous')}</span>}<span className="w-sp">{col1.hd}</span>{col2 && <span className="r-sp">{col2.hd}</span>}{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
       {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + rowCls}>
         <div className="n">{i + 1}</div>
         {last && prevCell(i)}
@@ -253,8 +256,6 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
             set off itself. The checkbox stays for anyone who timed it on their own watch. */}
         {timed && <button className="setgo" aria-label={t('Start set')} disabled={s.done || !!working}
           onClick={() => onStartTimed(i)}><Icon name="play" /></button>}
-        <button className={'notebtn' + (hasNote(s) ? ' on' : '')} onClick={() => openNote(s, i)}
-          aria-label={hasNote(s) ? t('Edit the note for set {0}', i + 1) : t('Add a note to set {0}', i + 1)}><Icon name="note" /></button>
         <Check checked={s.done} onChange={() => onToggle(i)} />
       </div>)}
       <div style={{ height: 8 }} />
@@ -291,8 +292,9 @@ function ActiveWorkout() {
   const setField = (idx, i, field, v) => mutEntry(idx, e => {
     if (v == null) delete e.sets[i][field]; else e.sets[i][field] = v
   })
-  // Same path as setField; withNote trims, caps at NOTE_MAX and drops the key when empty.
-  const setNote = (idx, i, text) => mutEntry(idx, e => { e.sets[i] = withNote(e.sets[i], text) })
+  // The workout note goes the same path as setField; applyNote trims, caps at NOTE_MAX and drops
+  // the key when empty.
+  const setNote = (idx, text) => mutEntry(idx, e => { applyNote(null, { entry: e }, 'workout', text) })
   const modeAt = idx => modeOf({ ...(A.entries[idx].target || {}), id: A.entries[idx].id })
   const addSet = idx => mutEntry(idx, e => {
     const l = e.sets[e.sets.length - 1]
@@ -334,7 +336,7 @@ function ActiveWorkout() {
       }, A.entries.filter((_, j) => j !== idx).map(e => e.id), t('Swap exercise'))
     }
     // Series ja marcadas deste exercicio somem com a troca — pergunta antes.
-    if (old.sets.some(x => x.done)) confirmSheet({
+    if (old.sets.some(x => x.done) || old.note) confirmSheet({
       title: t('Swap exercise?'), message: t('The sets and notes you logged for this exercise will be discarded.'),
       confirmText: t('Swap exercise'), danger: true, onConfirm: doSwap
     })
@@ -458,11 +460,11 @@ function ActiveWorkout() {
           {unit.map((idx, k) => <div key={idx} className="ss-ex">
             {k > 0 && <div className="ss-amp">+</div>}
             <ExerciseBlock entryIdx={idx} compact
-              onToggle={i => toggle(idx, i)} onField={(i, f, v) => setField(idx, i, f, v)} onNote={(i, text) => setNote(idx, i, text)} onAddSet={() => addSet(idx)} onRemoveSet={() => removeSet(idx)} onStartTimed={i => startTimed(idx, i)} />
+              onToggle={i => toggle(idx, i)} onField={(i, f, v) => setField(idx, i, f, v)} onNote={text => setNote(idx, text)} onAddSet={() => addSet(idx)} onRemoveSet={() => removeSet(idx)} onStartTimed={i => startTimed(idx, i)} />
           </div>)}
         </div>
       ) : (
-        <ExerciseBlock entryIdx={cur} onToggle={i => toggle(cur, i)} onField={(i, f, v) => setField(cur, i, f, v)} onNote={(i, text) => setNote(cur, i, text)} onAddSet={() => addSet(cur)} onRemoveSet={() => removeSet(cur)} onStartTimed={i => startTimed(cur, i)} />
+        <ExerciseBlock entryIdx={cur} onToggle={i => toggle(cur, i)} onField={(i, f, v) => setField(cur, i, f, v)} onNote={text => setNote(cur, text)} onAddSet={() => addSet(cur)} onRemoveSet={() => removeSet(cur)} onStartTimed={i => startTimed(cur, i)} />
       )}
     </> : <div className="empty"><div className="ico"><Icon name="shuffle" /></div>{t('Freestyle workout — add your first exercise.')}</div>}
 

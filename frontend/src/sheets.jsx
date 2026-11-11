@@ -17,7 +17,8 @@ import BodyMap from './components/BodyMap.jsx'
 import StylePreview from './components/StylePreview.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
 import { removeWorkout } from './lib/workout-edit.js'
-import { NOTE_MAX, noteLength } from './lib/set-note.js'
+import { NOTE_MAX, NOTE_TYPES, noteLength, notesOf, applyNote, routineExOf, withoutNote } from './lib/notes.js'
+import { NOTE_META, NOTE_ORDER, NoteLines } from './components/NoteList.jsx'
 import { parseImport, mergeImport } from './lib/import-csv.js'
 import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
@@ -65,33 +66,77 @@ export function confirmSheet(opts) {
   ui().openSheet(close => <ConfirmDialog {...opts} close={close} />, { kind: 'center' })
 }
 
-/* ============================ set note (spec_nota_por_serie) ============================ */
-// Free text about one set, read by the chat coach. Save writes through `onSave` (the caller
-// applies `withNote`, so "" drops the key); closing any other way discards the edit.
-function NoteDialog({ title, context, note, onSave, close }) {
-  const [text, setText] = useState(note || '')
+/* ============================ notes (spec_tipos_de_nota) ============================ */
+// One sheet for the three note types. Each type keeps its own text while the sheet is open, and
+// switching shows that type's text — except when you typed in one type and the target is still
+// empty: the text goes with you ("write first, pick the type after"). Save writes only the type
+// on screen; closing any other way discards every draft.
+function NoteDialog({ exName, notes, types, initialType, disabled, routineName, onSave, close }) {
+  const saved = k => notes[k] || ''
+  const [type, setType] = useState(initialType && types.includes(initialType) && !disabled[initialType] ? initialType : types.find(k => !disabled[k]))
+  const [drafts, setDrafts] = useState(() => Object.fromEntries(types.map(k => [k, saved(k)])))
+  const text = drafts[type] ?? ''
   const len = noteLength(text)
+  const single = types.length === 1
+  const pick = k => {
+    if (k === type || disabled[k]) return
+    const dirty = drafts[type] !== saved(type)
+    if (dirty && !saved(k) && !drafts[k]) setDrafts(d => ({ ...d, [k]: d[type], [type]: saved(type) }))
+    setType(k)
+  }
   return <>
-    <h3 style={{ marginBottom: 4 }}>{title}</h3>
-    {context && <div className="small dim" style={{ marginBottom: 12 }}>{context}</div>}
-    <label htmlFor="set-note" className="sr-only">{t('Note text')}</label>
-    <TextArea id="set-note" data-nodrag rows={7} autoFocus maxLength={NOTE_MAX} value={text}
-      onChange={e => setText(e.target.value)} />
+    <h3 style={{ marginBottom: 4 }}>{single ? t(NOTE_META[type].name) : t('Note')}</h3>
+    {exName && <div className="small dim capitalize" style={{ marginBottom: 12 }}>{exName}</div>}
+    {!single && <div className="sect-b notetypes" role="radiogroup" aria-label={t('Note type')} style={{ marginBottom: 12 }}>
+      {NOTE_ORDER.filter(k => types.includes(k)).map(k => (
+        <button key={k} role="radio" aria-checked={k === type} disabled={!!disabled[k]}
+          className={'lrow tap' + (disabled[k] ? ' off' : '')} onClick={() => pick(k)}>
+          <span className="lrow-i flat"><Icon name={NOTE_META[k].icon} /></span>
+          <span className="lrow-m"><span className="lrow-t">{t(NOTE_META[k].name)}</span>
+            <span className="lrow-s">{disabled[k] || (k === 'routine' ? t('Shows every time you log this exercise in {0}.', routineName) : t(NOTE_META[k].desc))}</span></span>
+          {k === type && <Icon name="check" className="lrow-k" />}
+        </button>
+      ))}
+    </div>}
+    <label htmlFor="ex-note" className="sr-only">{t('Note text')}</label>
+    <TextArea id="ex-note" data-nodrag rows={6} autoFocus maxLength={NOTE_MAX} value={text}
+      onChange={e => { const v = e.target.value; setDrafts(d => ({ ...d, [type]: v })) }} />
     <div className="row between small dim" style={{ margin: '8px 2px 14px', gap: 12 }}>
       <span>{t('The chat coach reads this note.')}</span>
       <span style={{ fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{len} / {NOTE_MAX}</span>
     </div>
-    <Button variant="primary" onClick={() => { close(); onSave(text) }}>{t('Save')}</Button>
+    <Button variant="primary" onClick={() => { close(); onSave(type, text) }}>{t('Save')}</Button>
     <div style={{ height: 8 }} />
-    {note && <><Button variant="danger" onClick={() => { close(); onSave('') }}>{t('Delete note')}</Button>
+    {saved(type) && <><Button variant="danger" onClick={() => { close(); onSave(type, '') }}>{t('Delete note')}</Button>
       <div style={{ height: 8 }} /></>}
     <Button variant="ghost" className="dim" onClick={close}>{t('Cancel')}</Button>
   </>
 }
-export function noteSheet(opts) {
-  ui().openSheet(close => <NoteDialog {...opts} close={close} />)
-}
 
+/**
+ * Opens the note sheet for one exercise. Pinned notes (exercise, routine) are written to the state
+ * right away, like rest and unit; the workout note goes through `saveWorkout`, because the active
+ * workout and a finished workout being edited live in different places.
+ *  - routineId: the routine the workout came from (null for a freestyle workout)
+ *  - entryNote: the current workout note; omit `saveWorkout` to leave that type out
+ */
+export function openNotes({ exId, exName, routineId, entryNote, saveWorkout, types = NOTE_TYPES, initialType }) {
+  const st = S()
+  const list = types.filter(k => k !== 'workout' || saveWorkout)
+  const r = routineId ? (st.routines || []).find(x => x.id === routineId) : null
+  const disabled = {}
+  if (list.includes('routine') && !routineExOf(st, routineId, exId)) {
+    disabled.routine = r ? t('This exercise is not in {0}.', r.name) : t('This workout is not from a routine.')
+  }
+  const notes = notesOf(st, { exId, routineId, entry: { note: entryNote } })
+  // Freshly opened from the "Note" chip: the workout note, as in the reference app.
+  const first = initialType || (list.includes('workout') ? 'workout' : list[0])
+  ui().openSheet(close => <NoteDialog exName={exName} notes={notes} types={list} initialType={first}
+    disabled={disabled} routineName={r ? r.name : ''} close={close} onSave={(type, text) => {
+      if (type === 'workout') { saveWorkout(text); return }
+      update(s => { applyNote(s, { exId, routineId }, type, text) })
+    }} />)
+}
 /* ============================ starter plan ============================ */
 export function loadStarterPlan() {
   const [push, pull, legs] = starterRoutines()
@@ -331,6 +376,17 @@ function OneRM({ ex }) {
   </>
 }
 
+// The pinned exercise note (spec_tipos_de_nota): shown and edited here, outside any workout.
+function ExerciseNote({ st, ex }) {
+  const note = notesOf(st, { exId: ex.id }).exercise
+  const open = () => openNotes({ exId: ex.id, exName: ex.n, types: ['exercise'] })
+  return <div style={{ margin: '4px 0 10px' }}>
+    <h4 className="sec" style={{ marginTop: 0 }}>{t('Pinned exercise note')}</h4>
+    {note ? <NoteLines notes={{ exercise: note }} onOpen={open} lines={6} />
+      : <div className="small dim" style={{ marginBottom: 6 }}>{t('No note')}</div>}
+    <Button size="sm" icon={note ? 'pencil' : 'plus'} onClick={open}>{note ? t('Edit') : t('Add note')}</Button>
+  </div>
+}
 function ExerciseDetail({ ex, close }) {
   const st = useStore(s => s.S)
   const last = lastEntryFor(st, ex.id)
@@ -346,6 +402,7 @@ function ExerciseDetail({ ex, close }) {
       {(ex.sm || []).slice(0, 3).map((s, i) => <span key={i} className="tag">{t(s)}</span>)}
     </div>
     {ex.desc && <div className="exnote">{ex.desc}</div>}
+    <ExerciseNote st={st} ex={ex} />
     {best > 0 && <div className="small row" style={{ marginBottom: 6, gap: 5 }}><Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />{t('Best:')} <b className="accent">{fmtNum(best)} {exUnit}</b>{last ? ` · ${t('last')} ${fmtDate(last.d)}: ${last.sets.map(s => setLabel(ex.id, s, last.target, st)).join(', ')}` : ''}</div>}
     <Button variant="primary" icon="plus" style={{ margin: '10px 0 4px' }} onClick={() => addToRoutineSheet(ex)}>{t('Add to my plan')}</Button>
     {ex.custom && <div className="row" style={{ gap: 8, marginTop: 8 }}>
@@ -995,7 +1052,7 @@ export function beginWorkout(routineId, bw) {
   // kept on the entry purely so the workout can explain the number it chose.
   const entries = (r ? r.ex : []).map(cfg => {
     const plan = nextPrescription(st, cfg, r)
-    const entry = { id: cfg.id, sg: cfg.sg, target: { ...cfg }, plan, sets: applyPrescription(buildSets(st, cfg), plan) }
+    const entry = { id: cfg.id, sg: cfg.sg, target: withoutNote(cfg), plan, sets: applyPrescription(buildSets(st, cfg), plan) }
     if(isValidRest(cfg.restSec)) entry.restSec = cfg.restSec
     return entry
   })

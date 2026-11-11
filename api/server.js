@@ -100,25 +100,47 @@ function checkState(s) {
     const bad = checkMesos(s.mesos);
     if (bad) return bad;
   }
-  if (badSetNote(s)) return SET_NOTE_ERR;
+  if (badNote(s)) return NOTE_ERR;
   return null;
 }
-// Nota por série (docs/specs/spec_nota_por_serie.md): `note` é opcional; quando existe, é string
-// de até SET_NOTE_MAX pontos de código (um emoji conta 1, como no contador do app). O app corta
-// antes de enviar, então uma recusa aqui é cliente com defeito ou script. Devolve { len } da
-// primeira nota inválida — o log registra o tamanho, nunca o texto.
-const SET_NOTE_MAX = 1000;
-const SET_NOTE_ERR = 'set note must be a string of at most 1000 characters';
-function badSetNote(s) {
+// Notas (docs/specs/spec_tipos_de_nota.md): fixa do exercício (`exNotes[exId]`), fixa da rotina
+// (`routines[].ex[].note`), do treino (`entries[].note`, em `workouts` e `active`) e, de clientes
+// antigos, da série (`sets[].note`). Cada uma, quando existe, é string de até NOTE_MAX pontos de
+// código (um emoji conta 1, como no contador do app). O app corta antes de enviar, então uma
+// recusa aqui é cliente com defeito ou script. Devolve { kind, len } da primeira nota inválida — o
+// log registra o tipo e o tamanho, nunca o texto.
+const NOTE_MAX = 1000;
+const NOTE_ERR = 'note must be a string of at most 1000 characters';
+function noteBad(v) {
+  if (v === undefined) return null;
+  if (typeof v !== 'string') return { len: -1 };
+  const len = [...v].length;
+  return len > NOTE_MAX ? { len } : null;
+}
+function badNote(s) {
+  if (s.exNotes !== undefined) {
+    if (!s.exNotes || typeof s.exNotes !== 'object' || Array.isArray(s.exNotes)) return { kind: 'exercise', len: -1 };
+    for (const v of Object.values(s.exNotes)) {
+      const b = noteBad(v);
+      if (b) return { kind: 'exercise', ...b };
+    }
+  }
+  for (const r of Array.isArray(s.routines) ? s.routines : []) {
+    for (const e of (r && Array.isArray(r.ex)) ? r.ex : []) {
+      const b = e && typeof e === 'object' ? noteBad(e.note) : null;
+      if (b) return { kind: 'routine', ...b };
+    }
+  }
   const entries = [];
   for (const w of Array.isArray(s.workouts) ? s.workouts : []) if (w && Array.isArray(w.entries)) entries.push(...w.entries);
   if (s.active && Array.isArray(s.active.entries)) entries.push(...s.active.entries);
   for (const e of entries) {
-    for (const set of (e && Array.isArray(e.sets)) ? e.sets : []) {
-      if (!set || typeof set !== 'object' || set.note === undefined) continue;
-      if (typeof set.note !== 'string') return { len: -1 };
-      const len = [...set.note].length;
-      if (len > SET_NOTE_MAX) return { len };
+    if (!e || typeof e !== 'object') continue;
+    const b = noteBad(e.note);
+    if (b) return { kind: 'entry', ...b };
+    for (const set of Array.isArray(e.sets) ? e.sets : []) {
+      const c = set && typeof set === 'object' ? noteBad(set.note) : null;
+      if (c) return { kind: 'set', ...c };
     }
   }
   return null;
@@ -842,9 +864,10 @@ const routes = {
     try { body = raw.length ? JSON.parse(raw) : {}; } catch { return json(res, 400, { error: 'bad json' }); }
     if (!body.state || typeof body.state !== 'object') return json(res, 400, { error: 'state required' });
     const bad = checkState(body.state);
-    if (bad === SET_NOTE_ERR) {
-      console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid code=SET_NOTE_INVALID len=${badSetNote(body.state).len}`);
-      return json(res, 400, { error: bad, code: 'SET_NOTE_INVALID' });
+    if (bad === NOTE_ERR) {
+      const n = badNote(body.state);
+      console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid code=NOTE_INVALID kind=${n.kind} len=${n.len}`);
+      return json(res, 400, { error: bad, code: 'NOTE_INVALID' });
     }
     if (bad) {
       console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid`);

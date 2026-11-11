@@ -7,7 +7,8 @@ import { t } from '../lib/i18n.js'
 import { supersetUnits, cleanupSg, exLine } from '../lib/history.js'
 import { unitOfCfg } from '../lib/units.js'
 import { Thumb } from '../components/Media.jsx'
-import { glyphPicker, exercisePicker, exConfigSheet, confirmSheet } from '../sheets.jsx'
+import { glyphPicker, exercisePicker, exConfigSheet, confirmSheet, openNotes } from '../sheets.jsx'
+import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import Icon from '../components/Icon.jsx'
 import { useUI } from '../store/useUI.js'
 import { glyphOf } from '../lib/glyphs.js'
@@ -106,10 +107,10 @@ export default function RoutineEdit() {
       return <div key={i}>
         {unitFirst.has(i) && <div className="ss-label"><Icon name="link" />{t('Superset')}</div>}
         <div className={'item' + (inSS.has(i) ? ' in-ss' : '')} onClick={() => {
-          exConfigSheet(ex, e, cfg => edit(x => { x[i] = { id: x[i].id, sg: x[i].sg, ...cfg } }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r)
+          exConfigSheet(ex, e, cfg => edit(x => { x[i] = { id: x[i].id, sg: x[i].sg, ...(x[i].note ? { note: x[i].note } : {}), ...cfg } }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r)
         }}>
           <Thumb ex={ex} />
-          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, unitOfCfg(e, S))}</div><div style={{marginTop:4}}><RestChipForRoutine ex={e} routineId={r.id} /></div></div>
+          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, unitOfCfg(e, S))}</div><div className="row" style={{marginTop:4,gap:6,flexWrap:'wrap'}}><RestChipForRoutine ex={e} routineId={r.id} /><span onClick={ev => ev.stopPropagation()}><NoteChip onClick={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></span></div><NoteLines notes={{ routine: e.note }} lines={2} onOpen={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 'none', alignItems: 'center' }}>
             {i > 0 && <button className={'iconbtn' + (linkedPrev ? ' on-ss' : '')} title={t('Superset with exercise above')} style={{ width: 32, height: 28, borderRadius: 'var(--r-sm)', fontSize: 15 }} onClick={ev => { ev.stopPropagation(); toggleLink(i) }}><Icon name="link" /></button>}
             <div style={{ display: 'flex', gap: 2 }}>

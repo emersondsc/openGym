@@ -1,4 +1,20 @@
 # Changelog
+## Não lançado — tipos de nota
+A nota sai da série e passa para o exercício, em **três tipos** que convivem
+(`docs/specs/spec_tipos_de_nota.md`).
+- 📌 **Nota fixa do exercício:** aparece em todo treino com aquele exercício, em qualquer rotina.
+  Também fica nos detalhes do exercício (ⓘ).
+- 📋 **Nota fixa da rotina:** aparece toda vez que você treina aquele exercício naquela rotina.
+  Também fica no editor da rotina.
+- 💬 **Nota do treino:** vale só naquele treino, naquele exercício.
+- **Onde:** botão "Nota" ao lado do descanso e da unidade; as notas que existem aparecem embaixo do
+  nome do exercício. A caixa da nota tem o seletor de tipo; o texto digitado vai junto ao trocar
+  para um tipo vazio. Limite de 1000 caracteres em todos. O balão saiu das linhas de série.
+- 🤖 **Treinador do chat:** lê os três tipos (`get_session`, `get_sets.entry_notes`,
+  `get_routines`, `get_exercises`) e não escreve nenhum (`NOTE_READ_ONLY`); a publicação de semana
+  preserva a nota fixa da rotina.
+- 🗂️ **Dado:** `exNotes[exId]`, `routines[].ex[].note` e `entries[].note`. A API recusa nota
+  inválida com 400 `NOTE_INVALID`.
 
 ## Não lançado — nota por série
 

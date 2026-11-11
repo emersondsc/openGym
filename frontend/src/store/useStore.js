@@ -25,7 +25,7 @@ export const DEF = {
   // aparece na proxima abertura, que e exatamente o que se quer para quem ja usa o app.
   skinIntro: false,
   bodyweight: [], routines: [], week: {}, dayPlan: {},
-  exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'mini',
+  exWeights: {}, exNotes: {}, workouts: [], active: null, customEx: [], gifSize: 'mini',
   // GIF starts minimized (2026-07). gifSizeChosen is written ONLY by the Minimize/Expand button:
   // a state saved before this change carries gifSize 'full' from the old default, and pullState
   // adopts that state wholesale - so the flag, not the value, is what proves the user had a say.
