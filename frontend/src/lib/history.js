@@ -88,6 +88,24 @@ export function targetEffortLabel(v, kind) {
   return a === b ? `${name} ${fmtNum(a)}` : `${name} ${fmtNum(a)}–${fmtNum(b)}`
 }
 
+// Texto do card "Meta de hoje" (spec_meta_de_hoje): null quando o card não deve aparecer.
+export function targetSummary(entry, exUnit, effKind) {
+  const tg = entry.target
+  if (!tg || modeOf({ ...tg, id: entry.id }) !== 'reps') return null
+  const range = repsLabel(tg)
+  const eff = targetEffortLabel(tg.targetRir, effKind)
+  if (!eff && !(range && range.includes('–'))) return null
+  // D4: o que a progressão decidiu para hoje vence; o resto vem da rotina.
+  const plan = entry.plan && entry.plan.kind !== 'off' ? entry.plan : {}
+  const sets = plan.sets ?? tg.sets
+  const w = plan.weight ?? tg.weight
+  const reps = plan.reps != null ? String(plan.reps) : range
+  const bw = isBw({ ...tg, id: entry.id })
+  const load = w > 0 ? (bw ? '+' : '') + fmtNum(w) + ' ' + exUnit : bw ? t('Bodyweight') : null
+  const head = sets > 0 && reps ? `${sets} × ${reps}` : sets > 0 ? t('{0} sets', sets) : reps
+  return { parts: [head, load].filter(Boolean), eff }
+}
+
 // Faixa "A-B" de reps gravada pelo treinador, ou null.
 export const repsRange = r => {
   const m = typeof r === 'string' ? /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(r) : null

@@ -198,10 +198,7 @@ export default {
   'Reps': 'Reps',
   // spec_meta_de_hoje
   "Today's target": 'Meta de hoje',
-  'volume': 'volume',
-  'load': 'carga',
   'reps': 'reps',
-  'effort': 'esforço',
   'Target RIR': 'RIR alvo',
   'No target': 'Sem alvo',
   'set by your coach': 'definido pelo treinador',

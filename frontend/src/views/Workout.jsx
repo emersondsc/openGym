@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
-import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, repsLabel, targetEffortLabel } from '../lib/history.js'
+import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, targetSummary } from '../lib/history.js'
 import { fmtNum, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
@@ -102,31 +102,22 @@ function RestChip({ entry, onChange }) {
   )
 }
 
-// spec_meta_de_hoje RF-5: a prescrição de hoje, na ordem volume → carga → reps → esforço.
-// Só em exercício de reps que está na rotina de origem (D8). Partes sem valor somem (D7).
+// spec_meta_de_hoje RF-5: a prescrição de hoje numa linha, como se lê na academia:
+// "3 × 8–12 · 180 kg · RIR 2". Só em exercício de reps que está na rotina de origem (D8).
+// Só aparece quando diz algo que as linhas de série não dizem: uma faixa de reps ou um RIR
+// alvo. Sem isso ("3 séries de 10") ele repetiria as linhas, então fica de fora.
 function TargetCard({ entry, exUnit, effKind, inRoutine, compact }) {
-  const tg = entry.target
-  if (!inRoutine || !tg) return null
-  if (modeOf({ ...tg, id: entry.id }) !== 'reps') return null
-  // D4: o que a progressão decidiu para hoje vence; o resto vem da rotina.
-  const plan = entry.plan && entry.plan.kind !== 'off' ? entry.plan : {}
-  const sets = plan.sets ?? tg.sets
-  const w = plan.weight ?? tg.weight
-  const reps = plan.reps != null ? String(plan.reps) : repsLabel(tg)
-  const bw = isBw({ ...tg, id: entry.id })
-  const load = w > 0 ? (bw ? '+' : '') + fmtNum(w) + ' ' + exUnit : bw ? t('Bodyweight') : null
-  const eff = targetEffortLabel(tg.targetRir, effKind)
-  const items = [
-    sets > 0 && [t('{0} sets', sets), t('volume')],
-    load && [load, t('load')],
-    reps && [reps, t('reps')],
-    eff && [eff, t('effort')],
-  ].filter(Boolean)
-  if (!items.length) return null
+  const sum = inRoutine ? targetSummary(entry, exUnit, effKind) : null
+  if (!sum) return null
+  const sep = <i aria-hidden="true">·</i>
   return <div className={'tgcard' + (compact ? ' compact' : '')} aria-label={t("Today's target")}>
-    {!compact && <div className="tgcard-h">{t("Today's target")}</div>}
-    <div className="tgcard-row">
-      {items.map(([v, l], i) => <div key={i} className="tgcard-v">{v}{!compact && <small>{l}</small>}</div>)}
+    <span className="tgcard-ic"><Icon name="target" /></span>
+    <div className="tgcard-tx">
+      {!compact && <small>{t("Today's target")}</small>}
+      <b>
+        {sum.parts.map((p, i) => <span key={i}>{i > 0 && sep}{p}</span>)}
+        {sum.eff && <>{sum.parts.length > 0 && sep}<em>{sum.eff}</em></>}
+      </b>
     </div>
   </div>
 }
