@@ -4,7 +4,7 @@ import { useStore, isValidRest } from '../store/useStore.js'
 import { exOr } from '../lib/exercises.js'
 import { uid } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { supersetUnits, cleanupSg, exLine } from '../lib/history.js'
+import { supersetUnits, cleanupSg, exLine, fmtSec } from '../lib/history.js'
 import { unitOfCfg } from '../lib/units.js'
 import { Thumb } from '../components/Media.jsx'
 import { glyphPicker, exercisePicker, exConfigSheet, confirmSheet, openNotes } from '../sheets.jsx'
@@ -37,7 +37,7 @@ function RestChipForRoutine({ex, routineId}){
               })
               useUI.getState().toast(t('Rest saved for {0} — {1}s', S.routines.find(r=>r.id===routineId).name, v))
             }}>
-              <span className="lrow-t">{v}s</span>
+              <span className="lrow-t">{fmtSec(v)}</span>
               {effective===v && <Icon name="check" className="lrow-k" />}
             </button>
           ))}
@@ -49,12 +49,12 @@ function RestChipForRoutine({ex, routineId}){
             })
             useUI.getState().toast(t('Rest reset to default'))
           }}>
-            <span className="lrow-m"><span className="lrow-t">{t('Default')} ({S.globalRestSec ?? 90}s)</span><span className="lrow-s">{t('Use the routine rest setting')}</span></span>
+            <span className="lrow-m"><span className="lrow-t">{t('Default')} ({fmtSec(S.globalRestSec ?? 90)})</span><span className="lrow-s">{t('Use the routine rest setting')}</span></span>
             {cfgRest==null && <Icon name="check" className="lrow-k" />}
           </button>
         </div>
       </>
-    ))}}><Icon name="timer" />{effective}s</button>
+    ))}}><Icon name="timer" />{fmtSec(effective)}</button>
 }
 
 export default function RoutineEdit() {
@@ -107,7 +107,13 @@ export default function RoutineEdit() {
       return <div key={i}>
         {unitFirst.has(i) && <div className="ss-label"><Icon name="link" />{t('Superset')}</div>}
         <div className={'item' + (inSS.has(i) ? ' in-ss' : '')} onClick={() => {
-          exConfigSheet(ex, e, cfg => edit(x => { x[i] = { id: x[i].id, sg: x[i].sg, ...(x[i].note ? { note: x[i].note } : {}), ...cfg } }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r)
+          exConfigSheet(ex, e, cfg => edit(x => {
+            const keep = { id: x[i].id, sg: x[i].sg }
+            if (x[i].note) keep.note = x[i].note
+            // O sheet não edita o descanso: o valor da rotina fica (spec_meta_de_hoje D13).
+            if (x[i].restSec != null) keep.restSec = x[i].restSec
+            x[i] = { ...keep, ...cfg }
+          }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r, { routineEdit: true })
         }}>
           <Thumb ex={ex} />
           <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, unitOfCfg(e, S))}</div><div className="row" style={{marginTop:4,gap:6,flexWrap:'wrap'}}><RestChipForRoutine ex={e} routineId={r.id} /><span onClick={ev => ev.stopPropagation()}><NoteChip onClick={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></span></div><NoteLines notes={{ routine: e.note }} lines={2} onOpen={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></div>
@@ -137,7 +143,7 @@ export default function RoutineEdit() {
     })()}
 
     <div className="small dim row" style={{ margin: '10px 2px', gap: 5 }}><Icon name="link" style={{ fontSize: 13 }} />{t('Tap the link button on an exercise to superset it with the one above — you’ll do them back-to-back.')}</div>
-    <Button variant="primary" onClick={() => exercisePicker(ex => exConfigSheet(ex, null, cfg => edit(x => { x.push({ id: ex.id, ...cfg }) }), null, r))} icon="plus">{t('Add exercise')}</Button>
+    <Button variant="primary" onClick={() => exercisePicker(ex => exConfigSheet(ex, null, cfg => edit(x => { x.push({ id: ex.id, ...cfg }) }), null, r, { routineEdit: true }))} icon="plus">{t('Add exercise')}</Button>
     <div style={{ height: 10 }} />
     <Button variant="danger" onClick={() => confirmSheet({
       title: t('Delete routine?'), message: t('“{0}” and its exercises will be removed.', r.name), confirmText: t('Delete'), danger: true,

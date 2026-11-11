@@ -17,6 +17,22 @@ export const MODE_ALLOWED = ['reps', 'time', 'cardio'];
 export const UNIT_ALLOWED = ['kg', 'lb'];   // BACKLOG-01: unidade do exercício
 const MODE_LEGACY = ['normal'];   // escrito por uma versão anterior do agente; modeOf lê como reps
 const REP_RANGE = /^\s*(\d{1,3})\s*-\s*(\d{1,3})\s*$/;
+// RIR alvo (spec_meta_de_hoje D2): número 0..4 em passos de 0,5, ou faixa "A-B" com A < B.
+// MESMA regra de frontend/src/lib/history.js; os casos de api/target-rir.cases.json rodam contra
+// as duas cópias.
+const RIR_RANGE = /^\s*(\d(?:\.5)?)\s*-\s*(\d(?:\.5)?)\s*$/;
+const rirOk = n => Number.isFinite(n) && n >= 0 && n <= 4 && Math.round(n * 2) === n * 2;
+export function isValidTargetRir(v) {
+  if (typeof v === 'number') return rirOk(v);
+  const m = typeof v === 'string' ? RIR_RANGE.exec(v) : null;
+  return !!m && rirOk(+m[1]) && rirOk(+m[2]) && +m[1] < +m[2];
+}
+/** Forma gravada (número, ou "A-B" sem espaços). Chamar depois de isValidTargetRir. */
+export function normTargetRir(v) {
+  if (typeof v === 'number') return v;
+  const m = RIR_RANGE.exec(String(v));
+  return m ? `${+m[1]}-${+m[2]}` : v;
+}
 const MAX_SETS = 20, MAX_WEIGHT = 1000, MAX_REPS = 100, MAX_SEC = 3600;
 const AUDIT_MAX_LINES = 5000;     // rotação: mantém as últimas N linhas
 const AUDIT_TAIL = 64 * 1024;     // o bastante para achar a última linha sem ler o arquivo
@@ -67,8 +83,8 @@ export function defaultExFields(eid, mode, eq) {
 /** Trocar de modo remove os campos do modo anterior (espelha exConfigSheet, sheets.jsx:512-523). */
 export function stripCrossModeFields(e, mode) {
   const o = { ...e };
-  if (mode === 'time') { delete o.reps; delete o.min; delete o.speed; delete o.repsMin; delete o.repsMax; }
-  else if (mode === 'cardio') { for (const k of ['reps', 'sec', 'repsMin', 'repsMax', 'prog', 'inc']) delete o[k]; }
+  if (mode === 'time') { delete o.reps; delete o.min; delete o.speed; delete o.repsMin; delete o.repsMax; delete o.targetRir; }
+  else if (mode === 'cardio') { for (const k of ['reps', 'sec', 'repsMin', 'repsMax', 'prog', 'inc', 'targetRir']) delete o[k]; }
   else { delete o.sec; delete o.min; delete o.speed; }
   return o;
 }
@@ -151,6 +167,9 @@ export function validateExEntry(e, opt = {}) {
       return bad('BAD_FIELD', f, `${f} must be an integer >= 1`);
     }
   }
+  if (e.targetRir !== undefined && e.targetRir !== null && !isValidTargetRir(e.targetRir)) {
+    return bad('BAD_TARGET_RIR', 'targetRir', 'targetRir must be 0..4 in steps of 0.5, or a range "A-B" with A<B');
+  }
   if (e.prog !== undefined && !PROG_ALLOWED.includes(e.prog)) {
     return bad('BAD_PROG', 'prog', `prog must be one of ${PROG_ALLOWED.join('|')}`, PROG_ALLOWED);
   }
@@ -232,6 +251,9 @@ export function mergeRoutine(cur, body, catalog, custom) {
       const effective = mode === 'normal' ? 'reps' : mode;
       const base = target ? { ...target } : defaultExFields(eid, effective, meta.eq);
       const merged = stripCrossModeFields({ ...base, ...fields, id: eid }, effective);
+      // spec_meta_de_hoje: null apaga o RIR alvo; o valor gravado vem sem espaços.
+      if (merged.targetRir === null) delete merged.targetRir;
+      else if (merged.targetRir !== undefined && isValidTargetRir(merged.targetRir)) merged.targetRir = normTargetRir(merged.targetRir);
       const modeChanged = !target || ((declared ?? target.mode) !== target.mode);
       const bad = validateExEntry(merged, {
         catalog, custom, where: `ex.${eid}`,

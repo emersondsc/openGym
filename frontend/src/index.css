@@ -623,6 +623,20 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 }
 .progline.warn{color:var(--yellow)}
 .progline svg{flex:none;margin-top:2px}
+/* spec_meta_de_hoje: a prescrição de hoje, acima das séries */
+.tgcard{margin:10px 0 0;padding:10px 12px;border-radius:var(--r-card);
+  background:var(--surface);border:var(--hair) solid var(--sep)}
+.tgcard-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--label-2)}
+.tgcard-row{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:4px}
+.tgcard-v{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.tgcard-v small{display:block;font-size:11px;font-weight:400;color:var(--label-2)}
+.tgcard.compact{padding:6px 10px}
+.tgcard.compact .tgcard-row{margin-top:0;gap:2px 12px}
+.tgcard.compact .tgcard-v{font-size:14px}
+:root[data-skin="paper"] .tgcard{border-radius:2px}
+/* faixa de reps definida pelo treinador, no editor do exercício (U1) */
+.cfg-fixed{display:flex;flex-direction:column;gap:2px;min-width:90px}
+.cfg-fixed b{font-size:17px}
 
 /* start a timed set (issue #16) — sits where you'd otherwise reach for the checkbox */
 .setrow .setgo{

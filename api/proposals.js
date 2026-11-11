@@ -25,7 +25,7 @@ const SNAPSHOTS_DIAS = 30;
 
 const CAMPOS_ROTINA = ['id', 'name', 'emoji', 'prog'];
 const CAMPOS_EX = ['id', 'sets', 'reps', 'weight', 'mode', 'restSec', 'unit', 'sec', 'min', 'speed',
-  'inc', 'repsMin', 'repsMax', 'side', 'sg', 'prog'];
+  'inc', 'repsMin', 'repsMax', 'side', 'sg', 'prog', 'targetRir'];
 const CAMPOS_MESO = ['id', 'name', 'start', 'end', 'goal', 'origin', 'priorities', 'rules', 'weeks',
   'evidence', 'log', 'cargas_prescritas', 'estrutura_atual', 'status_semanas', 'fonte', 'criado_em',
   'atualizado_em'];

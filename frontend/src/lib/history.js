@@ -57,6 +57,51 @@ export function fmtSec(sec) {
   return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0')
 }
 
+// spec_meta_de_hoje D2: RIR alvo é número 0..4 em passos de 0,5, ou faixa "A-B" (A < B).
+// MESMA regra em api/routines.js (e na cópia app-api/ do MCP); os casos ficam em
+// api/target-rir.cases.json e rodam contra as duas cópias.
+const RIR_RANGE = /^\s*(\d(?:\.5)?)\s*-\s*(\d(?:\.5)?)\s*$/
+const rirOk = n => Number.isFinite(n) && n >= 0 && n <= 4 && Math.round(n * 2) === n * 2
+export function parseTargetRir(v) {
+  if (typeof v === 'number') return rirOk(v) ? [v, v] : null
+  if (typeof v !== 'string') return null
+  const m = RIR_RANGE.exec(v)
+  if (!m) return null
+  const a = +m[1], b = +m[2]
+  return rirOk(a) && rirOk(b) && a < b ? [a, b] : null
+}
+export const isValidTargetRir = v => parseTargetRir(v) !== null
+// Forma gravada: número, ou "A-B" sem espaços. undefined quando o valor não vale.
+export function normTargetRir(v) {
+  const p = parseTargetRir(v)
+  return !p ? undefined : typeof v === 'number' ? v : `${p[0]}-${p[1]}`
+}
+
+// "RIR 2", "RIR 1–2" ou, em perfil RPE, "RPE 8", "RPE 8–9". null sem alvo. Perfil sem escala
+// ('none') mostra RIR, que é a língua do treinador (spec_meta_de_hoje D3).
+export function targetEffortLabel(v, kind) {
+  const p = parseTargetRir(v)
+  if (!p) return null
+  const rpe = kind === 'rpe'
+  const [a, b] = rpe ? [10 - p[1], 10 - p[0]] : p
+  const name = rpe ? 'RPE' : 'RIR'
+  return a === b ? `${name} ${fmtNum(a)}` : `${name} ${fmtNum(a)}–${fmtNum(b)}`
+}
+
+// Faixa "A-B" de reps gravada pelo treinador, ou null.
+export const repsRange = r => {
+  const m = typeof r === 'string' ? /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(r) : null
+  return m ? [+m[1], +m[2]] : null
+}
+// Reps da meta: "8-12" → "8–12", 10 → "10", repsMin 8 + reps 12 → "8–12" (spec_meta_de_hoje D6).
+export function repsLabel(cfg) {
+  const rg = repsRange(cfg?.reps)
+  if (rg) return rg[0] === rg[1] ? String(rg[0]) : `${rg[0]}–${rg[1]}`
+  const n = Number(cfg?.reps)
+  if (!(n > 0)) return null
+  return cfg.repsMin > 0 && cfg.repsMin < n ? `${cfg.repsMin}–${n}` : String(n)
+}
+
 // How hard a set felt, if the profile logs it at all. Two scales for the same thing, kept in
 // their own fields: RIR counts the reps still in the tank, RPE reads the same effort off a
 // 10-point scale from the top (RPE 8 ≈ RIR 2). A set logged on one scale is never silently

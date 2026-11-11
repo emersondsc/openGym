@@ -3,7 +3,7 @@ import { useStore, isValidRest } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf } from './lib/exercises.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, isoOf, uid, exCount, DAYN, MONTHS_LONG, ACCENTS, SKINS } from './lib/format.js'
-import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
+import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps, parseTargetRir, normTargetRir, repsRange } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, getLang, INSTR_LANGS } from './lib/i18n.js'
 import { nav } from './lib/nav.js'
@@ -387,11 +387,12 @@ function ExerciseNote({ st, ex }) {
     <Button size="sm" icon={note ? 'pencil' : 'plus'} onClick={open}>{note ? t('Edit') : t('Add note')}</Button>
   </div>
 }
-function ExerciseDetail({ ex, close }) {
+function ExerciseDetail({ ex, close, session }) {
   const st = useStore(s => s.S)
   const last = lastEntryFor(st, ex.id)
-  const best = bestWeightFor(st, ex.id)
-  const exUnit = exUnitOf(st, ex.id)          // BACKLOG-01: `best` é peso cru (A-4)
+  // Aberto pelo treino: a mesma conta e a mesma unidade do chip que saiu (spec_meta_de_hoje D10).
+  const best = session ? session.best : bestWeightFor(st, ex.id)
+  const exUnit = session ? session.unit : exUnitOf(st, ex.id)          // BACKLOG-01: `best` é peso cru (A-4)
   return <>
     <h3 className="capitalize">{ex.n}</h3>
     <Media ex={ex} />
@@ -413,7 +414,8 @@ function ExerciseDetail({ ex, close }) {
     {instrFor(ex).length > 0 &&<><h4 className="sec">{t('How to')}{!INSTR_LANGS.includes(getLang()) && <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}> · {t('instructions in English')}</span>}</h4><ol className="steps-list">{instrFor(ex).map((s, i) => <li key={i}>{s}</li>)}</ol></>}
   </>
 }
-export const exerciseDetailSheet = ex => ui().openSheet(close => <ExerciseDetail ex={ex} close={close} />)
+export const exerciseDetailSheet = (ex, session) =>
+  ui().openSheet(close => <ExerciseDetail ex={ex} close={close} session={session} />)
 
 /* ============================ add to routine ============================ */
 function AddToRoutine({ ex, close }) {
@@ -571,7 +573,7 @@ export const exercisePicker = (onPick, exclude, title) => ui().openSheet(close =
 // Progression settings for one exercise (issue #17). Shown inside the config sheet because
 // "how does this lift go up" belongs next to sets and reps, not in a separate screen. Left
 // on "follow the routine" it inherits, so most people never touch it.
-function ProgressionFields({ ex, mode, c, setC, routine, unit }) {
+function ProgressionFields({ ex, mode, c, setC, routine, unit, range }) {
   const options = POLICIES_FOR[mode] || ['off']
   if (options.length < 2) return null
   const inherited = policyFor({ id: ex.id }, routine, mode)
@@ -588,19 +590,31 @@ function ProgressionFields({ ex, mode, c, setC, routine, unit }) {
     {active !== 'off' && <div className="row cfgrow" style={{ marginBottom: 18 }}>
       <Stepper label={mode === 'time' ? t('Step (seconds)') : t('Step ({0})', unit)} value={inc}
         step={mode === 'time' ? 5 : 1.25} decimal={mode !== 'time'} onChange={v => setC(x => ({ ...x, inc: v }))} />
-      {active === 'double' && <Stepper label={t('Reps from')} value={c.repsMin || Math.max(1, (c.reps || 10) - 2)}
+      {/* Com faixa do treinador, o piso é dele (spec_meta_de_hoje U1): regra e passo ficam. */}
+      {active === 'double' && !range && <Stepper label={t('Reps from')} value={c.repsMin || Math.max(1, (c.reps || 10) - 2)}
         step={1} decimal={false} onChange={v => setC(x => ({ ...x, repsMin: v }))} />}
     </div>}
   </>
 }
 
-function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
+// RIR alvo (spec_meta_de_hoje RF-7). '' é "Sem alvo", como em ProgressionFields.
+const RIR_PRESETS = [0, '0-1', 1, '1-2', 2, '2-3', 3, 4]
+const rirText = v => { const p = parseTargetRir(v); return p[0] === p[1] ? fmtNum(p[0]) : `${fmtNum(p[0])}–${fmtNum(p[1])}` }
+// Um valor do treinador fora da lista (ex.: 1.5) entra nela para continuar selecionado.
+const targetRirOptions = cur => {
+  const n = normTargetRir(cur)
+  const vals = [...RIR_PRESETS, ...(n !== undefined && !RIR_PRESETS.includes(n) ? [n] : [])]
+  return [{ value: '', label: t('No target') }, ...vals.map(v => ({ value: v, label: rirText(v) }))]
+}
+function ExConfig({ ex, existing, onSave, onDelete, close, routine, routineEdit }) {
   const st = useStore(s => s.S)
   const cardio = isCardio(ex.id)
   const [c, setC] = useState(existing || defaultConfig(ex.id))
   // Cardio keeps its own duration+speed form; the reps/time choice (issue #16) is offered for
   // everything else, which is where the gap was — planks, hangs, wall sits, loaded carries.
   const mode = cardio ? 'cardio' : modeOf({ ...c, id: ex.id })
+  // Faixa "8-12" é do treinador (spec_meta_de_hoje U1): mostrada, não editada, e o save a preserva.
+  const range = mode === 'reps' ? repsRange(existing?.reps) : null
   // Both default from the dataset and are then whatever the config says — see isBw.
   const bw = !cardio && isBw({ ...c, id: ex.id })
   const perSide = isPerSide(c)
@@ -632,6 +646,21 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
     if (cardio) onSave({ sets, min: Math.max(1, Math.round(c.min) || 20), speed: Math.max(0, c.speed || 8) })
     else if (mode === 'time') onSave({ sets, mode: 'time', sec: Math.max(1, Math.round(c.sec) || 45), weight: Math.max(0, c.weight || 0), ...flags, ...prog })
     else {
+      // RIR alvo: só o editor de rotina muda; fora dele, o valor que veio passa intacto.
+      const withTargetRir = out => {
+        const n = normTargetRir(routineEdit ? c.targetRir : existing?.targetRir)
+        if (n !== undefined) out.targetRir = n
+        return out
+      }
+      if (range) {
+        // U1: faixa, repsMin e repsMax ficam como o treinador gravou; prog e inc seguem editáveis.
+        const out = { sets, mode: 'reps', reps: existing.reps, weight: Math.max(0, c.weight || 0), ...flags,
+          ...(existing.side ? { side: true } : {}), ...prog }
+        if (existing.repsMin != null) out.repsMin = existing.repsMin
+        if (existing.repsMax != null) out.repsMax = existing.repsMax
+        onSave(withTargetRir(out))
+        return
+      }
       // A unilateral target is stored even: the split has to divide, and a typed 15 would
       // otherwise plan seven reps on one side and eight on the other, every session.
       const typed = Math.max(1, Math.round(c.reps) || 10)
@@ -640,7 +669,7 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
       if (policyFor({ ...c, id: ex.id }, routine, 'reps') === 'double') out.repsMin = Math.min(reps, Math.max(1, Math.round(c.repsMin) || Math.max(1, reps - 2)))
       // A ceiling below the working reps would tell you to add a set on day one.
       if (bw && !(out.weight > 0) && c.repsMax > 0) out.repsMax = Math.max(reps, Math.round(c.repsMax))
-      onSave(out)
+      onSave(withTargetRir(out))
     }
   }
   return <>
@@ -666,7 +695,10 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
         <Stepper label={t('Weight ({0})', unitSel)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />
       </> : <>
         <Stepper label={t('Sets')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
-        <Stepper label={t('Reps')} value={c.reps} step={perSide ? 2 : 1} decimal={false} onChange={v => setC(x => ({ ...x, reps: v }))} />
+        {range
+          ? <div className="cfg-fixed"><span className="muted small">{t('Reps')}</span>
+              <b>{range[0]}–{range[1]}</b><span className="dim small">{t('set by your coach')}</span></div>
+          : <Stepper label={t('Reps')} value={c.reps} step={perSide ? 2 : 1} decimal={false} onChange={v => setC(x => ({ ...x, reps: v }))} />}
         {/* On bodyweight work the weight stepper is the click #32 is about, so it is not here
             until there is a belt to describe — see the added-weight row below. */}
         {!bw && <Stepper label={t('Weight ({0})', unitSel)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />}
@@ -681,12 +713,17 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
         subtitle={bw ? t('No weight to enter — just log the reps.') : t('Ask for a weight on every set.')}>
         <Switch checked={bw} onChange={v => setC(x => ({ ...x, bodyweight: v, weight: v ? 0 : x.weight }))} />
       </Row>
-      {mode === 'reps' && <Row icon="shuffle" iconTint="var(--blue)" title={t('Reps per side')}
+      {mode === 'reps' && !range && <Row icon="shuffle" iconTint="var(--blue)" title={t('Reps per side')}
         subtitle={perSide ? t('You still log the total: {0} is {1} per side.', c.reps || 0, fmtNum(sideReps(c.reps))) : t('For lunges, single-arm rows and the like.')}>
         {/* Turning it on rounds the target up to an even number, since half of an odd
             total is a rep one side does not get. */}
         <Switch checked={perSide} onChange={v => setC(x => ({ ...x, side: v || undefined, reps: v ? Math.ceil((x.reps || 0) / 2) * 2 : x.reps }))} />
       </Row>}
+      {/* spec_meta_de_hoje RF-7: só no editor de rotina; o histórico e o treino não mexem nisto. */}
+      {routineEdit && mode === 'reps' && <SelectRow icon="target" iconTint="var(--acc)" title={t('Target RIR')}
+        sheetTitle={t('Target RIR')} value={normTargetRir(c.targetRir) ?? ''}
+        options={targetRirOptions(c.targetRir)}
+        onChange={v => setC(x => ({ ...x, targetRir: v === '' ? undefined : v }))} />}
     </div>}
     {/* BACKLOG-01: a unidade pertence ao exercício, não ao perfil — `0585` e `0599` são
         máquinas em libras. A condição é exatamente a do stepper de peso: um exercício de peso
@@ -714,22 +751,25 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
       </div>
     </>}
     {/* The rep ceiling only means something when there is no load to add instead. */}
-    {mode === 'reps' && bw && !(c.weight > 0) && <div className="row cfgrow" style={{ marginBottom: 18 }}>
+    {mode === 'reps' && bw && !(c.weight > 0) && !range && <div className="row cfgrow" style={{ marginBottom: 18 }}>
       <Stepper label={t('Top of the range')} value={c.repsMax || 0} step={1} decimal={false}
         onChange={v => setC(x => ({ ...x, repsMax: v }))} />
     </div>}
-    {mode === 'reps' && bw && !(c.weight > 0) && <div className="small dim" style={{ marginTop: -10, marginBottom: 18 }}>
+    {mode === 'reps' && bw && !(c.weight > 0) && !range && <div className="small dim" style={{ marginTop: -10, marginBottom: 18 }}>
       {c.repsMax > 0
         ? t('Reps climb to {0}, then a set is added and the reps start over. At {1} sets it asks you to add weight instead.', c.repsMax, MAX_BW_SETS)
         : t('Reps climb by one whenever every set was clean. Set a ceiling to add sets instead of reps forever.')}
     </div>}
-    <ProgressionFields ex={ex} mode={mode} c={c} setC={setC} routine={routine} unit={unitSel} />
+    <ProgressionFields ex={ex} mode={mode} c={c} setC={setC} routine={routine} unit={unitSel} range={range} />
     <Button variant="primary" onClick={save}>{existing ? t('Save') : t('Add to routine')}</Button>
     {ex.custom && <><div style={{ height: 8 }} /><Button icon="pencil" onClick={() => { close(); customExSheet(ex) }}>{t('Edit or delete this exercise')}</Button></>}
     {onDelete && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { close(); onDelete() }}>{t('Remove from routine')}</Button></>}
   </>
 }
-export const exConfigSheet = (ex, existing, onSave, onDelete, routine) => ui().openSheet(close => <ExConfig ex={ex} existing={existing} onSave={onSave} onDelete={onDelete} routine={routine} close={close} />)
+// opts.routineEdit: aberto pelo editor de rotina, o único lugar que edita o RIR alvo (spec_meta_de_hoje D12).
+export const exConfigSheet = (ex, existing, onSave, onDelete, routine, opts = {}) =>
+  ui().openSheet(close => <ExConfig ex={ex} existing={existing} onSave={onSave} onDelete={onDelete}
+    routine={routine} routineEdit={!!opts.routineEdit} close={close} />)
 
 /* ============================ glyph picker ============================ */
 // Grouped by what the glyph means for a training day, so picking one is a scan

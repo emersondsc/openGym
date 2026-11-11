@@ -17,7 +17,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   canon, sha256, parseIfMatch, checkIfMatch, withState, cleanupSg,
-  validateExEntry, defaultExFields, stripCrossModeFields, loadCatalog, PROG_ALLOWED, CATALOG_PATH, NOTE_READ_ONLY_MSG
+  validateExEntry, defaultExFields, stripCrossModeFields, loadCatalog, PROG_ALLOWED, CATALOG_PATH, NOTE_READ_ONLY_MSG,
+  isValidTargetRir, normTargetRir
 } from './routines.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;        // igual ao PATTERNS do server.js
@@ -221,6 +222,13 @@ export function materializeRoutine(r, catalog, prev) {
     delete merged.note;
     const pn = (prevEx.get(raw.id) || {}).note;
     if (typeof pn === 'string' && pn) merged.note = pn;
+    // spec_meta_de_hoje U2: publicar sem citar o RIR alvo mantém o que estava (só em reps, como o
+    // stripCrossModeFields); null apaga; o valor gravado vem sem espaços. Vale para a proposta e
+    // para a publicação direta, que passam as duas por aqui.
+    const prevRir = (prevEx.get(raw.id) || {}).targetRir;
+    if (raw.targetRir === undefined && prevRir !== undefined && mode === 'reps') merged.targetRir = prevRir;
+    else if (merged.targetRir === null) delete merged.targetRir;
+    else if (merged.targetRir !== undefined && isValidTargetRir(merged.targetRir)) merged.targetRir = normTargetRir(merged.targetRir);
     return merged;
   });
   cleanupSg(ex);

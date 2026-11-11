@@ -9,7 +9,7 @@
 //     a page break — each exercise, and each routine that fits, stays in one place.
 
 import { EXIDX, isBodyweightEq } from './exercises.js'
-import { modeOf, fmtSec, isBw, isPerSide, sideReps } from './history.js'
+import { modeOf, fmtSec, isBw, isPerSide, sideReps, normTargetRir } from './history.js'
 import { uid, todayISO, DAYN, fmtNum, exCount } from './format.js'
 import { t } from './i18n.js'
 import { unitOfCfg } from './units.js'
@@ -33,6 +33,7 @@ function cleanEx(e) {
     if (e.weight && e.unit) o.unit = e.unit          // BACKLOG-01: a unidade viaja com o peso
   } else {
     if (e.reps != null) o.reps = e.reps
+    if (e.targetRir != null) o.targetRir = e.targetRir   // spec_meta_de_hoje: RIR alvo viaja com o plano
     if (e.weight) o.weight = e.weight
     if (e.weight && e.unit) o.unit = e.unit          // BACKLOG-01
   }
@@ -88,6 +89,13 @@ export function parsePlan(raw) {
       const ok = !!e && (known.has(e.id) || !!EXIDX[e.id])
       if (!ok) dropped++
       return ok
+    }).map(e => {
+      // RIR alvo inválido não entra: senão todo PUT seguinte seria recusado com
+      // BAD_TARGET_RIR (spec_meta_de_hoje D15).
+      if (e.targetRir === undefined) return e
+      const { targetRir, ...rest } = e
+      const n = normTargetRir(targetRir)
+      return n === undefined ? rest : { ...rest, targetRir: n }
     })
   }))
   return {

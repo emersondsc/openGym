@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
-import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf } from '../lib/history.js'
+import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, repsLabel, targetEffortLabel } from '../lib/history.js'
 import { fmtNum, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
@@ -78,13 +78,13 @@ function RestChip({ entry, onChange }) {
         <div className="sect-b">
           {REST_PRESETS.map(v => (
             <button key={v} className="lrow tap" onClick={() => { if(!isValidRest(v)) return; close(); onChange(v) }}>
-              <span className="lrow-m"><span className="lrow-t">{v}s</span></span>
+              <span className="lrow-m"><span className="lrow-t">{fmtSec(v)}</span></span>
               {effective===v && <Icon name="check" className="lrow-k" />}
             </button>
           ))}
           <button className="lrow tap" onClick={() => { close(); onChange(null) }}>
             <span className="lrow-m">
-              <span className="lrow-t">{t('Default')} ({S.globalRestSec}s)</span>
+              <span className="lrow-t">{t('Default')} ({fmtSec(S.globalRestSec ?? 90)})</span>
               <span className="lrow-s">{t('Use the routine rest setting')}</span>
             </span>
             {(entry.restSec==null && cfgRest==null) && <Icon name="check" className="lrow-k" />}
@@ -97,9 +97,38 @@ function RestChip({ entry, onChange }) {
   return (
     <button className={'tag tap nocap' + (custom ? ' acc' : '')} onClick={open}
       aria-label={t('Rest time')}>
-      <Icon name="timer" />{sec}s
+      <Icon name="timer" />{fmtSec(sec)}
     </button>
   )
+}
+
+// spec_meta_de_hoje RF-5: a prescrição de hoje, na ordem volume → carga → reps → esforço.
+// Só em exercício de reps que está na rotina de origem (D8). Partes sem valor somem (D7).
+function TargetCard({ entry, exUnit, effKind, inRoutine, compact }) {
+  const tg = entry.target
+  if (!inRoutine || !tg) return null
+  if (modeOf({ ...tg, id: entry.id }) !== 'reps') return null
+  // D4: o que a progressão decidiu para hoje vence; o resto vem da rotina.
+  const plan = entry.plan && entry.plan.kind !== 'off' ? entry.plan : {}
+  const sets = plan.sets ?? tg.sets
+  const w = plan.weight ?? tg.weight
+  const reps = plan.reps != null ? String(plan.reps) : repsLabel(tg)
+  const bw = isBw({ ...tg, id: entry.id })
+  const load = w > 0 ? (bw ? '+' : '') + fmtNum(w) + ' ' + exUnit : bw ? t('Bodyweight') : null
+  const eff = targetEffortLabel(tg.targetRir, effKind)
+  const items = [
+    sets > 0 && [t('{0} sets', sets), t('volume')],
+    load && [load, t('load')],
+    reps && [reps, t('reps')],
+    eff && [eff, t('effort')],
+  ].filter(Boolean)
+  if (!items.length) return null
+  return <div className={'tgcard' + (compact ? ' compact' : '')} aria-label={t("Today's target")}>
+    {!compact && <div className="tgcard-h">{t("Today's target")}</div>}
+    <div className="tgcard-row">
+      {items.map(([v, l], i) => <div key={i} className="tgcard-v">{v}{!compact && <small>{l}</small>}</div>)}
+    </div>
+  </div>
 }
 
 function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet, onRemoveSet, onStartTimed }) {
@@ -111,9 +140,6 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
   const cardio = mode === 'cardio'
   const timed = mode === 'time'
   const last = lastEntryFor(S, entry.id)
-  // The same number the "confirm your working weight" sheet calls your best, so the two
-  // never disagree inside one session: heaviest logged set, or the working weight you kept.
-  const best = cardio ? 0 : Math.max(bestWeightFor(S, entry.id), (S.exWeights[entry.id] || {}).w || 0)
   // What the progression policy decided for this session, and why (issue #17). Computed when
   // the session was built so the reason matches the numbers already in the rows.
   const plan = entry.plan
@@ -175,7 +201,12 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
     <Media ex={ex} key={entry.id} compact={compact} minimizable />
     <div className="row between" style={{ marginBottom: 6 }}>
       <div style={{ fontSize: compact ? 17 : 20, fontWeight: 600, letterSpacing: '-.02em', textTransform: 'capitalize', lineHeight: 1.2 }}>{ex.n}</div>
-      <button className="iconbtn" aria-label={t('Details')} onClick={() => exerciseDetailSheet(ex)}><Icon name="info" /></button>
+      <button className="iconbtn" aria-label={t('Details')} onClick={() => exerciseDetailSheet(ex, {
+        // spec_meta_de_hoje D10: o "Melhor" saiu dos chips e mora aqui, com a mesma conta de
+        // antes (série mais pesada ou peso de trabalho confirmado) e a unidade desta sessão.
+        best: cardio ? 0 : Math.max(bestWeightFor(S, entry.id), (S.exWeights[entry.id] || {}).w || 0),
+        unit: exUnit,
+      })}><Icon name="info" /></button>
     </div>
     <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
       {cardio && <span className="tag acc"><Icon name="figureRun" />{t('Cardio')}</span>}
@@ -184,7 +215,6 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
       {!cardio && !timed && isPerSide(cfg) && <span className="tag acc nocap"><Icon name="shuffle" />{t('{0} per side', fmtNum(sideReps(entry.sets.find(s => !s.done)?.r ?? entry.sets[0]?.r)))}</span>}
       {(ex.tg || ex.bp) && <span className="tag">{t(ex.tg || ex.bp)}</span>}
       {ex.eq && <span className="tag">{t(ex.eq)}</span>}
-      {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {exUnit}</span>}
       <UnitChip value={entry.target?.unit ?? null} base={S.unit} onChange={v => {
         // Mesma semântica do RestChip: a descoberta "essa máquina é em libras" vale para a
         // próxima vez também, então grava na sessão e na rotina DE ORIGEM da sessão
@@ -243,6 +273,8 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
       <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
       <span>{t(...plan.why)}</span>
     </div>}
+    <TargetCard entry={entry} exUnit={exUnit} effKind={kind} compact={compact}
+      inRoutine={!!routineId && !entry.adhoc} />
     <div className="card" style={{ marginTop: 10, marginBottom: 0 }}>
       {/* the header carries the same eff3 sizing as the rows, or the labels drift off their columns */}
       <div className={'sethead' + rowCls}><span className="n-sp" />{last && <span className="p-sp">{t('Previous')}</span>}<span className="w-sp">{col1.hd}</span>{col2 && <span className="r-sp">{col2.hd}</span>}{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
@@ -323,13 +355,15 @@ function ActiveWorkout() {
           // A sessao pode ter mudado com o picker aberto: so troca se ainda for a mesma entrada.
           if (!e || e.id !== oldId) return
           const sameKind = modeOf({ ...(e.target || {}), id: e.id }) === modeOf({ id: ex.id })
-          const keep = sameKind ? ['mode', 'sets', 'reps', 'repsMin', 'repsMax', 'sec', 'min', 'speed'] : []
+          const keep = sameKind ? ['mode', 'sets', 'reps', 'repsMin', 'repsMax', 'sec', 'min', 'speed', 'targetRir'] : []
           const carried = Object.fromEntries(keep.filter(k => (e.target || {})[k] != null).map(k => [k, e.target[k]]))
           const target = { ...defaultConfig(ex.id), sets: e.sets.length, ...carried }
           const full = { ...target, id: ex.id }
           const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
           const next = { id: ex.id, target, plan, sets: applyPrescription(buildSets(s, full), plan) }
           if (e.sg) next.sg = e.sg
+          // Um avulso trocado continua avulso: não ganha o card "Meta de hoje" (spec_meta_de_hoje D8).
+          if (e.adhoc) next.adhoc = true
           s.active.entries[idx] = next
         })
         useUI.getState().toast(t('Exercise swapped for this session only'))
@@ -474,7 +508,7 @@ function ActiveWorkout() {
       <Button onClick={() => exercisePicker(ex => exConfigSheet(ex, null, cfg => update(s => {
         const full = { ...cfg, id: ex.id }
         const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
-        s.active.entries.push({ id: ex.id, target: { ...cfg }, plan, sets: applyPrescription(buildSets(s, full), plan) })
+        s.active.entries.push({ id: ex.id, adhoc: true, target: { ...cfg }, plan, sets: applyPrescription(buildSets(s, full), plan) })
         s.active.cur = s.active.entries.length - 1
       }), null, S.routines.find(r => r.id === A.routineId)), S.active.entries.map(e => e.id))} icon="plus" className="mid">{t('Add exercise')}</Button>
       {A.entries.length > 0 && <Button onClick={swapCurrent} icon="shuffle" className="mid">{t('Swap exercise')}</Button>}
