@@ -1,7 +1,19 @@
-# Segredos e certificados (nunca versionar)
+# Segredos, chaves e certificados (nunca versionar)
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
 og.crt
 og.key
+agent.key
+# Dados vivos / runtime (caso caiam dentro do clone)
+data/state-*.json
+data/audit.jsonl
+data/micro-idem.json
+coach-links/
+coach-proposals/
 # Gerados
 frontend/dist/
 frontend/node_modules/
