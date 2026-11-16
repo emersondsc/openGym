@@ -282,6 +282,7 @@ export const useStore = create((set, get) => {
               const merged = Object.assign(clone(DEF), srv)      // routines/week/dayPlan do SERVIDOR
               merged.workouts = mergeWorkouts(srv.workouts, S.workouts, localWinNow())
               merged.exWeights = mergeExWeights(srv.exWeights, S.exWeights, localWinNow())
+              merged.exNotes = { ...(srv.exNotes || {}), ...(S.exNotes || {}) }
               merged.mesos = mergeMesos(srv.mesos, S.mesos)      // nada criado aqui se perde
               // Ponteiro do mesociclo: o do SERVIDOR manda (a API é overwrite total e quem
               // coordena é o assistente, lendo antes de escrever). Id que sumiu vira null.
@@ -354,6 +355,7 @@ export const useStore = create((set, get) => {
           const merged = Object.assign(clone(DEF), state)
           merged.workouts = mergeWorkouts(state.workouts, S.workouts, localWinNow())
           merged.exWeights = mergeExWeights(state.exWeights, S.exWeights, localWinNow())
+          merged.exNotes = { ...(state.exNotes || {}), ...(S.exNotes || {}) }
           merged.mesos = mergeMesos(state.mesos, S.mesos)
           fixMesoPointers(merged)
           if (S.active) merged.active = S.active

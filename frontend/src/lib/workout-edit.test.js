@@ -320,3 +320,21 @@ describe('mescla preserva a nota do treino', () => {
     expect(mergeWorkouts([comNota(110, 'antiga')], [local], mark)[0].entries[0].note).toBe('nota nova')
   })
 })
+
+describe('applyWorkoutEdit preserva e edita a nota do treino', () => {
+  it('salva uma nota nova adicionada no draft', () => {
+    const S = st(), d = draftOf(S, 'w2')
+    d.entries[0].note = 'ombro direito incomodou'
+    const r = applyWorkoutEdit(S, 'w2', d)
+    expect(r.workout.entries[0].note).toBe('ombro direito incomodou')
+  })
+
+  it('remove a chave note quando a nota é apagada no draft', () => {
+    const S = st()
+    S.workouts[1].entries[0].note = 'nota antiga'
+    const d = draftOf(S, 'w2')
+    delete d.entries[0].note
+    const r = applyWorkoutEdit(S, 'w2', d)
+    expect('note' in r.workout.entries[0]).toBe(false)
+  })
+})

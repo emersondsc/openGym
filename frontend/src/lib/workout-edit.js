@@ -98,18 +98,19 @@ export function applyWorkoutEdit(S, id, draft) {
   const entries = draft.entries
     .filter(e => e.sets.some(s => s.done))
     .map(e => {
-      const b = beforeById.get(e.id)
+      const { note: _oldNote, ...bRest } = beforeById.get(e.id) || {}
       return {
         // O resto da entrada é PRESERVADO: `deleteCustomEx` carimba `e.n` no histórico para o
         // treino antigo continuar legível, e remontar do zero apagaria o nome (o detalhe passaria
         // a mostrar o id cru, em definitivo).
-        ...(b || {}),
+        ...bRest,
         id: e.id,
         sets: e.sets.map(cleanSet),
         topW: touched.has(e.id)
           ? (Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0)) || null)
           : (e.topW ?? null),
-        target: e.target || null
+        target: e.target || null,
+        ...(e.note ? { note: e.note } : {})
       }
     })
   if (!entries.length) return null
