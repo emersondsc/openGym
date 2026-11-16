@@ -393,6 +393,8 @@ export default {
   'Grind brings its own colours and dark mode, so those controls are hidden.': 'O estilo Grind traz as suas próprias cores e o seu modo escuro, por isso estes controlos estão escondidos.',
   'Pulse brings its own colours and dark mode, so those controls are hidden.': 'O estilo Pulse traz as suas próprias cores e o seu modo escuro, por isso estes controlos estão escondidos.',
   'Sage brings its own colours and light mode, so those controls are hidden.': 'O estilo Sage traz as suas próprias cores e o seu modo claro, por isso estes controlos estão escondidos.',
+  'Swiss grid precision: matte stone or carbon, 1px rules, cobalt.': 'Grid suíço de precisão: pedra fosca ou carbono, bordas de 1px, azul cobalto.',
+  'Takt brings its own colours, so the accent picker is hidden.': 'O estilo Takt traz as suas próprias cores, por isso a seleção de cor de destaque está escondida.',
   'synced with your profile': 'sincronizado com o teu perfil',
   'Language': 'Idioma',
   "Exercise instructions aren't available in this language yet — they stay in English.": 'As instruções dos exercícios ainda não existem neste idioma — ficam em inglês.',
