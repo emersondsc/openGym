@@ -11,6 +11,11 @@ describe('resolveSkin', () => {
     expect(resolveSkin('paper', 'dark', 'teal')).toEqual({ skin: 'paper', mode: 'light', accent: null, chrome: '#f4f0e6' })
   })
 
+  it('takt segue o tema claro/escuro e fixa a propria paleta', () => {
+    expect(resolveSkin('takt', 'light', 'teal')).toEqual({ skin: 'takt', mode: 'light', accent: null, chrome: '#eae8e3' })
+    expect(resolveSkin('takt', 'dark', 'teal')).toEqual({ skin: 'takt', mode: 'dark', accent: null, chrome: '#111214' })
+  })
+
   it('estilo desconhecido cai no classic', () => {
     expect(resolveSkin('nao-existe', 'dark', 'teal')).toEqual(resolveSkin('classic', 'dark', 'teal'))
     expect(resolveSkin(undefined, 'dark', 'teal').skin).toBe('classic')

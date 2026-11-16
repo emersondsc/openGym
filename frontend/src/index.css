@@ -1271,6 +1271,93 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 :root[data-skin="sage"] #tabbar{background:rgba(246,247,246,.88);border-top:1px solid var(--sep)}
 :root[data-skin="sage"] #tabbar button.start{box-shadow:0 8px 20px -8px color-mix(in srgb,var(--acc) 60%,transparent)}
 
+/* ---- Takt - precisao instrumental & grid suico: pedra fosca (claro) ou carbono (escuro), 1px, cobalto ---- */
+:root[data-skin="takt"],
+.skin-prev[data-skin="takt"]{
+  --bg:#eae8e3; --bg-el:#f3f1ec; --surface:#f8f7f4; --surface-2:#dfddd6; --surface-3:#d2cfc6;
+  --label:#141413; --label-2:rgba(20,20,19,.62); --label-3:rgba(20,20,19,.38); --label-4:rgba(20,20,19,.16);
+  --sep:rgba(20,20,19,.14); --sep-op:rgba(20,20,19,.10);
+  --acc:#0047ff; --acc-2:#0036c7; --on-acc:#ffffff;
+  --red:#e02819; --green:#008a45;
+  --r-sm:4px; --r:6px; --r-lg:8px; --r-xl:10px; --r-card:8px;
+  --pad:16px; --icon-stroke:1.75; --hair:1px;
+}
+:root[data-skin="takt"][data-theme="dark"]{
+  --bg:#111214; --bg-el:#17191c; --surface:#1c1e22; --surface-2:#262930; --surface-3:#32363f;
+  --label:#f3f2ee; --label-2:rgba(243,242,238,.64); --label-3:rgba(243,242,238,.36); --label-4:rgba(243,242,238,.14);
+  --sep:rgba(243,242,238,.14); --sep-op:rgba(243,242,238,.09);
+  --acc:#3b7bff; --acc-2:#2563eb; --on-acc:#ffffff;
+  --red:#ff453a; --green:#25c26e;
+}
+:root[data-skin="takt"] .hdr{padding-bottom:10px;border-bottom:1px solid var(--sep)}
+:root[data-skin="takt"] .hdr h1{font-weight:700;letter-spacing:-.03em}
+:root[data-skin="takt"] .hdr .sub,
+:root[data-skin="takt"] h4.sec,
+:root[data-skin="takt"] .sect-t,
+:root[data-skin="takt"] .card h2{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.1em;font-size:10px;font-weight:600;color:var(--label-2)}
+:root[data-skin="takt"] .card h2 .dim{font-size:10px}
+:root[data-skin="takt"] .stat-v,
+:root[data-skin="takt"] .wday .num,
+:root[data-skin="takt"] .setrow .n,
+:root[data-skin="takt"] .timef{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
+:root[data-skin="takt"] .card,
+:root[data-skin="takt"] .sect-b,
+:root[data-skin="takt"] .efftbl,
+:root[data-skin="takt"] .tile,
+:root[data-skin="takt"] .item{border:1px solid var(--sep);box-shadow:none}
+:root[data-skin="takt"] .item:active{background:var(--surface-2)}
+:root[data-skin="takt"] .item .tt{font-weight:600;letter-spacing:-.01em}
+:root[data-skin="takt"] .btn{border-radius:var(--r)}
+:root[data-skin="takt"] .seg{border-radius:var(--r);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--sep)}
+:root[data-skin="takt"] .seg-sel{background:var(--label);border-radius:var(--r-sm);box-shadow:none}
+:root[data-skin="takt"] .seg button.on{color:var(--surface);font-weight:600}
+:root[data-skin="takt"] .chip,
+:root[data-skin="takt"] .tag,
+:root[data-skin="takt"] .mchip{border-radius:var(--r-sm);font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;font-size:11px;letter-spacing:.04em}
+:root[data-skin="takt"] .field,
+:root[data-skin="takt"] .input,
+:root[data-skin="takt"] .exnote{border-radius:var(--r-sm);box-shadow:inset 0 0 0 1px var(--sep)}
+:root[data-skin="takt"] .field:focus,
+:root[data-skin="takt"] .input:focus{box-shadow:inset 0 0 0 2px var(--acc)}
+:root[data-skin="takt"] .sw{border-radius:var(--r-sm)}
+:root[data-skin="takt"] .sw .knob{border-radius:2px}
+:root[data-skin="takt"] .iconbtn,
+:root[data-skin="takt"] .iconbtn.mini,
+:root[data-skin="takt"] .searchf .clear,
+:root[data-skin="takt"] .chk,
+:root[data-skin="takt"] .setrow .n,
+:root[data-skin="takt"] .setrow .setgo,
+:root[data-skin="takt"] .setrow .rm-sp,
+:root[data-skin="takt"] .bw-pm,
+:root[data-skin="takt"] .sld-knob,
+:root[data-skin="takt"] .swatch,
+:root[data-skin="takt"] .swatch.on::after,
+:root[data-skin="takt"] .lrow-i,
+:root[data-skin="takt"] .glyph-cell,
+:root[data-skin="takt"] .wday,
+:root[data-skin="takt"] .stp,
+:root[data-skin="takt"] .timef,
+:root[data-skin="takt"] .thumb,
+:root[data-skin="takt"] .pr,
+:root[data-skin="takt"] .sld-track,
+:root[data-skin="takt"] #toast{border-radius:var(--r-sm)}
+:root[data-skin="takt"] .lrow-i.flat{color:var(--label-2)}
+:root[data-skin="takt"] .badge-acc{color:var(--on-acc)}
+:root[data-skin="takt"] .mrow{padding:6px 0}
+:root[data-skin="takt"] .mrow + .mrow{border-top:1px dashed var(--sep)}
+:root[data-skin="takt"] .mrow .bar,
+:root[data-skin="takt"] .mrow .bar i,
+:root[data-skin="takt"] .wprog,
+:root[data-skin="takt"] .wprog i{border-radius:1px}
+:root[data-skin="takt"] .mrow .bar{height:6px}
+:root[data-skin="takt"] .hm-c,
+:root[data-skin="takt"] .cal-d{border-radius:2px}
+:root[data-skin="takt"] #tabbar{background:var(--bg-el);border-top:1px solid var(--sep);backdrop-filter:none;-webkit-backdrop-filter:none}
+:root[data-skin="takt"] #tabbar button{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;font-size:8.5px;font-weight:600}
+:root[data-skin="takt"] #tabbar button.start,
+:root[data-skin="takt"] #tabbar button.start.rec::after{border-radius:var(--r)}
+:root[data-skin="takt"] .sheet{border-top:1px solid var(--sep)}
+
 
 /* ============================================================================
    VITRINE DOS ESTILOS - as telas da folha "Choose your style"
@@ -1396,3 +1483,18 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .skin-prev[data-skin="sage"] .pv-today,
 .skin-prev[data-skin="sage"] .pv-card{box-shadow:0 1px 2px rgba(23,26,24,.05)}
 .skin-prev[data-skin="sage"] .pv-bar{height:5px;background:color-mix(in srgb,var(--acc) 13%,transparent)}
+
+.skin-prev[data-skin="takt"] .pv-h1{font-weight:700;letter-spacing:-.03em}
+.skin-prev[data-skin="takt"] .pv-date,
+.skin-prev[data-skin="takt"] .pv-eyebrow,
+.skin-prev[data-skin="takt"] .pv-dl,
+.skin-prev[data-skin="takt"] .pv-tabs>span{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.08em}
+.skin-prev[data-skin="takt"] .pv-today,
+.skin-prev[data-skin="takt"] .pv-card{border:1px solid var(--sep)}
+.skin-prev[data-skin="takt"] .pv-rail,
+.skin-prev[data-skin="takt"] .pv-day,
+.skin-prev[data-skin="takt"] .pv-start{border-radius:4px}
+.skin-prev[data-skin="takt"] .pv-bar,
+.skin-prev[data-skin="takt"] .pv-bar i{border-radius:1px}
+.skin-prev[data-skin="takt"] .pv-tabs{border-top:1px solid var(--sep)}
+

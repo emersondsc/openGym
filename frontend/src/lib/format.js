@@ -90,6 +90,12 @@ export const SKINS = {
     note: 'Sage brings its own colours and light mode, so those controls are hidden.',
     chrome: { light: '#eceeec' },
   },
+  takt: {
+    label: 'Takt', mode: null, ownAccent: true,
+    subtitle: 'Swiss grid precision: matte stone or carbon, 1px rules, cobalt.',
+    note: 'Takt brings its own colours, so the accent picker is hidden.',
+    chrome: { light: '#eae8e3', dark: '#111214' },
+  },
 }
 
 export const skinOf = k => SKINS[k] || SKINS.classic
