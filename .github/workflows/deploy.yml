@@ -1,0 +1,80 @@
+name: Test & Deploy to VPS
+
+on:
+  push:
+    branches:
+      - emerson-custom
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Frontend Test & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+  deploy:
+    name: Deploy to vps_oracle
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Pull & rebuild on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "${VPS_USER}@${VPS_HOST}" bash -s <<'EOF'
+          set -euo pipefail
+          cd /mnt/drivebackup/apps/openGym/openGym
+          git fetch origin emerson-custom
+          git checkout emerson-custom
+          git pull --ff-only origin emerson-custom
+          docker compose up -d --build
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8081/api/health; then
+              echo ""
+              echo "Deploy verified."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Healthcheck failed after 60s"
+          docker compose logs --tail=50
+          exit 1
+          EOF
