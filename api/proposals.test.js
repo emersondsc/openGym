@@ -386,3 +386,28 @@ test('aprovacao por passkey grava mode passkey e a varredura nao repete', async 
   assert.equal(auditoria(e.DATA).at(-1).verified, 'passkey');
   assert.deepEqual(e.h.varrerAutomaticas(), []);
 });
+
+test('semana com week atualiza S.week na gravacao direta, limpa dias antigos e confere result_hash', async () => {
+  const e = ambiente({ autoApply: true });
+  const s0 = e.S();
+  s0.routines.push({ id: 'r_antiga', name: 'Delt D', emoji: '🔺', prog: 'off', ex: [{ id: '0584', sets: 2, reps: '12-20', weight: 30, mode: 'reps' }] });
+  s0.week = { '0': 'r_antiga', '2': 'r1', '3': 'r_antiga' };
+  fs.writeFileSync(e.stateFile(OWNER), JSON.stringify(s0));
+
+  const planoComWeek = {
+    ...semana(),
+    week: {
+      segunda: null,
+      terca: 'r1',
+      quarta: null,
+      quinta: 'r1',
+      sabado: null,
+      domingo: 'r1'
+    }
+  };
+  e.proposta('week', planoComWeek);
+  assert.deepEqual(e.h.varrerAutomaticas(), ['prop-week']);
+  const S1 = e.S();
+  assert.deepEqual(S1.week, { '0': 'r1', '2': 'r1', '4': 'r1' });
+  assert.equal(decisao(e, 'prop-week').result_hash, P.hashBase(S1, 'week', planoComWeek));
+});

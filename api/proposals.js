@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { applyHistoryFix, validarOps } from './history-fix.js';
 import { MAX_MESO_BYTES, applyActivateMeso, applyDeleteMeso, applyPutMeso, mesoBytes, validateMesoBody } from './meso.js';
-import { applyPublish, findConflicts, todaySP, validatePublish } from './micro.js';
+import { applyPublish, findConflicts, parseWeekSpec, todaySP, validatePublish } from './micro.js';
 import { applyRoutineDelete, applyRoutinePatch, canon, loadCatalog, mergeRoutine, readAudit, sha256,
          stateMeta, validateRoutineBody, withState } from './routines.js';
 
@@ -48,8 +48,10 @@ export function projetar(S, kind, plan) {
   };
   if (kind === 'week') {
     const dias = (plan.routines || []).flatMap(r => r.dias || []);
+    const wk = parseWeekSpec(plan);
     return { routines: (plan.routines || []).map(r => rotina(r.id)),
-      days: dias.map(d => [d, S.dayPlan?.[d] ?? null]) };
+      days: dias.map(d => [d, S.dayPlan?.[d] ?? null]),
+      ...(wk.ok && wk.week !== null ? { week: S.week ?? {} } : {}) };
   }
   if (kind === 'routine_patch' || kind === 'routine_delete') return { routine: rotina(plan.routine_id) };
   if (kind === 'mesocycle') return { meso: meso(plan.meso?.id), active: S.activeMeso ?? null };
@@ -213,6 +215,7 @@ function aplicar(S, kind, plan, catalog, agora) {
     return { _meta: { meso_id: plan.meso_id, semana: plan.semana, report_id: plan.report_id ?? null,
       routines: plan.routines.map(x => x.id), criadas: r.criadas, trocadas: r.trocadas, progAntes: r.progAntes,
       progDepois: r.progDepois, datas: r.declaradas.map(d => d.date), dayPlan: r.applied,
+      ...(r.week ? { week: r.week } : {}),
       trained: r.declaradas.filter(d => trained.has(d.date)).map(d => d.date) } };
   }
   if (kind === 'routine_patch') return applyRoutinePatch(S, plan.routine_id, plan.patch, catalog);

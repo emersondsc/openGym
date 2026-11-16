@@ -7,8 +7,9 @@
 //   1) UPSERT POR ID: o id que já existe é atualizado no lugar (o ponteiro de dia continua valendo,
 //      porque aponta para o id); id novo é criado. Substituir é a operação normal da semana — a
 //      lista do app não cresce —, não uma exceção a autorizar.
-//   2) DIA É DO USUÁRIO: `dias[]` é opcional e só vem quando ele autorizou a remarcação. Sem `dias`
-//      o `dayPlan` não é tocado, e `week` NUNCA é escrito por esta rota.
+//   2) DIA É DO USUÁRIO: `dias[]` atualiza `dayPlan` (com autorização se ocupado), e `week` / `mapa`
+//      (ou `dia`/`dias_semana`) atualiza o mapa semanal `S.week` quando informado (limpando os
+//      demais dias). Sem esses campos, `dayPlan` e `week` não são tocados.
 //   3) A ASSINATURA DO AGENTE É OBRIGATÓRIA: `verified` tem de ser "signature" por fato, não pela
 //      ausência de erro (o readActor devolve "claimed" quando não há header).
 //
@@ -40,7 +41,7 @@ const addDays = (iso, n) => {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
-/** `getDay()` do JS: domingo = 0. É a chave de `S.week` (que esta rota só lê). */
+/** `getDay()` do JS: domingo = 0. É a chave de `S.week`. */
 const weekdayOf = iso => String(new Date(iso + 'T12:00:00').getDay());
 /** Hoje em São Paulo, sem depender do TZ do container. Exportado para o teste. */
 export function todaySP() {
@@ -56,6 +57,127 @@ export function datesOf(body) {
   const out = [];
   for (const r of (body && body.routines) || []) for (const d of r.dias || []) out.push({ date: d, routineId: r.id });
   return out;
+}
+
+const badField = (code, field, message, allowed) => ({ error: message, code, field, ...(allowed ? { allowed } : {}) });
+const WEEKDAY_ALIASES = {
+  '0': '0', domingo: '0', dom: '0', sunday: '0', sun: '0',
+  '1': '1', segunda: '1', seg: '1', monday: '1', mon: '1',
+  '2': '2', terca: '2', ter: '2', tuesday: '2', tue: '2',
+  '3': '3', quarta: '3', qua: '3', wednesday: '3', wed: '3',
+  '4': '4', quinta: '4', qui: '4', thursday: '4', thu: '4',
+  '5': '5', sexta: '5', sex: '5', friday: '5', fri: '5',
+  '6': '6', sabado: '6', sab: '6', saturday: '6', sat: '6',
+};
+function normalizeWeekdayKey(rawKey) {
+  const k = String(rawKey ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().toLowerCase().replace(/-feira$/, '');
+  return Object.hasOwn(WEEKDAY_ALIASES, k) ? WEEKDAY_ALIASES[k] : null;
+}
+
+/**
+ * Analisa e normaliza o mapa semanal (`body.week`, `body.mapa` ou `routines[].dia`/`dias_semana`).
+ * Devolve `{ ok: true, week: null }` se nenhum mapa foi informado, `{ ok: true, week: { "0".."6": id } }`
+ * (omitindo dias de descanso) quando válido, ou `{ ok: false, error }` (`BAD_WEEK`).
+ */
+export function parseWeekSpec(body, validRoutineIds = null) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: true, week: null };
+  const hasWeek = body.week !== undefined;
+  const hasMapa = body.mapa !== undefined;
+  if (hasWeek && hasMapa) {
+    return { ok: false, error: badField('BAD_WEEK', 'week', 'provide either week or mapa, not both') };
+  }
+  const routines = Array.isArray(body.routines) ? body.routines : [];
+  const hasRoutineWeekDays = routines.some(
+    r => r && typeof r === 'object' && !Array.isArray(r) && (r.dia !== undefined || r.dias_semana !== undefined)
+  );
+  const mapField = hasWeek ? 'week' : 'mapa';
+  const mapObj = hasWeek ? body.week : body.mapa;
+
+  if (mapObj !== undefined && hasRoutineWeekDays) {
+    return { ok: false, error: badField('BAD_WEEK', mapField, `cannot combine ${mapField} with routine dia/dias_semana`) };
+  }
+
+  if (mapObj !== undefined) {
+    if (!mapObj || typeof mapObj !== 'object' || Array.isArray(mapObj)) {
+      return { ok: false, error: badField('BAD_WEEK', mapField, `${mapField} must be an object`) };
+    }
+    const out = {};
+    const seenDays = new Set();
+    for (const [rawKey, rawVal] of Object.entries(mapObj)) {
+      const wd = normalizeWeekdayKey(rawKey);
+      if (!wd) {
+        return { ok: false, error: badField('BAD_WEEK', `${mapField}.${rawKey}`, `invalid weekday "${rawKey}"`) };
+      }
+      if (seenDays.has(wd)) {
+        return { ok: false, error: badField('BAD_WEEK', `${mapField}.${rawKey}`, `duplicate weekday "${rawKey}"`) };
+      }
+      seenDays.add(wd);
+      let val = rawVal;
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        if (Object.hasOwn(val, 'routine_id')) val = val.routine_id;
+        else if (Object.hasOwn(val, 'id')) val = val.id;
+        else {
+          return { ok: false, error: badField('BAD_WEEK', `${mapField}.${rawKey}`, 'weekday entry object must have routine_id or id') };
+        }
+      }
+      if (val === null || val === '' || (typeof val === 'string' && ['rest', 'descanso'].includes(val.trim().toLowerCase()))) {
+        continue;
+      }
+      if (typeof val !== 'string' || !ID_RE.test(val)) {
+        return { ok: false, error: badField('BAD_WEEK', `${mapField}.${rawKey}`, `weekday "${rawKey}" must map to a valid routine id or null`) };
+      }
+      if (validRoutineIds && !validRoutineIds.has(val)) {
+        return { ok: false, error: badField('BAD_WEEK', `${mapField}.${rawKey}`, `unknown routine "${val}" in ${mapField}.${rawKey}`) };
+      }
+      out[wd] = val;
+    }
+    return { ok: true, week: out };
+  }
+
+  if (hasRoutineWeekDays) {
+    const out = {};
+    const seenDays = new Set();
+    for (let i = 0; i < routines.length; i++) {
+      const r = routines[i];
+      if (!r || typeof r !== 'object' || Array.isArray(r)) continue;
+      if (r.dia !== undefined && r.dias_semana !== undefined) {
+        return { ok: false, error: badField('BAD_WEEK', `routines[${i}]`, 'provide either dia or dias_semana, not both') };
+      }
+      let rawDays = [];
+      if (r.dia !== undefined && r.dia !== null) {
+        if (Array.isArray(r.dia)) rawDays = r.dia;
+        else if (typeof r.dia === 'string' || typeof r.dia === 'number') rawDays = [r.dia];
+        else return { ok: false, error: badField('BAD_WEEK', `routines[${i}].dia`, 'dia must be a weekday or array of weekdays') };
+      } else if (r.dias_semana !== undefined && r.dias_semana !== null) {
+        if (!Array.isArray(r.dias_semana)) {
+          return { ok: false, error: badField('BAD_WEEK', `routines[${i}].dias_semana`, 'dias_semana must be an array') };
+        }
+        rawDays = r.dias_semana;
+      }
+      for (const d of rawDays) {
+        if (typeof d !== 'string' && typeof d !== 'number') {
+          return { ok: false, error: badField('BAD_WEEK', `routines[${i}]`, 'weekday must be a string or number') };
+        }
+        const wd = normalizeWeekdayKey(d);
+        if (!wd) {
+          return { ok: false, error: badField('BAD_WEEK', `routines[${i}]`, `invalid weekday "${d}"`) };
+        }
+        if (seenDays.has(wd)) {
+          return { ok: false, error: badField('BAD_WEEK', `routines[${i}]`, `duplicate weekday "${d}"`) };
+        }
+        seenDays.add(wd);
+        if (validRoutineIds && !validRoutineIds.has(r.id)) {
+          return { ok: false, error: badField('BAD_WEEK', `routines[${i}].id`, `unknown routine "${r.id}"`) };
+        }
+        out[wd] = r.id;
+      }
+    }
+    return { ok: true, week: out };
+  }
+
+  return { ok: true, week: null };
 }
 
 /* ---------------------------------------------------------------- idempotência (A3/RF-3) */
@@ -202,6 +324,9 @@ export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) 
       }
     }
   }
+  const knownIds = new Set([...ids, ...(prevRoutines || []).map(x => x && x.id).filter(Boolean)]);
+  const wk = parseWeekSpec(body, knownIds);
+  if (!wk.ok) return wk.error;
   return null;
 }
 
@@ -245,7 +370,9 @@ export function materializeRoutine(r, catalog, prev) {
  */
 export function findConflicts(S, body) {
   const auth = new Set(((body.autorizar || {}).datas) || []);
-  const dayPlan = S.dayPlan || {}, week = S.week || {};
+  const wk = parseWeekSpec(body);
+  const dayPlan = S.dayPlan || {};
+  const week = (wk.ok && wk.week !== null) ? wk.week : (S.week || {});
   const trained = new Set((S.workouts || []).map(w => w.d).filter(Boolean));
   const datas = [];
   for (const { date, routineId } of datesOf(body)) {
@@ -277,12 +404,14 @@ export function applyPublish(S, body, catalog) {
       progDepois[pub.id] = mat.prog ?? null;
     }
   }
-  // RF-10: só `dayPlan`, e só para as datas declaradas; `week` nunca é tocado.
+  const wk = parseWeekSpec(body);
+  if (wk.ok && wk.week !== null) S.week = wk.week;
+  // RF-10: `dayPlan` só para as datas declaradas; `week` só muda quando o payload declara um mapa semanal.
   const dayPlan = S.dayPlan || (S.dayPlan = {});
   const declaradas = datesOf(body);
   for (const { date, routineId } of declaradas) dayPlan[date] = routineId;
   const applied = Object.fromEntries(declaradas.map(d => [d.date, dayPlan[d.date]]));
-  return { criadas, trocadas, progAntes, progDepois, declaradas, applied };
+  return { criadas, trocadas, progAntes, progDepois, declaradas, applied, ...(wk.ok && wk.week !== null ? { week: wk.week } : {}) };
 }
 
 /* ---------------------------------------------------------------- handler */
@@ -366,13 +495,14 @@ export function makeHandlers(deps) {
     const r = withState(deps, user.id,
       { ifMatch, actor, action: 'publish-micro', uid: user.id, dropActive: false },
       S => {
-        const { criadas, trocadas, progAntes, progDepois, declaradas, applied } = applyPublish(S, body, catalog);
+        const { criadas, trocadas, progAntes, progDepois, declaradas, applied, week } = applyPublish(S, body, catalog);
         return {
           _meta: {
             meso_id: body.meso_id, semana: body.semana, report_id: body.report_id ?? null,
             ifMatch: String(ifMatch), idemKey: key,
             routines: body.routines.map(x => x.id), criadas, trocadas, progAntes, progDepois,
             datas: declaradas.map(d => d.date), dayPlan: applied,
+            ...(week ? { week } : {}),
             trained: declaradas.filter(d => trained.has(d.date)).map(d => d.date)
           }
         };

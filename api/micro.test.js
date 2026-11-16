@@ -395,6 +395,66 @@ describe('datas: só com autorização, e nunca a faixa da semana', () => {
 
 /* ---------------------------------------------------------------- forma */
 
+describe('mapa semanal (week / mapa / dia)', () => {
+  test('week com nomes em português substitui S.week, limpa dias omitidos/null e preserva dayPlan', async () => {
+    writeState({
+      routines: [rot(), rot({ id: 'r_leg1', name: 'Legs' }), rot({ id: 'r_delt_d', name: 'Delt D' })],
+      week: { '0': 'r_delt_d', '2': 'r_push_C', '3': 'r_leg1' },
+      dayPlan: { [AMANHA]: 'r_leg1' }
+    });
+    const h = harness({
+      body: pub({
+        routines: [rot(), rot({ id: 'r_leg1', name: 'Legs' })],
+        week: {
+          domingo: 'r_leg1',
+          segunda: null,
+          terca: 'r_push_C',
+          quarta: null,
+          quinta: 'r_leg1',
+          sabado: 'rest'
+        }
+      })
+    });
+    const res = await call(h);
+    assert.equal(res.code, 200);
+    const st = state();
+    assert.deepEqual(st.week, { '0': 'r_leg1', '2': 'r_push_C', '4': 'r_leg1' });
+    assert.deepEqual(res.body.meta.week, { '0': 'r_leg1', '2': 'r_push_C', '4': 'r_leg1' });
+    assert.deepEqual(st.dayPlan, { [AMANHA]: 'r_leg1' });
+  });
+
+  test('week aceita rotina nova do payload, rotina já existente no state, chaves numéricas e recusa erros com BAD_WEEK', async () => {
+    writeState({
+      routines: [rot(), rot({ id: 'r_existente', name: 'Existente' })],
+      week: { '0': 'r_existente' }
+    });
+    const okRes = await call(harness({
+      body: pub({
+        routines: [rot({ id: 'r_nova', name: 'Nova' })],
+        week: { '1': 'r_nova', '5': 'r_existente' }
+      })
+    }));
+    assert.equal(okRes.code, 201);
+    assert.deepEqual(state().week, { '1': 'r_nova', '5': 'r_existente' });
+
+    const casosRuins = [
+      { week: { quarta: 'r_inexistente' } },
+      { week: { funday: 'r_nova' } },
+      { week: { '0': 'r_nova', domingo: 'r_existente' } },
+      { week: { terca: 'r_nova' }, mapa: { quarta: 'r_nova' } },
+      { routines: [rot({ id: 'r_nova', dia: 'terca' })], week: { quarta: 'r_nova' } }
+    ];
+    for (let i = 0; i < casosRuins.length; i++) {
+      const bad = await call(harness({
+        headers: { 'if-match': String(state().rev), 'idempotency-key': 'bad-' + i },
+        body: pub({ routines: [rot({ id: 'r_nova', name: 'Nova' })], ...casosRuins[i] })
+      }));
+      assert.equal(bad.code, 400);
+      assert.equal(bad.body.code, 'BAD_WEEK');
+    }
+  });
+});
+
 describe('forma do payload', () => {
   test('sem meso_id / meso_id fora do formato: 400 BAD_MESO_ID', async () => {
     writeState({ routines: [rot()] });
