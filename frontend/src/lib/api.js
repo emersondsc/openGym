@@ -1,9 +1,10 @@
 // Backend + WebAuthn helpers (ported from the vanilla app).
-export const IS_APPLE = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)
-export const IS_ANDROID = /Android/.test(navigator.userAgent)
+const UA = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+export const IS_APPLE = /iPhone|iPad|iPod|Macintosh/.test(UA)
+export const IS_ANDROID = /Android/.test(UA)
 export const BIO = IS_APPLE ? 'Face ID / Touch ID' : IS_ANDROID ? 'fingerprint or face unlock' : 'your fingerprint, face or PIN'
 export const VAULT = IS_APPLE ? 'iCloud Keychain' : IS_ANDROID ? 'Google Password Manager' : 'your password manager'
-export const webauthnOK = () => !!(window.PublicKeyCredential && navigator.credentials)
+export const webauthnOK = () => !!(typeof window !== 'undefined' && window.PublicKeyCredential && typeof navigator !== 'undefined' && navigator.credentials)
 
 export async function api(path, opts) {
   const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts))
