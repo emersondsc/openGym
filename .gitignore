@@ -10,6 +10,7 @@ og.key
 agent.key
 # Dados vivos / runtime (caso caiam dentro do clone)
 data/state-*.json
+data/diet-*.json
 data/audit.jsonl
 data/micro-idem.json
 coach-links/

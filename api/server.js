@@ -19,6 +19,7 @@ import * as micro from './micro.js';
 import * as proposals from './proposals.js';
 import * as coachLink from './coach-link.js';
 import * as coachAccess from './coach-access.js';
+import * as diet from './diet.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -74,6 +75,7 @@ function atomicWrite(file, content) {
   fs.renameSync(tmp, file);
 }
 const stateFile = uid => path.join(DATA, 'state-' + uid.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
+const dietFile = uid => path.join(DATA, 'diet-' + String(uid || '').replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
 
 // Minimal shape guard for PUT /api/data (2026-09-08 sync incident: blind overwrite
 // accepted ghost ids that only surfaced as 'Unknown exercise' days later). Deliberately
@@ -173,8 +175,8 @@ function guardMesoStamps(state, cur, actor) {
 // Exportado para o teste (`node --test api/routines.test.js`) e para reuso futuro.
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
          cleanPushSub, restSeconds, sameSiteWrite, saveDbQuiet, readStateStrict, guardMesoStamps,
-         readSession, readState, stateFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
-         ROUTINE_HANDLERS, meso, micro, livePresence };
+         readSession, readState, stateFile, dietFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
+         ROUTINE_HANDLERS, meso, micro, diet, livePresence };
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -570,6 +572,9 @@ const PATTERNS = [
   { method: 'DELETE', re: /^\/api\/routines\/([A-Za-z0-9_-]{1,64})$/, params: ['rid'], handler: 'deleteRoutine' },
   { method: 'POST',   re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})\/activate$/, params: ['mid'], handler: 'activateMeso' },
   { method: 'DELETE', re: /^\/api\/plan\/meso\/([A-Za-z0-9_-]{1,64})$/, params: ['mid'], handler: 'deleteMeso' },
+  { method: 'GET',    re: /^\/api\/diet\/([A-Za-z0-9_-]{1,64})$/, params: ['did'], handler: 'getDietPlan' },
+  { method: 'POST',   re: /^\/api\/diet\/([A-Za-z0-9_-]{1,64})\/activate$/, params: ['did'], handler: 'activateDietPlan' },
+  { method: 'DELETE', re: /^\/api\/diet\/([A-Za-z0-9_-]{1,64})$/, params: ['did'], handler: 'deleteDietPlan' },
   { method: 'GET',  re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})$/, params: ['pid'], handler: 'getProposal' },
   { method: 'POST', re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})\/challenge$/, params: ['pid'], handler: 'challengeProposal' },
   { method: 'POST', re: /^\/api\/proposals\/(prop-[a-z0-9-]{1,40})\/approve$/, params: ['pid'], handler: 'approveProposal' },
@@ -629,6 +634,9 @@ const routes = {
   // O DELETE é a exceção que não tem corpo: o id vai no caminho (`PATTERNS`) e a base no If-Match.
   'PUT /api/plan/meso': (req, res) => ROUTINE_HANDLERS.putMeso(req, res),
   'GET /api/plan/meso': (req, res) => ROUTINE_HANDLERS.getMeso(req, res),
+  // Planos de dieta por usuário: armazenados em diet-<uid>.json para não colidir com PUT /api/data.
+  'GET /api/diet': (req, res) => ROUTINE_HANDLERS.getDiet(req, res),
+  'PUT /api/diet': (req, res) => ROUTINE_HANDLERS.putDiet(req, res),
   // Publicação da semana: N rotinas numa escrita só, upsert por id, dia só com autorização do
   // usuário (docs/specs/spec_publicacao_micro.md v6). Mesmo mapa de handlers: o matchRoute procura
   // handler de padrão só em ROUTINE_HANDLERS.
@@ -1112,6 +1120,11 @@ Object.assign(ROUTINE_HANDLERS, meso.makeHandlers({
 // Map cru: a checagem de treino em andamento não pode ler entrada velha de até ~100 s (A17).
 Object.assign(ROUTINE_HANDLERS, micro.makeHandlers({
   readSession, readState, stateFile, atomicWrite, readRawBody, json, DATA, readActor, livePresence, CATALOG_PATH
+}));
+
+// Planos de dieta por usuário: mesmo mapa, para o matchRoute encontrar os handlers de padrão.
+Object.assign(ROUTINE_HANDLERS, diet.makeHandlers({
+  readSession, dietFile, atomicWrite, readRawBody, json, DATA, readActor
 }));
 
 // Propostas do treinador: mesmo mapa. Os nomes não podem colidir com `list` das rotinas.
