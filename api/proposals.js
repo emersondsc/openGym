@@ -6,13 +6,15 @@
 // do MCP avisa quando as cópias divergem.
 import fs from 'node:fs';
 import path from 'node:path';
+import { MAX_DIET_BYTES, applyActivateDiet, applyDeleteDiet, applyPutDiet, dietBytes, readDietStrict,
+         validateDietBody, withDietState } from './diet.js';
 import { applyHistoryFix, validarOps } from './history-fix.js';
 import { MAX_MESO_BYTES, applyActivateMeso, applyDeleteMeso, applyPutMeso, mesoBytes, validateMesoBody } from './meso.js';
 import { applyPublish, findConflicts, parseWeekSpec, todaySP, validatePublish } from './micro.js';
 import { applyRoutineDelete, applyRoutinePatch, canon, loadCatalog, mergeRoutine, readAudit, sha256,
          stateMeta, validateRoutineBody, withState } from './routines.js';
 
-export const KINDS = ['week', 'routine_patch', 'routine_delete', 'mesocycle', 'mesocycle_action', 'history_fix'];
+export const KINDS = ['week', 'routine_patch', 'routine_delete', 'mesocycle', 'mesocycle_action', 'history_fix', 'diet', 'diet_action'];
 export const ID_RE = /^prop-[a-z0-9-]{1,40}$/;
 export const LIMITES = { abertas: 20, bytes: 128 * 1024, title: 200, summary: 2000, reasons: 30, reason: 500, motivo: 500 };
 export const SALTO_MAX = 0.15;
@@ -20,7 +22,7 @@ const RESTRICOES = ['hernia', 'joelho'];
 const SNAPSHOTS_MAX = 10;
 export const AUTO_MAX_24H = 10;
 /** Tipos que podem entrar sem passkey. O resto sempre pede a passkey do dono no app. */
-export const AUTO_KINDS = ['week', 'mesocycle'];
+export const AUTO_KINDS = ['week', 'mesocycle', 'diet'];
 const SNAPSHOTS_DIAS = 30;
 
 const CAMPOS_ROTINA = ['id', 'name', 'emoji', 'prog'];
@@ -30,14 +32,19 @@ const CAMPOS_MESO = ['id', 'name', 'start', 'end', 'goal', 'origin', 'priorities
   'evidence', 'log', 'cargas_prescritas', 'estrutura_atual', 'status_semanas', 'fonte', 'criado_em',
   'atualizado_em'];
 const MESO_SISTEMA = ['updatedAt', 'activatedAt', 'activatedBy'];
+const CAMPOS_DIET = ['id', 'name', 'goal', 'referenceDate', 'start', 'end', 'origin', 'profile',
+  'targets', 'meals', 'rules', 'notes', 'executionTips', 'markdown', 'log'];
+const DIET_SISTEMA = ['updatedAt', 'activatedAt', 'activatedBy'];
 const CAMPOS_SET = ['done', 'w', 'wUnit', 'r', 'rir', 'rpe', 'min', 'speed', 'sec'];
 
 const so = (o, c) => Object.fromEntries(c.filter(k => o?.[k] !== undefined).map(k => [k, o[k]]));
 const clone = o => JSON.parse(JSON.stringify(o));
 const semAcento = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const isDietKind = kind => kind === 'diet' || kind === 'diet_action';
+const dietStore = (S, D) => (D ?? (Array.isArray(S?.plans) ? S : { activePlanId: null, prevPlanId: null, plans: [] }));
 
 /** O que a proposta altera, só com campos que existem também na cópia filtrada do MCP. */
-export function projetar(S, kind, plan) {
+export function projetar(S, kind, plan, D) {
   const rotina = id => {
     const r = (S.routines || []).find(x => x.id === id);
     return r ? { ...so(r, CAMPOS_ROTINA), ex: (r.ex || []).map(e => so(e, CAMPOS_EX)) } : null;
@@ -45,6 +52,11 @@ export function projetar(S, kind, plan) {
   const meso = id => {
     const m = (S.mesos || []).find(x => x.id === id);
     return m ? so(m, CAMPOS_MESO) : null;
+  };
+  const ds = dietStore(S, D);
+  const dieta = id => {
+    const d = (ds.plans || []).find(x => x.id === id);
+    return d ? so(d, CAMPOS_DIET) : null;
   };
   if (kind === 'week') {
     const dias = (plan.routines || []).flatMap(r => r.dias || []);
@@ -56,6 +68,8 @@ export function projetar(S, kind, plan) {
   if (kind === 'routine_patch' || kind === 'routine_delete') return { routine: rotina(plan.routine_id) };
   if (kind === 'mesocycle') return { meso: meso(plan.meso?.id), active: S.activeMeso ?? null };
   if (kind === 'mesocycle_action') return { meso: meso(plan.meso_id), active: S.activeMeso ?? null };
+  if (kind === 'diet') return { diet: dieta(plan.plan?.id), active: ds.activePlanId ?? null };
+  if (kind === 'diet_action') return { diet: dieta(plan.diet_id), active: ds.activePlanId ?? null };
   if (kind === 'history_fix') {
     return { sets: (plan.ops || []).map(o => {
       const w = (S.workouts || []).find(x => x.id === o.workout_id);
@@ -66,10 +80,10 @@ export function projetar(S, kind, plan) {
   }
   throw new Error(`bad kind: ${kind}`);
 }
-export const hashBase = (S, kind, plan) => sha256(canon(projetar(S, kind, plan)));
+export const hashBase = (S, kind, plan, D) => sha256(canon(projetar(S, kind, plan, D)));
 
 /** Campos que o Claude não vê seguem iguais: só copia chave ausente no plano e fora do que ele vê. */
-export function preservarOcultos(S, kind, plan) {
+export function preservarOcultos(S, kind, plan, D) {
   const out = clone(plan);
   if (kind === 'week') {
     for (const r of out.routines || []) {
@@ -86,11 +100,18 @@ export function preservarOcultos(S, kind, plan) {
       if (![...CAMPOS_MESO, ...MESO_SISTEMA].includes(k) && out.meso[k] === undefined) out.meso[k] = prev[k];
     }
   }
+  if (kind === 'diet' && out.plan) {
+    const ds = dietStore(S, D);
+    const prev = (ds.plans || []).find(d => d.id === out.plan.id);
+    for (const k of Object.keys(prev || {})) {
+      if (![...CAMPOS_DIET, ...DIET_SISTEMA].includes(k) && out.plan[k] === undefined) out.plan[k] = prev[k];
+    }
+  }
   return out;
 }
 
 /** Avisos de treino, recalculados sobre o estado atual. A tela confia nestes, não no arquivo. */
-export function avisos(S, kind, plan) {
+export function avisos(S, kind, plan, D) {
   const lista = [];
   const salto = (rid, ex) => {
     const atual = (S.routines || []).find(r => r.id === rid)?.ex?.find(e => e.id === ex.id);
@@ -113,16 +134,22 @@ export function avisos(S, kind, plan) {
       if (tinha && !novas.some(k => k.includes(r))) lista.push({ code: 'RESTRICTION_DROPPED', field: r });
     }
   }
+  if (kind === 'diet' && plan.plan) {
+    const ds = dietStore(S, D);
+    if ((ds.plans || []).some(d => d.id === plan.plan.id)) lista.push({ code: 'DIET_OVERWRITE', field: 'id' });
+  }
   return lista;
 }
 
 /** Forma do plano por tipo. Devolve null ou {code, error, field}. */
-export function validarPlano(S, kind, plan, catalog) {
+export function validarPlano(S, kind, plan, catalog, D) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return { code: 'BAD_PLAN', error: 'plan must be an object' };
   if (Object.hasOwn(plan, 'autorizar')) return { code: 'BAD_PLAN', error: 'autorizar is decided on approval', field: 'autorizar' };
   const custom = new Set((S.customEx || []).map(c => c.id));
   const existe = id => (S.routines || []).some(r => r.id === id);
   const temMeso = id => (S.mesos || []).some(m => m.id === id);
+  const ds = dietStore(S, D);
+  const temDiet = id => (ds.plans || []).some(d => d.id === id);
   if (kind === 'week') return validatePublish(plan, catalog, custom, todaySP(), S.routines || []);
   if (kind === 'routine_patch') {
     if (!existe(plan.routine_id)) return { code: 'ROUTINE_NOT_FOUND', error: 'routine not found', field: 'routine_id' };
@@ -145,6 +172,17 @@ export function validarPlano(S, kind, plan, catalog) {
     if (!['activate', 'delete'].includes(plan.action)) return { code: 'BAD_ACTION', error: 'action must be activate or delete', field: 'action' };
     return temMeso(plan.meso_id) ? null : { code: 'MESO_NOT_FOUND', error: 'mesocycle not found', field: 'meso_id' };
   }
+  if (kind === 'diet') {
+    const ruim = validateDietBody(plan.plan);
+    if (ruim) return ruim;
+    if (dietBytes(plan.plan) > MAX_DIET_BYTES) return { code: 'DIET_TOO_BIG', error: 'plan too large', field: 'plan' };
+    if (!['now', 'none'].includes(plan.activate)) return { code: 'BAD_ACTIVATE', error: 'activate must be now or none', field: 'activate' };
+    return null;
+  }
+  if (kind === 'diet_action') {
+    if (!['activate', 'delete'].includes(plan.action)) return { code: 'BAD_ACTION', error: 'action must be activate or delete', field: 'action' };
+    return temDiet(plan.diet_id) ? null : { code: 'DIET_NOT_FOUND', error: 'diet plan not found', field: 'diet_id' };
+  }
   if (kind === 'history_fix') return validarOps(S, plan.ops);
   return { code: 'BAD_KIND', error: 'unknown kind', field: 'kind' };
 }
@@ -154,11 +192,11 @@ export function validarPlano(S, kind, plan, catalog) {
  * para o MCP prever o mesmo resultado. `autoHoje` = gravações diretas nas últimas 24 h.
  * Devolve {modo: 'auto'} ou {modo: 'passkey', motivo}.
  */
-export function modoDe(S, p, { ligado = true, autoHoje = 0 } = {}) {
+export function modoDe(S, p, { ligado = true, autoHoje = 0 } = {}, D) {
   const passkey = motivo => ({ modo: 'passkey', motivo });
   if (!ligado) return passkey('AUTO_OFF');
   if (!AUTO_KINDS.includes(p.kind)) return passkey('KIND_NEEDS_PASSKEY');
-  const av = avisos(S, p.kind, p.plan);
+  const av = avisos(S, p.kind, p.plan, D);
   if (p.kind === 'week') {
     if (findConflicts(S, p.plan).datas.length) return passkey('REPLACES_DAYS');
     if (av.some(w => w.code === 'WEIGHT_JUMP' && w.pct > 0)) return passkey('WEIGHT_JUMP');
@@ -166,6 +204,9 @@ export function modoDe(S, p, { ligado = true, autoHoje = 0 } = {}) {
   if (p.kind === 'mesocycle') {
     if (av.some(w => w.code === 'MESO_OVERWRITE')) return passkey('MESO_OVERWRITE');
     if (av.some(w => w.code === 'RESTRICTION_DROPPED')) return passkey('RESTRICTION_DROPPED');
+  }
+  if (p.kind === 'diet') {
+    if (av.some(w => w.code === 'DIET_OVERWRITE')) return passkey('DIET_OVERWRITE');
   }
   if (autoHoje >= AUTO_MAX_24H) return passkey('AUTO_LIMIT');
   return { modo: 'auto' };
@@ -204,10 +245,11 @@ export function contarAuto(dir, agora = Date.now()) {
 
 const acaoDe = (kind, plan) => ({
   week: 'publish-micro', routine_patch: 'patch-routine', routine_delete: 'delete-routine', mesocycle: 'put-meso',
-  mesocycle_action: plan.action === 'delete' ? 'delete-meso' : 'activate-meso', history_fix: 'history-fix'
+  mesocycle_action: plan.action === 'delete' ? 'delete-meso' : 'activate-meso', history_fix: 'history-fix',
+  diet: 'put-diet', diet_action: plan.action === 'delete' ? 'delete-diet' : 'activate-diet'
 })[kind];
 
-/** Aplica sobre `S`. `plan` já com ocultos preservados e dias autorizados. */
+/** Aplica sobre `S` (ou loja de dieta `D`). `plan` já com ocultos preservados e dias autorizados. */
 function aplicar(S, kind, plan, catalog, agora) {
   if (kind === 'week') {
     const trained = new Set((S.workouts || []).map(w => w.d).filter(Boolean));
@@ -223,6 +265,10 @@ function aplicar(S, kind, plan, catalog, agora) {
   if (kind === 'mesocycle') return applyPutMeso(S, plan.meso, plan.activate, 'assistant', agora);
   if (kind === 'mesocycle_action') {
     return plan.action === 'delete' ? applyDeleteMeso(S, plan.meso_id) : applyActivateMeso(S, plan.meso_id, 'assistant', agora);
+  }
+  if (kind === 'diet') return applyPutDiet(S, plan.plan, plan.activate, 'assistant', agora);
+  if (kind === 'diet_action') {
+    return plan.action === 'delete' ? applyDeleteDiet(S, plan.diet_id) : applyActivateDiet(S, plan.diet_id, 'assistant', agora);
   }
   if (kind === 'history_fix') return applyHistoryFix(S, plan.ops);
   throw new Error(`bad kind: ${kind}`);
@@ -248,19 +294,24 @@ const juntar = (p, k) => (p ? `${p}.${k}` : String(k));
 const semVolatil = S => { const { rev, _ts, active, ...resto } = S; return resto; };
 
 /** Efeito real, num clone e com o horário da proposta: o resultado não depende de quando é lido. */
-export function simular(S, p, catalog) {
-  const preservado = preservarOcultos(S, p.kind, p.plan);
-  const ruim = validarPlano(S, p.kind, preservado, catalog);
+export function simular(S, p, catalog, D) {
+  const isDiet = isDietKind(p.kind);
+  const baseObj = isDiet ? dietStore(S, D) : S;
+  const preservado = preservarOcultos(S, p.kind, p.plan, baseObj);
+  const ruim = validarPlano(S, p.kind, preservado, catalog, baseObj);
   if (ruim) return { error: { code: ruim.code, message: ruim.error ?? ruim.message, field: ruim.field ?? null } };
   const conflitos = p.kind === 'week' ? findConflicts(S, preservado).datas : [];
   const plano = p.kind === 'week' ? { ...preservado, autorizar: { datas: conflitos.map(c => c.date) } } : preservado;
-  const trabalho = clone(S);
+  const trabalho = clone(baseObj);
   const r = aplicar(trabalho, p.kind, plano, catalog, p.created_at);
   if (r?.error) return { error: { code: r.code, message: r.error, field: r.field ?? null } };
   if (p.kind === 'mesocycle' && mesoBytes((trabalho.mesos || []).find(m => m.id === plano.meso.id)) > MAX_MESO_BYTES) {
     return { error: { code: 'MESO_TOO_BIG', message: 'meso too large', field: 'meso' } };
   }
-  return { plano, changes: diffFolhas(semVolatil(S), semVolatil(trabalho)), dates_replaced: conflitos };
+  if (p.kind === 'diet' && dietBytes((trabalho.plans || []).find(d => d.id === plano.plan.id)) > MAX_DIET_BYTES) {
+    return { error: { code: 'DIET_TOO_BIG', message: 'plan too large', field: 'plan' } };
+  }
+  return { plano, changes: diffFolhas(semVolatil(baseObj), semVolatil(trabalho)), dates_replaced: conflitos };
 }
 
 export const approvalHash = (p, base, changes, dates_replaced) => sha256(canon({
@@ -321,6 +372,16 @@ export function makeHandlers(deps) {
   const autoApply = !!deps.autoApply;
   const dir = deps.dir || process.env.PROPOSALS_DIR || '/coach-proposals';
   const catalogo = () => deps.catalog || loadCatalog(deps.CATALOG_PATH);
+  const dietFile = deps.dietFile || (uid => path.join(DATA, 'diet-' + String(uid || '').replace(/[^a-zA-Z0-9_-]/g, '') + '.json'));
+  const atomicWrite = deps.atomicWrite || ((file, content) => {
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, file);
+  });
+  const readDiet = uid => {
+    try { return readDietStrict(dietFile(uid)); }
+    catch { return null; }
+  };
 
   /** Sessão do dono, ou responde o erro. Sem dono configurado, as rotas não existem. */
   function dono(req, res) {
@@ -332,12 +393,15 @@ export function makeHandlers(deps) {
   }
 
   /** Estado, seguindo a precedência da spec. A auditoria só é lida quando a base não confere. */
-  function avaliar(S, p, audit) {
+  function avaliar(S, p, audit, D) {
     const d = lerDecisao(dir, p.id);
     if (d) return { status: d.status, decision: d };
     if (fs.existsSync(path.join(dir, 'pending', `${p.id}.canceled`))) return { status: 'canceled' };
     if (Date.now() > Date.parse(p.expires_at)) return { status: 'expired' };
-    const base = hashBase(S, p.kind, p.plan);
+    if (isDietKind(p.kind) && !D) {
+      return { status: 'blocked', blocked_reason: 'DIET_CORRUPT', blocked_message: 'diet state corrupt' };
+    }
+    const base = hashBase(S, p.kind, p.plan, D);
     if (base !== p.base_hash) {
       const rec = audit().find(r => r.proposalId === p.id);
       if (rec) {
@@ -347,7 +411,7 @@ export function makeHandlers(deps) {
       }
       return { status: 'stale', base };
     }
-    const sim = simular(S, p, catalogo());
+    const sim = simular(S, p, catalogo(), D);
     if (sim.error) return { status: 'blocked', blocked_reason: sim.error.code, blocked_message: sim.error.message, base };
     if (!sim.changes.length) return { status: 'blocked', blocked_reason: 'NO_CHANGES', blocked_message: 'nothing would change', base, sim };
     if (livePresence?.(ownerUid)) return { status: 'blocked', blocked_reason: 'WORKOUT_IN_PROGRESS', blocked_message: 'a workout is in progress', base, sim };
@@ -365,20 +429,33 @@ export function makeHandlers(deps) {
    * A escrita de uma proposta já avaliada como `pending`, igual para passkey e gravação direta.
    * Síncrona do começo ao fim: nada intercala com outra decisão nem com um PUT do app.
    */
-  function aplicarProposta(p, S, a, modo) {
-    gravarSnapshot(dir, p.id, S);
+  function aplicarProposta(p, S, a, modo, D) {
+    const isDiet = isDietKind(p.kind);
+    gravarSnapshot(dir, p.id, isDiet ? D : S);
     const agora = new Date().toISOString();
     const catalog = catalogo();
-    const r = withState(deps, ownerUid, {
-      ifMatch: String(stateMeta(S).rev), actor: { actor: 'claude', verified: modo }, action: acaoDe(p.kind, p.plan),
-      uid: ownerUid, dropActive: p.kind === 'routine_delete'
-    }, work => {
-      const out = aplicar(work, p.kind, a.sim.plano, catalog, agora);
-      return out?.error ? out : { _meta: { ...(out?._meta || {}), proposalId: p.id } };
-    });
+    const r = isDiet
+      ? withDietState({ ...deps, dietFile, atomicWrite }, ownerUid, {
+          ifMatch: String(stateMeta(D).rev), actor: { actor: 'claude', verified: modo }, action: acaoDe(p.kind, p.plan),
+          uid: ownerUid
+        }, work => {
+          const out = aplicar(work, p.kind, a.sim.plano, catalog, agora);
+          return out?.error ? out : { _meta: { ...(out?._meta || {}), proposalId: p.id } };
+        })
+      : withState(deps, ownerUid, {
+          ifMatch: String(stateMeta(S).rev), actor: { actor: 'claude', verified: modo }, action: acaoDe(p.kind, p.plan),
+          uid: ownerUid, dropActive: p.kind === 'routine_delete'
+        }, work => {
+          const out = aplicar(work, p.kind, a.sim.plano, catalog, agora);
+          return out?.error ? out : { _meta: { ...(out?._meta || {}), proposalId: p.id } };
+        });
     if (r.code !== 200) return r;
-    const S1 = readState(ownerUid) || {};
-    const decisao = { status: 'applied', mode: modo, rev: r.body.rev, at: agora, result_hash: hashBase(S1, p.kind, p.plan) };
+    const S1 = isDiet ? S : (readState(ownerUid) || {});
+    const D1 = isDiet ? (readDiet(ownerUid) || D) : null;
+    const decisao = {
+      status: 'applied', mode: modo, rev: r.body.rev, ...(isDiet ? { scope: 'diet' } : {}),
+      at: agora, result_hash: hashBase(S1, p.kind, p.plan, D1)
+    };
     try {
       if (!gravarDecisao(dir, p.id, decisao)) console.error('[og-proposal] decisao ja existia', p.id);
     } catch (e) { console.error('[og-proposal] decisao', p.id, e.message); }   // a auditoria recupera
@@ -390,7 +467,7 @@ export function makeHandlers(deps) {
    * Gravação direta: aplica o que `modoDe` libera. Chamada pelo relógio e pelo `fs.watch` do
    * server.js e pelo teste. Devolve os ids aplicados.
    */
-  const descartadas = new Map();   // id -> rev em que a proposta já foi vista como "passkey"
+  const descartadas = new Map();   // id -> revKey em que a proposta já foi vista como "passkey"
   function varrerAutomaticas() {
     if (!ownerUid || !autoApply) return [];
     let nomes = [];
@@ -400,21 +477,25 @@ export function makeHandlers(deps) {
       .filter(p => p && AUTO_KINDS.includes(p.kind)).sort((x, y) => x.created_at.localeCompare(y.created_at));
     const feitas = [];
     for (const p of props) {
+      const isDiet = isDietKind(p.kind);
       const S = readState(ownerUid);
-      if (!S) return feitas;
-      if (descartadas.get(p.id) === S.rev) continue;
+      if (!isDiet && !S) continue;
+      const D = isDiet ? readDiet(ownerUid) : null;
+      if (isDiet && !D) continue;
+      const revKey = isDiet ? `diet:${D.rev}` : `state:${S.rev}`;
+      if (descartadas.get(p.id) === revKey) continue;
       try {
-        const a = avaliar(S, p, leitorAuditoria());
+        const a = avaliar(S || {}, p, leitorAuditoria(), D);
         if (a.status !== 'pending') {
-          if (a.blocked_reason !== 'WORKOUT_IN_PROGRESS') descartadas.set(p.id, S.rev);
+          if (a.blocked_reason !== 'WORKOUT_IN_PROGRESS') descartadas.set(p.id, revKey);
           continue;
         }
-        const m = modoDe(S, p, { autoHoje: contarAuto(dir) });
+        const m = modoDe(S || {}, p, { autoHoje: contarAuto(dir) }, D);
         if (m.modo !== 'auto') {
-          if (m.motivo !== 'AUTO_LIMIT') descartadas.set(p.id, S.rev);
+          if (m.motivo !== 'AUTO_LIMIT') descartadas.set(p.id, revKey);
           continue;
         }
-        const r = aplicarProposta(p, S, a, 'auto');
+        const r = aplicarProposta(p, S || {}, a, 'auto', D);
         if (r.code === 200) feitas.push(p.id);
         else console.error('[og-proposal] auto-apply recusado', p.id, r.code, r.body?.code);
       } catch (e) { console.error('[og-proposal] auto-apply', p.id, e.message); }
@@ -425,6 +506,7 @@ export function makeHandlers(deps) {
   async function listProposals(req, res) {
     if (!dono(req, res)) return;
     const S = readState(ownerUid) || {};
+    const D = readDiet(ownerUid);
     const todas = new URL(req.url, 'http://x').searchParams.get('all') === '1';
     let nomes = [];
     try { nomes = fs.readdirSync(path.join(dir, 'pending')); } catch { /* sem pasta: sem propostas */ }
@@ -435,7 +517,7 @@ export function makeHandlers(deps) {
       const p = m && lerProposta(dir, m[1]);
       if (!p) continue;
       try {
-        const a = avaliar(S, p, audit);
+        const a = avaliar(S, p, audit, isDietKind(p.kind) ? D : undefined);
         if (todas || ['pending', 'stale', 'blocked'].includes(a.status)) itens.push(resumo(p, a));
       } catch (e) { console.error('[og-proposal] avaliar', p.id, e.message); }
     }
@@ -448,12 +530,13 @@ export function makeHandlers(deps) {
     const p = lerProposta(dir, params[0]);
     if (!p) return json(res, 404, { error: 'proposal not found', code: 'PROPOSAL_NOT_FOUND' });
     const S = readState(ownerUid) || {};
-    const a = avaliar(S, p, leitorAuditoria());
+    const D = isDietKind(p.kind) ? readDiet(ownerUid) : undefined;
+    const a = avaliar(S, p, leitorAuditoria(), D);
     const { plan, ...meta } = p;
     const sim = a.sim;
     json(res, 200, { ...meta, status: a.status, blocked_reason: a.blocked_reason ?? null, blocked_message: a.blocked_message ?? null,
       decision: a.decision ?? null, changes: sim?.changes ?? [], dates_replaced: sim?.dates_replaced ?? [],
-      warnings: avisos(S, p.kind, p.plan), mode: a.decision?.mode ?? null,
+      warnings: isDietKind(p.kind) && !D ? [] : avisos(S, p.kind, p.plan, D), mode: a.decision?.mode ?? null,
       approval_hash: sim ? approvalHash(p, a.base, sim.changes, sim.dates_replaced) : null });
   }
 
@@ -463,7 +546,8 @@ export function makeHandlers(deps) {
     const body = await readBody(req);
     const p = lerProposta(dir, params[0]);
     if (!p) return json(res, 404, { error: 'proposal not found', code: 'PROPOSAL_NOT_FOUND' });
-    const a = avaliar(readState(ownerUid) || {}, p, leitorAuditoria());
+    const D = isDietKind(p.kind) ? readDiet(ownerUid) : undefined;
+    const a = avaliar(readState(ownerUid) || {}, p, leitorAuditoria(), D);
     if (a.status !== 'pending') return json(res, 409, { error: 'proposal cannot be approved', code: a.blocked_reason || 'PROPOSAL_NOT_PENDING', status: a.status });
     if (approvalHash(p, a.base, a.sim.changes, a.sim.dates_replaced) !== body.approval_hash) {
       return json(res, 409, { error: 'proposal changed', code: 'PROPOSAL_CHANGED' });
@@ -483,9 +567,12 @@ export function makeHandlers(deps) {
     // Daqui até a decisão não há `await`: nada intercala com um PUT do app.
     const p = lerProposta(dir, id);
     if (!p) return json(res, 404, { error: 'proposal not found', code: 'PROPOSAL_NOT_FOUND' });
+    const isDiet = isDietKind(p.kind);
     const S = readState(ownerUid);
-    if (!S) return json(res, 409, { error: 'no state for this profile', code: 'NO_STATE' });
-    const a = avaliar(S, p, leitorAuditoria());
+    if (!isDiet && !S) return json(res, 409, { error: 'no state for this profile', code: 'NO_STATE' });
+    const D = isDiet ? readDiet(ownerUid) : undefined;
+    if (isDiet && !D) return json(res, 500, { error: 'diet state corrupt', code: 'DIET_CORRUPT', hint: 'restore backup' });
+    const a = avaliar(S || {}, p, leitorAuditoria(), D);
     if (['applied', 'rejected'].includes(a.status)) return json(res, 409, { error: 'already decided', code: 'PROPOSAL_DECIDED', status: a.status });
     if (a.status !== 'pending') {
       return json(res, 409, { error: a.blocked_message || 'proposal cannot be approved', code: a.blocked_reason || `PROPOSAL_${a.status.toUpperCase()}`, status: a.status });
@@ -493,7 +580,7 @@ export function makeHandlers(deps) {
     if (approvalHash(p, a.base, a.sim.changes, a.sim.dates_replaced) !== hash) {
       return json(res, 409, { error: 'proposal changed', code: 'PROPOSAL_CHANGED' });
     }
-    const r = aplicarProposta(p, S, a, 'passkey');
+    const r = aplicarProposta(p, S || {}, a, 'passkey', D);
     if (r.code !== 200) return json(res, r.code, r.body);
     json(res, 200, { ok: true, rev: r.body.rev });
   }

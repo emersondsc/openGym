@@ -1129,7 +1129,7 @@ Object.assign(ROUTINE_HANDLERS, diet.makeHandlers({
 
 // Propostas do treinador: mesmo mapa. Os nomes não podem colidir com `list` das rotinas.
 Object.assign(ROUTINE_HANDLERS, proposals.makeHandlers({
-  readSession, readState, stateFile, atomicWrite, readBody, json, DATA, livePresence, CATALOG_PATH,
+  readSession, readState, stateFile, dietFile, atomicWrite, readBody, json, DATA, livePresence, CATALOG_PATH,
   ownerUid: COACH_OWNER_UID, proposalChallenge, proveProposal, saveDb, autoApply: COACH_AUTO_APPLY
 }));
 

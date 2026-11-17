@@ -18,19 +18,25 @@ function ambiente(extra = {}) {
   const DATA = path.join(raiz, 'data');
   fs.mkdirSync(DATA);
   const stateFile = uid => path.join(DATA, `state-${uid}.json`);
+  const dietFile = uid => path.join(DATA, `diet-${uid}.json`);
   const estado = {
     rev: 7, _ts: 1, unit: 'kg', week: {}, dayPlan: {}, customEx: [], exWeights: {}, activeMeso: 'meso-2026-10-27', mesoPrev: null,
     routines: [{ id: 'r1', name: 'A', emoji: 'x', prog: 'off', extra: 1, ex: [{ id: '0584', sets: 3, reps: '12-20', weight: 40, mode: 'reps', bodyweight: true, restSec: 90 }] }],
     mesos: [{ id: 'meso-2026-10-27', name: 'M', start: '2026-10-27', weeks: [{ n: 1 }], rules: { 'Hérnia': 'x' }, segredoDoApp: 1, updatedAt: 't' }],
     workouts: [{ id: 'w1', d: '2026-01-01', start: 1, end: 2, vol: 500, prs: [], entries: [{ id: '0584', topW: 50, sets: [{ w: 50, r: 10, done: true, sec: 30 }] }] }]
   };
-  const S = () => JSON.parse(fs.readFileSync(stateFile(OWNER), 'utf8'));
+  const S = () => { try { return JSON.parse(fs.readFileSync(stateFile(OWNER), 'utf8')); } catch { return null; } };
+  const D = () => {
+    try { return JSON.parse(fs.readFileSync(dietFile(OWNER), 'utf8')); }
+    catch { return { rev: 0, _ts: null, activePlanId: null, prevPlanId: null, plans: [] }; }
+  };
   fs.writeFileSync(stateFile(OWNER), JSON.stringify(estado));
   const saidas = [];
   let presenca = null;
   let provaOk = true;
   const deps = {
-    readSession: req => req.user ?? null, readState: uid => JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')), stateFile,
+    readSession: req => req.user ?? null, readState: uid => { try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; } },
+    stateFile, dietFile,
     atomicWrite: (f, c) => fs.writeFileSync(f, c), readBody: async req => req.body ?? {}, DATA, dir, catalog,
     json: (res, code, body) => { res.code = code; res.body = body; saidas.push({ code, body }); },
     livePresence: () => presenca, ownerUid: OWNER, saveDb: () => {},
@@ -40,7 +46,7 @@ function ambiente(extra = {}) {
   const h = P.makeHandlers(deps);
   const proposta = (kind, plan, resto = {}) => {
     const id = resto.id || `prop-${kind.replace('_', '-')}`;
-    const p = { id, kind, plan, title: 'T', summary: 'S', reasons: ['r'], base_hash: P.hashBase(S(), kind, plan),
+    const p = { id, kind, plan, title: 'T', summary: 'S', reasons: ['r'], base_hash: P.hashBase(S() || {}, kind, plan, D()),
       created_at: '2026-11-01T10:00:00.000Z', expires_at: new Date(Date.now() + 864e5).toISOString(), created_by: 'c', ...resto };
     fs.writeFileSync(path.join(dir, 'pending', `${id}.json`), JSON.stringify(p));
     return p;
@@ -50,7 +56,7 @@ function ambiente(extra = {}) {
     const g = await chama('getProposal', [id]);
     return chama('approveProposal', [id], { cid: 'c', credential: {}, approval_hash: g.body.approval_hash });
   };
-  return { dir, DATA, S, proposta, chama, aprova, h, estado, stateFile, setPresenca: v => { presenca = v; }, setProva: v => { provaOk = v; } };
+  return { dir, DATA, S, D, proposta, chama, aprova, h, estado, stateFile, dietFile, setPresenca: v => { presenca = v; }, setProva: v => { provaOk = v; } };
 }
 const semana = (peso = 42.5, extra = {}) => ({ meso_id: 'meso-2026-10-27', semana: 2, routines: [{ id: 'r1', name: 'A', emoji: 'x', ex: [{ id: '0584', sets: 3, reps: '12-20', weight: peso, restSec: 90 }], ...extra }] });
 const auditoria = DATA => fs.readFileSync(path.join(DATA, 'audit.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
@@ -411,3 +417,110 @@ test('semana com week atualiza S.week na gravacao direta, limpa dias antigos e c
   assert.deepEqual(S1.week, { '0': 'r1', '2': 'r1', '4': 'r1' });
   assert.equal(decisao(e, 'prop-week').result_hash, P.hashBase(S1, 'week', planoComWeek));
 });
+
+/* ---------------------------------------------------------------- dieta (diet e diet_action) */
+
+const dietaNova = (id = 'dieta-2026-11', extra = {}) => ({
+  plan: {
+    id,
+    name: 'Cutting 2000 kcal',
+    goal: 'Perda de gordura',
+    referenceDate: '2026-11-16',
+    targets: { dailyKcal: 2000, macros: { proteinG: 170, carbsG: 180, fatG: 65 } },
+    meals: [{ id: 'cafe', name: 'Café da manhã', time: '07:30', kcal: 450, items: ['Ovos mexidos'] }],
+    ...extra
+  },
+  activate: 'now'
+});
+
+test('dieta nova entra direto, grava diet-<uid>.json, snapshot, decisao scope diet e auditoria', async () => {
+  const e = ambiente({ autoApply: true });
+  const plan = dietaNova();
+  e.proposta('diet', plan);
+  assert.deepEqual(e.h.varrerAutomaticas(), ['prop-diet']);
+  const D = e.D();
+  assert.equal(D.activePlanId, 'dieta-2026-11');
+  assert.equal(D.plans.length, 1);
+  assert.equal(D.plans[0].activatedBy, 'assistant');
+  assert.equal(decisao(e, 'prop-diet').mode, 'auto');
+  assert.equal(decisao(e, 'prop-diet').scope, 'diet');
+  assert.equal(decisao(e, 'prop-diet').result_hash, P.hashBase({}, 'diet', plan, D));
+  const a = auditoria(e.DATA).at(-1);
+  assert.deepEqual([a.scope, a.actor, a.verified, a.proposalId, a.action], ['diet', 'claude', 'auto', 'prop-diet', 'put-diet']);
+  assert.equal(fs.readdirSync(path.join(e.dir, 'snapshots')).length, 1);
+  assert.deepEqual(e.h.varrerAutomaticas(), [], 'nao aplica duas vezes');
+});
+
+test('dieta funciona mesmo quando state-<uid>.json ainda nao existe (auto e passkey)', async () => {
+  const e = ambiente({ autoApply: true });
+  fs.rmSync(e.stateFile(OWNER));
+  e.proposta('diet', dietaNova('dieta-sem-treino'));
+  assert.deepEqual(e.h.varrerAutomaticas(), ['prop-diet']);
+  assert.equal(e.D().activePlanId, 'dieta-sem-treino');
+
+  e.proposta('diet', { plan: { ...dietaNova('dieta-sem-treino').plan, name: 'Atualizada' }, activate: 'none' }, { id: 'prop-diet-upd' });
+  assert.deepEqual(e.h.varrerAutomaticas(), [], 'sobrescrever exige passkey');
+  const g = await e.chama('getProposal', ['prop-diet-upd']);
+  assert.deepEqual(g.body.warnings, [{ code: 'DIET_OVERWRITE', field: 'id' }]);
+  assert.equal((await e.aprova('prop-diet-upd')).code, 200);
+  assert.equal(e.D().plans[0].name, 'Atualizada');
+});
+
+test('dieta: preserva extras ocultos no overwrite, carimba assistant e diet_action ativa/remove com passkey', async () => {
+  const e = ambiente({ autoApply: true });
+  fs.writeFileSync(e.dietFile(OWNER), JSON.stringify({
+    rev: 2, _ts: 1, activePlanId: 'd1', prevPlanId: null,
+    plans: [
+      { id: 'd1', name: 'Atual', segredoApp: 'manter', updatedAt: 't' },
+      { id: 'd2', name: 'Reserva', updatedAt: 't' }
+    ]
+  }));
+
+  const overwrite = { plan: { id: 'd1', name: 'Revisada', targets: { dailyKcal: 1900 } }, activate: 'now' };
+  e.proposta('diet', overwrite, { id: 'prop-diet-ow' });
+  assert.equal(P.modoDe(e.S(), { kind: 'diet', plan: overwrite }, {}, e.D()).motivo, 'DIET_OVERWRITE');
+  assert.deepEqual(e.h.varrerAutomaticas(), [], 'overwrite nao entra sem passkey');
+  assert.equal((await e.aprova('prop-diet-ow')).code, 200);
+  const d1 = e.D().plans.find(p => p.id === 'd1');
+  assert.deepEqual([d1.name, d1.segredoApp, d1.activatedBy], ['Revisada', 'manter', 'assistant']);
+
+  const act = { diet_id: 'd2', action: 'activate' };
+  e.proposta('diet_action', act, { id: 'prop-diet-act' });
+  assert.equal(P.modoDe(e.S(), { kind: 'diet_action', plan: act }, {}, e.D()).motivo, 'KIND_NEEDS_PASSKEY');
+  assert.equal((await e.aprova('prop-diet-act')).code, 200);
+  assert.equal(e.D().activePlanId, 'd2');
+  assert.equal(e.D().prevPlanId, 'd1');
+
+  e.proposta('diet_action', { diet_id: 'd2', action: 'delete' }, { id: 'prop-diet-del' });
+  assert.equal((await e.aprova('prop-diet-del')).code, 200);
+  assert.equal(e.D().activePlanId, null);
+  assert.equal(e.D().plans.some(p => p.id === 'd2'), false);
+});
+
+test('dieta: hash usa projecao e mudanca relevante torna proposta stale; arquivo corrompido bloqueia', async () => {
+  const e = ambiente();
+  const baseA = P.hashBase({}, 'diet', dietaNova('d1'), {
+    activePlanId: 'd1',
+    plans: [{ id: 'd1', name: 'A', segredoApp: 1, updatedAt: 'x' }]
+  });
+  const baseB = P.hashBase({}, 'diet', dietaNova('d1'), {
+    activePlanId: 'd1',
+    plans: [{ id: 'd1', name: 'A', segredoApp: 2, updatedAt: 'y' }]
+  });
+  assert.equal(baseA, baseB);
+
+  e.proposta('diet', dietaNova('d1'));
+  assert.equal((await e.chama('getProposal', ['prop-diet'])).body.status, 'pending');
+  fs.writeFileSync(e.dietFile(OWNER), JSON.stringify({
+    rev: 1, _ts: 2, activePlanId: 'd1', prevPlanId: null,
+    plans: [{ id: 'd1', name: 'Outra' }]
+  }));
+  assert.equal((await e.chama('getProposal', ['prop-diet'])).body.status, 'stale');
+
+  fs.writeFileSync(e.dietFile(OWNER), '{corrompido');
+  const g = await e.chama('getProposal', ['prop-diet']);
+  assert.deepEqual([g.body.status, g.body.blocked_reason], ['blocked', 'DIET_CORRUPT']);
+  const r = await e.chama('approveProposal', ['prop-diet'], { cid: 'c', credential: {}, approval_hash: 'x' });
+  assert.deepEqual([r.code, r.body.code], [500, 'DIET_CORRUPT']);
+});
+
