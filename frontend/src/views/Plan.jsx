@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
+import { useDiet } from '../store/useDiet.js'
 import { useUI } from '../store/useUI.js'
 import { DAYN, uid, exCount, fmtDate } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
@@ -9,6 +10,7 @@ import { dayAssignSheet, loadStarterPlan, planToolsSheet, mesoListSheet, mesoFor
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf, DEFAULT_GLYPH } from '../lib/glyphs.js'
+import { summarizeDietPlan } from '../lib/diet.js'
 
 // Preferência de exibição do Plan: mora no aparelho, não no estado sincronizado.
 const WEEK_OPEN_KEY = 'gym_week_open'
@@ -16,7 +18,13 @@ const WEEK_OPEN_KEY = 'gym_week_open'
 export default function Plan() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
+  const user = useStore(s => s.user)
   const update = useStore(s => s.update)
+  const { store: diet, load: loadDiet, activatePlan: activateDiet } = useDiet()
+
+  useEffect(() => {
+    loadDiet().catch(() => {})
+  }, [user?.id, loadDiet])
 
   // A grade de dias é referência, não ação: quem já sabe o próprio split quer a lista de
   // rotinas mais perto. A escolha fica no aparelho e sobrevive ao recarregar.
@@ -59,6 +67,20 @@ export default function Plan() {
     inp.type = 'file'; inp.accept = 'application/json,.json,text/csv,.csv'
     inp.onchange = () => { const f = inp.files[0]; if (f) importMesoFile(f) }
     inp.click()
+  }
+
+  // ---- dieta ativa ----
+  const activeDiet = (diet.plans || []).find(p => p.id === diet.activePlanId) || null
+  const dietSummary = summarizeDietPlan(activeDiet)
+  const revertDiet = async () => {
+    if (!diet.prevPlanId) return
+    try {
+      const next = await activateDiet(diet.prevPlanId)
+      const picked = (next.plans || []).find(p => p.id === diet.prevPlanId)
+      if (picked) useUI.getState().toast(t('{0} is now your diet plan', picked.name))
+    } catch (e) {
+      useUI.getState().toast(e.message || t('Could not activate diet plan'))
+    }
   }
 
   return <>
@@ -108,6 +130,27 @@ export default function Plan() {
       <a onClick={() => activate(S.mesoPrev)}>{t('Back to the previous one')}</a>
     </div>}
     {/* O botão "Gerar micro S(n)" entra aqui na spec do BACKLOG-02. O lugar é este. */}
+
+    <div className="row between" style={{ marginTop: 22, marginBottom: 10 }}>
+      <h4 className="sec" style={{ margin: 0 }}>{t('Diet')}</h4>
+    </div>
+    <div className="list" style={{ marginBottom: 4 }}>
+      <div className="item" onClick={() => nav('/diet')}>
+        <div className="grow">
+          <div className="tt">{activeDiet ? activeDiet.name : t('No active diet plan')}</div>
+          <div className="ss">
+            {activeDiet
+              ? (dietSummary.summaryLine || activeDiet.goal || t('Tap to open diet plan'))
+              : t('Tap to choose or create a diet plan')}
+          </div>
+        </div>
+        <Icon name="chevronRight" className="chev" />
+      </div>
+    </div>
+    {activeDiet && activeDiet.activatedBy === 'assistant' && diet.prevPlanId && <div className="sect-f">
+      <span className="tag acc">{t('Activated by the assistant')}</span>{' '}
+      <a onClick={revertDiet}>{t('Back to the previous one')}</a>
+    </div>}
 
     <div className="cols"><div>
       {/* O cabeçalho inteiro é o botão de esconder: a grade de dias é referência, e sem ela a

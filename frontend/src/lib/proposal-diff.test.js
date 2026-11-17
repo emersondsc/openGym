@@ -18,6 +18,23 @@ describe('groupChanges', () => {
     expect(groups[0].rows[0].label).toBe('Weight')
     expect(other.map(o => o.path)).toEqual(['mesoPrev'])
   })
+  it('agrupa diffs de dieta (plans.* e activePlanId) com rotulos legiveis', () => {
+    const changes = [
+      'activePlanId',
+      'plans.0.targets.dailyKcal.min',
+      'plans.0.targets.macros.proteinG',
+      'plans.0.meals.1.kcal',
+      'plans.0.meals.1.items.0.amount',
+      'plans.0.rules.Estagnação 2-3 semanas'
+    ].map(c)
+    const { groups, other } = groupChanges(changes)
+    expect(other).toEqual([])
+    expect(groups.map(g => g.kind)).toEqual(['dietActive', 'diet', 'dietMeal', 'dietRules'])
+    expect(groups[0].rows[0].label).toBe('Active diet plan')
+    expect(groups[1].rows.map(r => r.label)).toEqual(['Daily kcal (min)', 'Protein (g)'])
+    expect(groups[2].rows.map(r => r.label)).toEqual(['Calories (kcal)', 'Amount'])
+    expect(groups[3].rows[0].rule).toBe('Estagnação 2-3 semanas')
+  })
 })
 
 describe('fmtValue', () => {

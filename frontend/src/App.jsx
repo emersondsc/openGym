@@ -19,6 +19,7 @@ import Home from './views/Home.jsx'
 import Plan from './views/Plan.jsx'
 import RoutineEdit from './views/RoutineEdit.jsx'
 import MesoEdit from './views/MesoEdit.jsx'
+import Diet from './views/Diet.jsx'
 import PlanRaw from './views/PlanRaw.jsx'
 import Workout from './views/Workout.jsx'
 import Stats from './views/Stats.jsx'
@@ -92,6 +93,7 @@ function Shell() {
               <Route path="/plan" element={<Plan />} />
               <Route path="/plan/r/:id" element={<RoutineEdit />} />
               <Route path="/plan/meso/:id" element={<MesoEdit />} />
+              <Route path="/diet" element={<Diet />} />
               <Route path="/plan/raw" element={<PlanRaw />} />
               <Route path="/workout" element={<Workout />} />
               <Route path="/stats" element={<Stats />} />

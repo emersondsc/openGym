@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
+import { useDiet } from '../store/useDiet.js'
 import { useUI } from '../store/useUI.js'
 import { approveProposal, getProposal, listProposals, rejectProposal } from '../lib/proposals.js'
 import { fmtValue, groupChanges } from '../lib/proposal-diff.js'
@@ -16,7 +17,9 @@ const STATUS = {
 const MOTIVO = {
   WORKOUT_IN_PROGRESS: 'A workout is in progress on another device', DATE_IN_PAST: 'This proposal has a day that already passed',
   NO_CHANGES: 'This proposal changes nothing', PROPOSAL_CHANGED: 'The proposal changed. Check it again before approving.',
-  PROPOSAL_STALE: 'The plan changed after this proposal. Ask the coach for a new one.'
+  PROPOSAL_STALE: 'The plan changed after this proposal. Ask the coach for a new one.',
+  DIET_NOT_FOUND: 'Diet plan not found',
+  DIET_CORRUPT: 'Diet data could not be read'
 }
 const card = { background: 'var(--surface)', borderRadius: 14, padding: '10px 13px' }
 const secao = { fontSize: 12, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--text-3, var(--grey))', margin: '18px 2px 6px' }
@@ -57,15 +60,31 @@ export default function Proposals() {
   </div>
 }
 
-function Diferenca({ changes, S }) {
+function Diferenca({ changes, S, dietPlans: dietPlansProp }) {
   const vazio = t('Empty')
   const { groups, other } = groupChanges(changes)
+  const dietPlans = (dietPlansProp && dietPlansProp.length) ? dietPlansProp : (S.diet?.plans || S.plans || [])
+  const findDietPlan = key => (typeof key === 'number'
+    ? dietPlans[key]
+    : dietPlans.find(x => x.id === key))
+  const dietPlanName = key => {
+    const found = findDietPlan(key)
+    if (found?.name) return found.name
+    return typeof key === 'number' ? `${t('Diet plan')} ${key + 1}` : `${t('Diet plan')} (${key})`
+  }
   const titulo = g => {
     const r = g.rows[0]
     if (g.kind === 'routine') return S.routines?.[r.routine]?.name || `${t('Routine')} ${r.routine + 1}`
     if (g.kind === 'days') return t('Days')
     if (g.kind === 'rules') return t('Rules')
     if (g.kind === 'workout') return S.workouts?.[r.workout]?.d || t('History')
+    if (g.kind === 'dietActive') return t('Diet')
+    if (g.kind === 'diet') return dietPlanName(r.plan)
+    if (g.kind === 'dietMeal') {
+      const m = findDietPlan(r.plan)?.meals?.[r.meal]
+      return `${dietPlanName(r.plan)} · ${m?.name || t('Meal {0}', r.meal + 1)}`
+    }
+    if (g.kind === 'dietRules') return `${dietPlanName(r.plan)} · ${t('Rules')}`
     return g.key
   }
   const rotulo = (g, r) => {
@@ -80,6 +99,13 @@ function Diferenca({ changes, S }) {
       const e = S.workouts?.[r.workout]?.entries?.[r.entry]
       return `${e ? nomeEx(e.id) : ''} · ${t('Set {0}', r.set + 1)} · ${r.label ? t(r.label) : r.field}`
     }
+    if (g.kind === 'dietActive') return t(r.label || 'Active diet plan')
+    if (g.kind === 'diet') return r.label ? t(r.label) : r.field
+    if (g.kind === 'dietMeal') {
+      const campo = r.label ? t(r.label) : r.field
+      return r.item === undefined ? campo : `${t('Item {0}', r.item + 1)}: ${campo}`
+    }
+    if (g.kind === 'dietRules') return r.rule
     return r.path
   }
   const Valor = ({ c }) => <span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
@@ -101,6 +127,7 @@ const textoAviso = w => {
   if (w.code === 'WEIGHT_JUMP') return t('Weight changes {0}% in {1}', w.pct, nomeEx(w.field.split('.').pop()))
   if (w.code === 'RESTRICTION_DROPPED') return t('Rule missing from this plan: {0}', w.field)
   if (w.code === 'MESO_OVERWRITE') return t('This replaces the whole mesocycle')
+  if (w.code === 'DIET_OVERWRITE') return t('This replaces an existing diet plan')
   return w.code
 }
 
@@ -109,6 +136,8 @@ export function ProposalDetail() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const { flushBeforeApproval, pullState } = useStore()
+  const diet = useDiet(s => s.store)
+  const loadDiet = useDiet(s => s.load)
   const toast = useUI(s => s.toast)
   const [p, setP] = useState(null)
   const [erro, setErro] = useState(false)
@@ -116,6 +145,9 @@ export function ProposalDetail() {
   const [recusando, setRecusando] = useState(false)
   const [motivo, setMotivo] = useState('')
   useEffect(() => { getProposal(id).then(setP).catch(() => setErro(true)) }, [id])
+  useEffect(() => {
+    if (p && (p.kind === 'diet' || p.kind === 'diet_action')) loadDiet().catch(() => {})
+  }, [p?.id, p?.kind, loadDiet])
   if (erro) return <div className="view"><div className="muted">{t('Could not load')}</div></div>
   if (!p) return <div className="view" />
 
@@ -134,7 +166,10 @@ export function ProposalDetail() {
         return toast(t('The proposal changed. Check it again before approving.'))
       }
       await approveProposal(id, p.approval_hash)
-      await pullState(false)
+      await Promise.all([
+        pullState(false),
+        (p.kind === 'diet' || p.kind === 'diet_action') ? loadDiet(true).catch(() => {}) : Promise.resolve()
+      ])
       toast(t('Applied to your plan'))
       nav('/proposals')
     } catch (e) {
@@ -164,7 +199,7 @@ export function ProposalDetail() {
     </div>)}
     {aberta && p.kind === 'history_fix' && <div style={aviso('var(--orange)')}>{t('Volume, records and best weight of this workout will be recalculated')}</div>}
 
-    {!!p.changes.length && <><div style={secao}>{t('What changes')}</div><Diferenca changes={p.changes} S={S} /></>}
+    {!!p.changes.length && <><div style={secao}>{t('What changes')}</div><Diferenca changes={p.changes} S={S} dietPlans={diet.plans} /></>}
 
     <div style={secao}>{t('Coach explanation')}</div>
     <div style={{ ...card, whiteSpace: 'pre-wrap' }}>
