@@ -3,7 +3,8 @@ import { useStore, isValidRest } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf } from './lib/exercises.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, isoOf, uid, exCount, DAYN, MONTHS_LONG, ACCENTS, SKINS } from './lib/format.js'
-import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps, parseTargetRir, normTargetRir, repsRange } from './lib/history.js'
+import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps, parseTargetRir, normTargetRir, repsRange, repsLabel, migrateLegacyRepRange, targetSummary } from './lib/history.js'
+import { NATIVE_SET_ROLES, ROLE_NAME_KEY, BASE_CLASS_OF_NATIVE, resolveRoleClass, resolveRoleName, goalSignature, normSetTargetsEntry, isValidSetReps, normSetReps } from './lib/set-roles.js'
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, getLang, INSTR_LANGS } from './lib/i18n.js'
 import { nav } from './lib/nav.js'
@@ -22,7 +23,6 @@ import { NOTE_META, NOTE_ORDER, NoteLines } from './components/NoteList.jsx'
 import { parseImport, mergeImport } from './lib/import-csv.js'
 import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
-import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS } from './lib/progression.js'
 import { MOBILE, shareExport } from './lib/mobile.js'
 import { unitOfCfg, unitOfEntry, normUnit } from './lib/units.js'
 import UnitChip from './components/UnitChip.jsx'
@@ -570,108 +570,224 @@ function ExercisePicker({ onPick, close, exclude, title }) {
 export const exercisePicker = (onPick, exclude, title) => ui().openSheet(close => <ExercisePicker onPick={onPick} exclude={exclude} title={title} close={close} />)
 
 /* ============================ exercise config ============================ */
-// Progression settings for one exercise (issue #17). Shown inside the config sheet because
-// "how does this lift go up" belongs next to sets and reps, not in a separate screen. Left
-// on "follow the routine" it inherits, so most people never touch it.
-function ProgressionFields({ ex, mode, c, setC, routine, unit, range }) {
-  const options = POLICIES_FOR[mode] || ['off']
-  if (options.length < 2) return null
-  const inherited = policyFor({ id: ex.id }, routine, mode)
-  const active = policyFor({ ...c, id: ex.id }, routine, mode)
-  const inc = c.inc > 0 ? c.inc : (mode === 'time' ? 5 : defaultIncrement(ex.id, unit))
-  return <>
-    <h4 className="sec">{t('Progression')}</h4>
-    <div className="sect-b" style={{ marginBottom: 8 }}>
-      <SelectRow title={t('Rule')} sheetTitle={t('Progression')} value={c.prog || ''} onChange={v => setC(x => ({ ...x, prog: v || undefined }))}
-        options={[{ value: '', label: t('Follow the routine ({0})', t(POLICY_NAME[inherited])) },
-          ...options.map(p => ({ value: p, label: t(POLICY_NAME[p]) }))]} />
+export function rolePickerSheet(currentRole, customRoles = [], onPick) {
+  const cur = currentRole || 'work'
+  const clsSub = cls => cls === 'prep' ? t('Prep · no RIR') : cls === 'intensified' ? t('Intensified work') : t('Standard work')
+  const activeCustom = (customRoles || []).filter(r => r && !r.deleted)
+  return ui().openSheet(close => <>
+    <h3>{t('Set role')}</h3>
+    <div className="sect-b">
+      {NATIVE_SET_ROLES.map(r => (
+        <button key={r} className="lrow tap" onClick={() => { close(); onPick(r) }}>
+          <span className="lrow-m">
+            <span className="lrow-t">{t(ROLE_NAME_KEY[r])}</span>
+            <span className="lrow-s">{clsSub(BASE_CLASS_OF_NATIVE[r])}</span>
+          </span>
+          {cur === r && <Icon name="check" className="lrow-k" />}
+        </button>
+      ))}
+      {activeCustom.map(r => (
+        <button key={r.id} className="lrow tap" onClick={() => { close(); onPick(r.id) }}>
+          <span className="lrow-m">
+            <span className="lrow-t">{r.name}</span>
+            <span className="lrow-s">{clsSub(r.baseClass)}</span>
+          </span>
+          {cur === r.id && <Icon name="check" className="lrow-k" />}
+        </button>
+      ))}
     </div>
-    <div className="small dim" style={{ marginBottom: active === 'off' ? 18 : 10 }}>{t(POLICY_DESC[active])}</div>
-    {active !== 'off' && <div className="row cfgrow" style={{ marginBottom: 18 }}>
-      <Stepper label={mode === 'time' ? t('Step (seconds)') : t('Step ({0})', unit)} value={inc}
-        step={mode === 'time' ? 5 : 1.25} decimal={mode !== 'time'} onChange={v => setC(x => ({ ...x, inc: v }))} />
-      {/* Com faixa do treinador, o piso é dele (spec_meta_de_hoje U1): regra e passo ficam. */}
-      {active === 'double' && !range && <Stepper label={t('Reps from')} value={c.repsMin || Math.max(1, (c.reps || 10) - 2)}
-        step={1} decimal={false} onChange={v => setC(x => ({ ...x, repsMin: v }))} />}
-    </div>}
-  </>
+  </>)
 }
 
-// RIR alvo (spec_meta_de_hoje RF-7). '' é "Sem alvo", como em ProgressionFields.
+// RIR alvo (spec_meta_de_hoje RF-7). '' é "Sem alvo".
 const RIR_PRESETS = [0, '0-1', 1, '1-2', 2, '2-3', 3, 4]
 const rirText = v => { const p = parseTargetRir(v); return p[0] === p[1] ? fmtNum(p[0]) : `${fmtNum(p[0])}–${fmtNum(p[1])}` }
-// Um valor do treinador fora da lista (ex.: 1.5) entra nela para continuar selecionado.
 const targetRirOptions = cur => {
   const n = normTargetRir(cur)
   const vals = [...RIR_PRESETS, ...(n !== undefined && !RIR_PRESETS.includes(n) ? [n] : [])]
   return [{ value: '', label: t('No target') }, ...vals.map(v => ({ value: v, label: rirText(v) }))]
 }
-function ExConfig({ ex, existing, onSave, onDelete, close, routine, routineEdit }) {
-  const st = useStore(s => s.S)
-  const cardio = isCardio(ex.id)
-  const [c, setC] = useState(existing || defaultConfig(ex.id))
-  // Cardio keeps its own duration+speed form; the reps/time choice (issue #16) is offered for
-  // everything else, which is where the gap was — planks, hangs, wall sits, loaded carries.
-  const mode = cardio ? 'cardio' : modeOf({ ...c, id: ex.id })
-  // Faixa "8-12" é do treinador (spec_meta_de_hoje U1): mostrada, não editada, e o save a preserva.
-  const range = mode === 'reps' ? repsRange(existing?.reps) : null
-  // Both default from the dataset and are then whatever the config says — see isBw.
-  const bw = !cardio && isBw({ ...c, id: ex.id })
-  const perSide = isPerSide(c)
-  // A unidade em edição: a que já estava no exercício ou, na falta dela, a do perfil.
-  const unitSel = normUnit(c.unit != null ? c.unit : st.unit)
-  // Keep whatever the other mode already had (sets, weight) and fill only what is missing.
-  const setMode = m => setC(x => ({ ...defaultConfig(ex.id, m), ...x, mode: m }))
-  const save = () => {
-    close()
-    const sets = Math.max(1, Math.round(c.sets) || (cardio ? 1 : 3))
-    // Only carry progression settings that differ from the inherited default, so a plan file
-    // stays readable and "follow the routine" keeps meaning exactly that.
-    const prog = {}
-    if (c.prog) prog.prog = c.prog
-    if (c.inc > 0) prog.inc = c.inc
-    // Written only when it differs from what the dataset already says, so a barbell config
-    // stays exactly the shape it was before these flags existed.
-    // `bodyweight` is true of a hold as much as of a set of reps; `side` is not — it counts
-    // reps, and a timed hold has none. Switching an exercise to Time therefore drops it
-    // rather than carrying a flag nothing downstream can read.
-    const flags = {}
-    if (bw !== isBodyweightEq(ex.id)) flags.bodyweight = bw
-    // BACKLOG-01 / decisão A-7: só grava quando difere do perfil, como `prog` e as flags.
-    // Ausente = herda, e é isso que mantém o plano exportado igual ao de antes.
-    // A segunda condição é a mesma do seletor e não é decorativa: ligar "Bodyweight" zera o
-    // peso e esconde a unidade, mas `unitSel` continua com o valor antigo — sem ela o estado
-    // ficaria com um `unit` invisível e impossível de apagar pela interface.
-    if (!cardio && !(bw && !(c.weight > 0)) && unitSel !== normUnit(st.unit)) flags.unit = unitSel
-    if (cardio) onSave({ sets, min: Math.max(1, Math.round(c.min) || 20), speed: Math.max(0, c.speed || 8) })
-    else if (mode === 'time') onSave({ sets, mode: 'time', sec: Math.max(1, Math.round(c.sec) || 45), weight: Math.max(0, c.weight || 0), ...flags, ...prog })
-    else {
-      // RIR alvo: só o editor de rotina muda; fora dele, o valor que veio passa intacto.
-      const withTargetRir = out => {
-        const n = normTargetRir(routineEdit ? c.targetRir : existing?.targetRir)
-        if (n !== undefined) out.targetRir = n
-        return out
-      }
-      if (range) {
-        // U1: faixa, repsMin e repsMax ficam como o treinador gravou; prog e inc seguem editáveis.
-        const out = { sets, mode: 'reps', reps: existing.reps, weight: Math.max(0, c.weight || 0), ...flags,
-          ...(existing.side ? { side: true } : {}), ...prog }
-        if (existing.repsMin != null) out.repsMin = existing.repsMin
-        if (existing.repsMax != null) out.repsMax = existing.repsMax
-        onSave(withTargetRir(out))
-        return
-      }
-      // A unilateral target is stored even: the split has to divide, and a typed 15 would
-      // otherwise plan seven reps on one side and eight on the other, every session.
-      const typed = Math.max(1, Math.round(c.reps) || 10)
-      const reps = perSide ? Math.ceil(typed / 2) * 2 : typed
-      const out = { sets, mode: 'reps', reps, weight: Math.max(0, c.weight || 0), ...flags, ...(perSide ? { side: true } : {}), ...prog }
-      if (policyFor({ ...c, id: ex.id }, routine, 'reps') === 'double') out.repsMin = Math.min(reps, Math.max(1, Math.round(c.repsMin) || Math.max(1, reps - 2)))
-      // A ceiling below the working reps would tell you to add a set on day one.
-      if (bw && !(out.weight > 0) && c.repsMax > 0) out.repsMax = Math.max(reps, Math.round(c.repsMax))
-      onSave(withTargetRir(out))
+
+function RepsInput({ value, perSide, onChange }) {
+  const rg = repsRange(value)
+  const [isRange, setIsRange] = useState(!!rg)
+  const [minR, setMinR] = useState(rg ? rg[0] : (Number(value) || 8))
+  const [maxR, setMaxR] = useState(rg ? rg[1] : Math.min(100, (Number(value) || 8) + 2))
+
+  const toggle = rangeOn => {
+    setIsRange(rangeOn)
+    if (rangeOn) {
+      const a = Math.max(1, Math.min(99, Math.round(Number(value) || minR || 8)))
+      const b = Math.max(a + 1, Math.min(100, maxR > a ? maxR : a + 2))
+      setMinR(a); setMaxR(b)
+      onChange(`${a}-${b}`)
+    } else {
+      onChange(Math.max(1, Math.round(minR || 10)))
     }
   }
+
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="row between" style={{ marginBottom: 4 }}>
+        <span className="muted small">{t('Reps')}</span>
+        <button type="button" className={'tag tap nocap' + (isRange ? ' acc' : '')} style={{ fontSize: 11, padding: '2px 7px' }}
+          onClick={() => toggle(!isRange)}>{isRange ? t('Range') : t('Exact')}</button>
+      </div>
+      {isRange ? (
+        <div className="range-pair">
+          <div className="stp"><span className="val"><NumberField decimal={false} value={minR} aria-label={t('From')}
+            onChange={v => { const a = Math.max(1, Math.min(99, Math.round(v) || 1)); const b = Math.max(a + 1, maxR); setMinR(a); setMaxR(b); onChange(`${a}-${b}`) }} /></span></div>
+          <span className="dim">–</span>
+          <div className="stp"><span className="val"><NumberField decimal={false} value={maxR} aria-label={t('To')}
+            onChange={v => { const b = Math.max(minR + 1, Math.min(100, Math.round(v) || (minR + 1))); setMaxR(b); onChange(`${minR}-${b}`) }} /></span></div>
+        </div>
+      ) : (
+        <Stepper value={Number(value) || 10} step={perSide ? 2 : 1} decimal={false}
+          onChange={v => onChange(Math.max(1, Math.round(v) || 1))} />
+      )}
+    </div>
+  )
+}
+
+function ExConfig({ ex, existing, onSave, onDelete, close, routine, routineEdit }) {
+  const st = useStore(s => s.S)
+  const customRoles = st.customSetRoles || []
+  const effKind = effortOf(st)
+  const cardio = isCardio(ex.id)
+  const [c, setC] = useState(() => {
+    const base = existing ? JSON.parse(JSON.stringify(existing)) : defaultConfig(ex.id)
+    const mig = migrateLegacyRepRange(base)
+    if (mig) base.reps = mig
+    return base
+  })
+  const mode = cardio ? 'cardio' : modeOf({ ...c, id: ex.id })
+  const bw = !cardio && isBw({ ...c, id: ex.id })
+  const perSide = isPerSide(c)
+  const unitSel = normUnit(c.unit != null ? c.unit : st.unit)
+  const isRangeTop = mode === 'reps' && !!repsRange(c.reps)
+
+  const [usePerSet, setUsePerSet] = useState(() => mode === 'reps' && Array.isArray(c.setTargets) && c.setTargets.length > 0)
+  const [rows, setRows] = useState(() => {
+    if (Array.isArray(c.setTargets) && c.setTargets.length) return JSON.parse(JSON.stringify(c.setTargets))
+    const n = Math.max(1, Math.round(c.sets) || 3)
+    const baseReps = c.reps ?? 10
+    const baseW = c.weight ?? 0
+    return Array.from({ length: n }, () => ({
+      weight: baseW, reps: baseReps, ...(c.targetRir != null ? { targetRir: c.targetRir } : {}), goal: true
+    }))
+  })
+
+  const setMode = m => {
+    setC(x => ({ ...defaultConfig(ex.id, m), ...x, mode: m }))
+    if (m !== 'reps') setUsePerSet(false)
+  }
+
+  const togglePerSet = on => {
+    if (on) {
+      const n = Math.max(1, Math.round(c.sets) || 3)
+      setRows(Array.from({ length: n }, () => ({
+        weight: c.weight || 0, reps: c.reps ?? 10, ...(c.targetRir != null ? { targetRir: c.targetRir } : {}), goal: true
+      })))
+      setUsePerSet(true)
+    } else {
+      const hasMixed = rows.some(r => (r.role && r.role !== 'work') || goalSignature({ ...r, role: r.role || 'work' }) !== goalSignature({ ...rows[0], role: rows[0]?.role || 'work' }))
+      const collapse = () => {
+        const g = rows.find(r => r.goal) || rows.find(r => resolveRoleClass(r.role, customRoles) !== 'prep') || rows[0]
+        setC(x => ({ ...x, sets: rows.length, weight: g?.weight || 0, reps: g?.reps ?? 10, targetRir: g?.targetRir }))
+        setUsePerSet(false)
+      }
+      if (hasMixed) confirmSheet({
+        title: t('Use single target?'),
+        message: t('Set roles will collapse to a single target.'),
+        confirmText: t('Collapse'), danger: true, onConfirm: collapse
+      })
+      else collapse()
+    }
+  }
+
+  const setGoalAt = idx => setRows(prev => {
+    const clicked = prev[idx]
+    if (!clicked || resolveRoleClass(clicked.role, customRoles) === 'prep') return prev
+    const sig = goalSignature(clicked)
+    const wasOn = !!clicked.goal
+    const activeGoals = prev.filter(r => r.goal)
+    if (wasOn && activeGoals.length > 1) {
+      // Desmarca só este se houver outros; ou mantém pelo menos 1 no grupo se clicar outra assinatura
+      return prev.map((r, i) => (i === idx ? { ...r, goal: false } : r))
+    }
+    if (wasOn && activeGoals.length === 1) return prev // mantém ao menos 1 principal
+    // Marca este e quaisquer irmãos de mesma assinatura; substitui assinaturas diferentes
+    return prev.map(r => {
+      if (resolveRoleClass(r.role, customRoles) === 'prep') return { ...r, goal: false }
+      return { ...r, goal: goalSignature(r) === sig }
+    })
+  })
+
+  const updateRow = (idx, patch) => setRows(prev => prev.map((r, i) => {
+    if (i !== idx) return r
+    const next = { ...r, ...patch }
+    const cls = resolveRoleClass(next.role, customRoles)
+    if (cls === 'prep') { delete next.targetRir; next.goal = false }
+    return next
+  }))
+
+  const save = () => {
+    close()
+    const flags = {}
+    if (bw !== isBodyweightEq(ex.id)) flags.bodyweight = bw
+    if (!cardio && !(bw && !(c.weight > 0)) && unitSel !== normUnit(st.unit)) flags.unit = unitSel
+
+    if (cardio) {
+      const sets = Math.max(1, Math.round(c.sets) || 1)
+      onSave({ sets, min: Math.max(1, Math.round(c.min) || 20), speed: Math.max(0, c.speed || 8) })
+      return
+    }
+    if (mode === 'time') {
+      const sets = Math.max(1, Math.round(c.sets) || 3)
+      onSave({ sets, mode: 'time', sec: Math.max(1, Math.round(c.sec) || 45), weight: Math.max(0, c.weight || 0), ...flags })
+      return
+    }
+
+    if (routineEdit && usePerSet) {
+      const out = {
+        sets: rows.length, mode: 'reps', reps: 10, weight: 0, ...flags,
+        ...(perSide ? { side: true } : {}),
+        setTargets: rows.map(r => ({
+          ...(r.role && r.role !== 'work' ? { role: r.role } : {}),
+          weight: Math.max(0, Number(r.weight) || 0),
+          reps: isValidSetReps(r.reps) ? normSetReps(r.reps) : 10,
+          ...(r.targetRir != null ? { targetRir: r.targetRir } : {}),
+          ...(r.goal ? { goal: true } : {})
+        }))
+      }
+      normSetTargetsEntry(out, customRoles, { isValidTargetRir: v => targetRirOptions(v).some(o => o.value === normTargetRir(v)) || normTargetRir(v) !== undefined, normTargetRir })
+      onSave(out)
+      return
+    }
+
+    const sets = Math.max(1, Math.round(c.sets) || 3)
+    const rg = repsRange(c.reps)
+    const finalReps = rg ? `${rg[0]}-${rg[1]}` : (() => {
+      const typed = Math.max(1, Math.round(c.reps) || 10)
+      return perSide && !rg ? Math.ceil(typed / 2) * 2 : typed
+    })()
+    const out = {
+      sets, mode: 'reps', reps: finalReps, weight: Math.max(0, c.weight || 0),
+      ...flags, ...(!rg && perSide ? { side: true } : {})
+    }
+    const rir = normTargetRir(routineEdit ? c.targetRir : existing?.targetRir)
+    if (rir !== undefined) out.targetRir = rir
+    if (!routineEdit && Array.isArray(existing?.setTargets) && existing.setTargets.length) {
+      out.setTargets = JSON.parse(JSON.stringify(existing.setTargets))
+      normSetTargetsEntry(out, customRoles, { isValidTargetRir: v => normTargetRir(v) !== undefined, normTargetRir })
+    }
+    onSave(out)
+  }
+
+  const previewSum = usePerSet
+    ? targetSummary({ id: ex.id, target: { id: ex.id, mode: 'reps', sets: rows.length, setTargets: rows } }, unitSel, effKind, customRoles)
+    : null
+
   return <>
     <h3 className="capitalize">{ex.n}</h3>
     <Media ex={ex} />
@@ -684,52 +800,120 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine, routineEdit 
       <Segmented className="seg-range" value={mode} onChange={setMode}
         options={[{ value: 'reps', label: t('Reps') }, { value: 'time', label: t('Time') }]} />
     </div>}
-    <div className="row cfgrow" style={{ marginBottom: mode === 'time' ? 8 : 18 }}>
-      {cardio ? <>
-        <Stepper label={t('Intervals')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
-        <Stepper label={t('Minutes')} value={c.min} step={1} decimal={false} onChange={v => setC(x => ({ ...x, min: v }))} />
-        <Stepper label={t('Speed (km/h)')} value={c.speed} step={0.5} onChange={v => setC(x => ({ ...x, speed: v }))} />
-      </> : mode === 'time' ? <>
-        <Stepper label={t('Sets')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
-        <Stepper label={t('Seconds')} value={c.sec} step={5} decimal={false} onChange={v => setC(x => ({ ...x, sec: v }))} />
-        <Stepper label={t('Weight ({0})', unitSel)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />
-      </> : <>
-        <Stepper label={t('Sets')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
-        {range
-          ? <div className="cfg-fixed"><span className="muted small">{t('Reps')}</span>
-              <b>{range[0]}–{range[1]}</b><span className="dim small">{t('set by your coach')}</span></div>
-          : <Stepper label={t('Reps')} value={c.reps} step={perSide ? 2 : 1} decimal={false} onChange={v => setC(x => ({ ...x, reps: v }))} />}
-        {/* On bodyweight work the weight stepper is the click #32 is about, so it is not here
-            until there is a belt to describe — see the added-weight row below. */}
-        {!bw && <Stepper label={t('Weight ({0})', unitSel)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />}
-      </>}
-    </div>
+
+    {routineEdit && mode === 'reps' && <div className="sect-b" style={{ marginBottom: 12 }}>
+      <Row icon="list" iconTint="var(--acc)" title={t('Per-set targets')}
+        subtitle={t('Assign Warm-up, PAP, Working, or Back-off per set.')}>
+        <Switch checked={usePerSet} onChange={togglePerSet} />
+      </Row>
+    </div>}
+
+    {!(routineEdit && usePerSet && mode === 'reps') ? (
+      <div className="row cfgrow" style={{ marginBottom: mode === 'time' ? 8 : 18, alignItems: 'flex-end' }}>
+        {cardio ? <>
+          <Stepper label={t('Intervals')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
+          <Stepper label={t('Minutes')} value={c.min} step={1} decimal={false} onChange={v => setC(x => ({ ...x, min: v }))} />
+          <Stepper label={t('Speed (km/h)')} value={c.speed} step={0.5} onChange={v => setC(x => ({ ...x, speed: v }))} />
+        </> : mode === 'time' ? <>
+          <Stepper label={t('Sets')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
+          <Stepper label={t('Seconds')} value={c.sec} step={5} decimal={false} onChange={v => setC(x => ({ ...x, sec: v }))} />
+          <Stepper label={t('Weight ({0})', unitSel)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />
+        </> : <>
+          <Stepper label={t('Sets')} value={c.sets} step={1} decimal={false} onChange={v => setC(x => ({ ...x, sets: v }))} />
+          <RepsInput value={c.reps} perSide={perSide} onChange={v => setC(x => ({ ...x, reps: v, ...(repsRange(v) ? { side: undefined } : {}) }))} />
+          {!bw && <Stepper label={t('Weight ({0})', unitSel)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />}
+        </>}
+      </div>
+    ) : (
+      <div style={{ marginBottom: 14 }}>
+        {previewSum && <div className="tgcard compact" style={{ marginBottom: 10 }}>
+          <span className="tgcard-ic"><Icon name="target" /></span>
+          <div className="tgcard-tx">
+            <small>{t("Today's target")}</small>
+            <b>{previewSum.parts.map((p, i) => <span key={i}>{i > 0 && <i aria-hidden="true">·</i>}{p}</span>)}{previewSum.eff && <><i aria-hidden="true">·</i><em>{previewSum.eff}</em></>}</b>
+          </div>
+        </div>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map((r, i) => {
+            const role = r.role || 'work'
+            const cls = resolveRoleClass(role, customRoles)
+            const isPrep = cls === 'prep'
+            return <div key={i} className="excfg-setcard">
+              <div className="row between" style={{ gap: 6, marginBottom: 8 }}>
+                <div className="row" style={{ gap: 6 }}>
+                  <span className="dim small" style={{ minWidth: 16 }}>{i + 1}</span>
+                  <button type="button" className={'sb-pill tap ' + (isPrep ? 'sb-prep' : cls === 'intensified' ? 'sb-int' : 'sb-std')}
+                    onClick={() => rolePickerSheet(role, customRoles, nr => updateRow(i, { role: nr === 'work' ? undefined : nr }))}>
+                    {resolveRoleName(role, customRoles, t)} <Icon name="chevronDown" style={{ width: 11, height: 11 }} />
+                  </button>
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  {!isPrep && <button type="button" className={'excfg-goal-btn' + (r.goal ? ' on' : '')}
+                    onClick={() => setGoalAt(i)}>
+                    <Icon name={r.goal ? 'starFill' : 'star'} />{t('Goal')}
+                  </button>}
+                  <button type="button" className="iconbtn mini" disabled={rows.length <= 1} aria-label={t('Remove this set')}
+                    onClick={() => setRows(p => p.length > 1 ? p.filter((_, k) => k !== i) : p)}><Icon name="xmark" /></button>
+                </div>
+              </div>
+              <div className="excfg-setgrid">
+                <div>
+                  <span className="muted small" style={{ display: 'block', marginBottom: 2 }}>{bw ? t('Added ({0})', unitSel) : t('Weight ({0})', unitSel)}</span>
+                  <div className="stp"><span className="val"><NumberField decimal value={r.weight ?? 0}
+                    onChange={v => updateRow(i, { weight: Math.max(0, v || 0) })} /></span></div>
+                </div>
+                <RepsInput value={r.reps ?? 10} perSide={false} onChange={v => updateRow(i, { reps: v })} />
+                <div>
+                  <span className="muted small" style={{ display: 'block', marginBottom: 2 }}>{t('Target RIR')}</span>
+                  {isPrep ? (
+                    <div className="stp effcell prep-off" style={{ width: '100%' }}>—</div>
+                  ) : (
+                    <button type="button" className="stp effcell" style={{ width: '100%' }}
+                      onClick={() => ui().openSheet(closeR => <>
+                        <h3>{t('Target RIR')}</h3>
+                        <div className="sect-b">
+                          {targetRirOptions(r.targetRir).map(opt => (
+                            <button key={String(opt.value)} className="lrow tap" onClick={() => { closeR(); updateRow(i, { targetRir: opt.value === '' ? undefined : opt.value }) }}>
+                              <span className="lrow-t">{opt.label}</span>
+                              {(normTargetRir(r.targetRir) ?? '') === opt.value && <Icon name="check" className="lrow-k" />}
+                            </button>
+                          ))}
+                        </div>
+                      </>)}>
+                      {r.targetRir != null ? rirText(r.targetRir) : '—'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          })}
+        </div>
+        <div style={{ height: 8 }} />
+        <Button size="sm" icon="plus" disabled={rows.length >= 20}
+          onClick={() => setRows(p => { const last = p[p.length - 1] || { weight: 0, reps: 10, goal: true }; return [...p, { ...last }] })}>
+          {t('Add set')}
+        </Button>
+      </div>
+    )}
+
     {mode === 'time' && !bw && <div className="small dim" style={{ marginBottom: 18 }}>
       {t('A timer runs while you hold the set. Leave the weight at 0 for bodyweight holds.')}
     </div>}
-    {/* ---------- bodyweight + per side (issues #31/#32/#33) ---------- */}
     {!cardio && <div className="sect-b" style={{ marginBottom: 8 }}>
       <Row icon="figureStrength" iconTint="var(--acc)" title={t('Bodyweight')}
         subtitle={bw ? t('No weight to enter — just log the reps.') : t('Ask for a weight on every set.')}>
         <Switch checked={bw} onChange={v => setC(x => ({ ...x, bodyweight: v, weight: v ? 0 : x.weight }))} />
       </Row>
-      {mode === 'reps' && !range && <Row icon="shuffle" iconTint="var(--blue)" title={t('Reps per side')}
+      {mode === 'reps' && !isRangeTop && !usePerSet && <Row icon="shuffle" iconTint="var(--blue)" title={t('Reps per side')}
         subtitle={perSide ? t('You still log the total: {0} is {1} per side.', c.reps || 0, fmtNum(sideReps(c.reps))) : t('For lunges, single-arm rows and the like.')}>
-        {/* Turning it on rounds the target up to an even number, since half of an odd
-            total is a rep one side does not get. */}
         <Switch checked={perSide} onChange={v => setC(x => ({ ...x, side: v || undefined, reps: v ? Math.ceil((x.reps || 0) / 2) * 2 : x.reps }))} />
       </Row>}
-      {/* spec_meta_de_hoje RF-7: só no editor de rotina; o histórico e o treino não mexem nisto. */}
-      {routineEdit && mode === 'reps' && <SelectRow icon="target" iconTint="var(--acc)" title={t('Target RIR')}
+      {routineEdit && mode === 'reps' && !usePerSet && <SelectRow icon="target" iconTint="var(--acc)" title={t('Target RIR')}
         sheetTitle={t('Target RIR')} value={normTargetRir(c.targetRir) ?? ''}
         options={targetRirOptions(c.targetRir)}
         onChange={v => setC(x => ({ ...x, targetRir: v === '' ? undefined : v }))} />}
     </div>}
-    {/* BACKLOG-01: a unidade pertence ao exercício, não ao perfil — `0585` e `0599` são
-        máquinas em libras. A condição é exatamente a do stepper de peso: um exercício de peso
-        corporal sem cinto não tem carga para medir e não mostra unidade. No modo `time` o app
-        já mostra peso para bodyweight, e o seletor acompanha em vez de inventar outra regra. */}
-    {!cardio && !(bw && !(c.weight > 0)) && <div className="sect-b" style={{ marginBottom: 8 }}>
+    {!cardio && !(bw && !(c.weight > 0)) && !(routineEdit && usePerSet && mode === 'reps') && <div className="sect-b" style={{ marginBottom: 8 }}>
       <Row icon="scale" iconTint="var(--teal)" title={t('Weight unit')}
         subtitle={unitSel === normUnit(st.unit)
           ? t('Same as your profile ({0})', normUnit(st.unit))
@@ -738,35 +922,16 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine, routineEdit 
           options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
       </Row>
     </div>}
-    {/* A stepper is too wide to sit in a list row next to a label — it squeezes the text to
-        one word per line — so added weight gets the same full-width treatment as sets and
-        reps, with its explanation underneath. */}
-    {bw && <>
-      <div className="row cfgrow" style={{ marginBottom: 8 }}>
-        <Stepper label={t('Added ({0})', unitSel)} value={c.weight || 0} step={2.5}
-          onChange={v => setC(x => ({ ...x, weight: v }))} />
-      </div>
-      <div className="small dim" style={{ marginBottom: 18 }}>
-        {t('For dips or pull-ups with a belt. Progression then follows the weight.')}
-      </div>
-    </>}
-    {/* The rep ceiling only means something when there is no load to add instead. */}
-    {mode === 'reps' && bw && !(c.weight > 0) && !range && <div className="row cfgrow" style={{ marginBottom: 18 }}>
-      <Stepper label={t('Top of the range')} value={c.repsMax || 0} step={1} decimal={false}
-        onChange={v => setC(x => ({ ...x, repsMax: v }))} />
+    {bw && !(routineEdit && usePerSet && mode === 'reps') && <div className="row cfgrow" style={{ marginBottom: 14 }}>
+      <Stepper label={t('Added ({0})', unitSel)} value={c.weight || 0} step={2.5}
+        onChange={v => setC(x => ({ ...x, weight: v }))} />
     </div>}
-    {mode === 'reps' && bw && !(c.weight > 0) && !range && <div className="small dim" style={{ marginTop: -10, marginBottom: 18 }}>
-      {c.repsMax > 0
-        ? t('Reps climb to {0}, then a set is added and the reps start over. At {1} sets it asks you to add weight instead.', c.repsMax, MAX_BW_SETS)
-        : t('Reps climb by one whenever every set was clean. Set a ceiling to add sets instead of reps forever.')}
-    </div>}
-    <ProgressionFields ex={ex} mode={mode} c={c} setC={setC} routine={routine} unit={unitSel} range={range} />
     <Button variant="primary" onClick={save}>{existing ? t('Save') : t('Add to routine')}</Button>
     {ex.custom && <><div style={{ height: 8 }} /><Button icon="pencil" onClick={() => { close(); customExSheet(ex) }}>{t('Edit or delete this exercise')}</Button></>}
     {onDelete && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { close(); onDelete() }}>{t('Remove from routine')}</Button></>}
   </>
 }
-// opts.routineEdit: aberto pelo editor de rotina, o único lugar que edita o RIR alvo (spec_meta_de_hoje D12).
+// opts.routineEdit: aberto pelo editor de rotina, o único lugar que edita o RIR alvo e setTargets.
 export const exConfigSheet = (ex, existing, onSave, onDelete, routine, opts = {}) =>
   ui().openSheet(close => <ExConfig ex={ex} existing={existing} onSave={onSave} onDelete={onDelete}
     routine={routine} routineEdit={!!opts.routineEdit} close={close} />)
@@ -1091,8 +1256,7 @@ export function beginWorkout(routineId, bw) {
   // right weight already on the screen instead of being told about it afterwards. `plan` is
   // kept on the entry purely so the workout can explain the number it chose.
   const entries = (r ? r.ex : []).map(cfg => {
-    const plan = nextPrescription(st, cfg, r)
-    const entry = { id: cfg.id, sg: cfg.sg, target: withoutNote(cfg), plan, sets: applyPrescription(buildSets(st, cfg), plan) }
+    const entry = { id: cfg.id, sg: cfg.sg, target: withoutNote(cfg), setsTagged: true, sets: buildSets(st, cfg) }
     if(isValidRest(cfg.restSec)) entry.restSec = cfg.restSec
     return entry
   })
@@ -1206,7 +1370,7 @@ function doFinishWorkout() {
   const prs = []
   const e1prs = []
   A.entries.forEach(e => {
-    const mx = Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w))
+    const mx = Math.max(0, ...e.sets.filter(s => s.done && resolveRoleClass(s.role, st.customSetRoles) !== 'prep').map(s => s.w))
     if (mx > 0 && mx > bestWeightFor(st, e.id)) prs.push(e.id)
     // A heavier estimate without a heavier top set is its own kind of progress —
     // same weight for more reps. Reported separately so it can't be read as a load PR.
@@ -1224,7 +1388,7 @@ function doFinishWorkout() {
   w.vol = workoutVolume(w, st)
   update(s => {
     w.entries.forEach(e => {
-      const mx = Math.max(0, ...e.sets.filter(x => x.done).map(x => x.w || 0), e.topW || 0)
+      const mx = Math.max(0, ...e.sets.filter(x => x.done && resolveRoleClass(x.role, st.customSetRoles) !== 'prep').map(x => x.w || 0), e.topW || 0)
       if (mx > 0) { const cur = s.exWeights[e.id]; if (!cur || mx > cur.w) s.exWeights[e.id] = { w: mx, d: w.d } }
     })
     s.workouts.push(w)

@@ -12,8 +12,7 @@ import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import Icon from '../components/Icon.jsx'
 import { useUI } from '../store/useUI.js'
 import { glyphOf } from '../lib/glyphs.js'
-import { Button, SelectRow } from '../components/ui.jsx'
-import { POLICIES_FOR, POLICY_NAME, POLICY_DESC } from '../lib/progression.js'
+import { Button } from '../components/ui.jsx'
 import BodyMap from '../components/BodyMap.jsx'
 import { loadOfRoutine, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
 
@@ -90,14 +89,6 @@ export default function RoutineEdit() {
       <button className="iconbtn" aria-label={t('Pick an icon')} onClick={() => glyphPicker(r.emoji, g => update(s => { s.routines.find(x => x.id === id).emoji = g }))}><Icon name={glyphOf(r.emoji)} /></button>
     </div>
 
-    <div className="sect-b" style={{ marginBottom: 16 }}>
-      <SelectRow icon="chartLine" title={t('Progression')} sheetTitle={t('Progression')}
-        value={r.prog || 'off'} onChange={v => update(s => { s.routines.find(x => x.id === id).prog = v })}
-        options={POLICIES_FOR.reps.map(p => ({ value: p, label: t(POLICY_NAME[p]), subtitle: t(POLICY_DESC[p]) }))} />
-    </div>
-    <div className="small dim" style={{ margin: '-10px 2px 16px' }}>
-      {t('Applies to every exercise in this routine that does not set its own rule.')}
-    </div>
 
     {r.ex.length ? <div className="list">{r.ex.map((e, i) => {
       // An unresolvable id is shown rather than skipped — hiding it left an entry you
@@ -116,7 +107,7 @@ export default function RoutineEdit() {
           }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r, { routineEdit: true })
         }}>
           <Thumb ex={ex} />
-          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, unitOfCfg(e, S))}</div><div className="row" style={{marginTop:4,gap:6,flexWrap:'wrap'}}><RestChipForRoutine ex={e} routineId={r.id} /><span onClick={ev => ev.stopPropagation()}><NoteChip onClick={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></span></div><NoteLines notes={{ routine: e.note }} lines={2} onOpen={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></div>
+          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, unitOfCfg(e, S), S.customSetRoles)}</div><div className="row" style={{marginTop:4,gap:6,flexWrap:'wrap'}}><RestChipForRoutine ex={e} routineId={r.id} /><span onClick={ev => ev.stopPropagation()}><NoteChip onClick={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></span></div><NoteLines notes={{ routine: e.note }} lines={2} onOpen={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 'none', alignItems: 'center' }}>
             {i > 0 && <button className={'iconbtn' + (linkedPrev ? ' on-ss' : '')} title={t('Superset with exercise above')} style={{ width: 32, height: 28, borderRadius: 'var(--r-sm)', fontSize: 15 }} onClick={ev => { ev.stopPropagation(); toggleLink(i) }}><Icon name="link" /></button>}
             <div style={{ display: 'flex', gap: 2 }}>

@@ -9,7 +9,8 @@ import { registerCustom } from '../lib/exercises.js'
 import { pinUnits } from '../lib/unit-migration.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
 import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
-import { mergeWorkouts, mergeExWeights, freshMark, sigOf } from '../lib/workout-edit.js'
+import { mergeWorkouts, mergeExWeights, mergeCustomSetRoles, freshMark, sigOf } from '../lib/workout-edit.js'
+import { migrateLegacyRepRange } from '../lib/history.js'
 
 const KEY = 'gym_state_v1'
 export const DEF = {
@@ -32,7 +33,7 @@ export const DEF = {
   gifSizeChosen: false,
   confirmTopWeight: false,
   reminder: { on: false, time: '08:00', tz: null }, effort: null,
-  mesos: [], activeMeso: null, mesoPrev: null
+  mesos: [], activeMeso: null, mesoPrev: null, customSetRoles: []
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 // Um aviso por MUDANÇA: a chave guarda a revisão em que o aviso já apareceu. A chave antiga
@@ -70,6 +71,8 @@ function loadState() {
             console.warn('[restSec] limpeza: removido invalido', r.id, ex.id, ex.restSec)
             delete ex.restSec
           }
+          const migReps = migrateLegacyRepRange(ex)
+          if (migReps) { ex.reps = migReps; delete ex.repsMin; delete ex.repsMax }
         })
       })
       // Limpeza active se houver
@@ -283,7 +286,8 @@ export const useStore = create((set, get) => {
               merged.workouts = mergeWorkouts(srv.workouts, S.workouts, localWinNow())
               merged.exWeights = mergeExWeights(srv.exWeights, S.exWeights, localWinNow())
               merged.exNotes = { ...(srv.exNotes || {}), ...(S.exNotes || {}) }
-              merged.mesos = mergeMesos(srv.mesos, S.mesos)      // nada criado aqui se perde
+              merged.mesos = mergeMesos(srv.mesos, S.mesos)
+              merged.customSetRoles = mergeCustomSetRoles(srv.customSetRoles, S.customSetRoles)      // nada criado aqui se perde
               // Ponteiro do mesociclo: o do SERVIDOR manda (a API é overwrite total e quem
               // coordena é o assistente, lendo antes de escrever). Id que sumiu vira null.
               fixMesoPointers(merged)
@@ -357,6 +361,7 @@ export const useStore = create((set, get) => {
           merged.exWeights = mergeExWeights(state.exWeights, S.exWeights, localWinNow())
           merged.exNotes = { ...(state.exNotes || {}), ...(S.exNotes || {}) }
           merged.mesos = mergeMesos(state.mesos, S.mesos)
+          merged.customSetRoles = mergeCustomSetRoles(state.customSetRoles, S.customSetRoles)
           fixMesoPointers(merged)
           if (S.active) merged.active = S.active
           merged.routines = adoptServerRoutines(state.routines || [], S.routines || [], base).routines

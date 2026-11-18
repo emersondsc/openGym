@@ -3,6 +3,7 @@ import { todayISO, isoOf, weekKey, fmtNum } from './format.js'
 import { isCardio, isBodyweightEq } from './exercises.js'
 import { t } from './i18n.js'
 import { normUnit, unitOfSet, toKg, fromKg } from './units.js'
+import { NATIVE_SET_ROLES, resolveRoleClass, resolveRoleName, normSetReps, isValidSetReps } from './set-roles.js'
 
 // How an exercise is logged (issue #16). This used to be derived from the body part alone,
 // which meant a plank or a farmer's carry could only be timed by filing it under cardio.
@@ -88,19 +89,47 @@ export function targetEffortLabel(v, kind) {
   return a === b ? `${name} ${fmtNum(a)}` : `${name} ${fmtNum(a)}–${fmtNum(b)}`
 }
 
-// Texto do card "Meta de hoje" (spec_meta_de_hoje): null quando o card não deve aparecer.
-export function targetSummary(entry, exUnit, effKind) {
+export function migrateLegacyRepRange(e) {
+  if (!e || repsRange(e.reps)) return null
+  const n = Number(e.reps)
+  const min = Number(e.repsMin)
+  const max = Number(e.repsMax)
+  if (min > 0 && max > min) return `${min}-${max}`
+  if (min > 0 && n > min) return `${min}-${n}`
+  return null
+}
+
+// Texto do card "Meta de hoje" (spec_meta_de_hoje + Entrega 2): null quando o card não deve aparecer.
+export function targetSummary(entry, exUnit, effKind, customSetRoles = []) {
   const tg = entry.target
   if (!tg || modeOf({ ...tg, id: entry.id }) !== 'reps') return null
+  const bw = isBw({ ...tg, id: entry.id })
+  if (Array.isArray(tg.setTargets) && tg.setTargets.length) {
+    const goalSets = tg.setTargets.filter(st => st?.goal === true && resolveRoleClass(st.role, customSetRoles) !== 'prep')
+    const hasMixed = tg.setTargets.some(st => (st.role && st.role !== 'work') || st.weight !== tg.setTargets[0]?.weight || String(st.reps ?? '') !== String(tg.setTargets[0]?.reps ?? '') || String(st.targetRir ?? '') !== String(tg.setTargets[0]?.targetRir ?? ''))
+    const fallbackSets = !goalSets.length ? tg.setTargets.filter(st => resolveRoleClass(st?.role, customSetRoles) !== 'prep') : []
+    const chosen = goalSets.length ? goalSets : fallbackSets.slice(0, 1)
+    if (!chosen.length) return null
+    const primary = chosen[0]
+    const repsVal = primary.reps != null ? primary.reps : tg.reps
+    const range = repsLabel({ reps: repsVal })
+    const eff = targetEffortLabel(primary.targetRir !== undefined ? primary.targetRir : (primary.role && primary.role !== 'work' ? undefined : tg.targetRir), effKind)
+    if (!hasMixed && !eff && !(range && range.includes('–'))) return null
+    const sets = chosen.length
+    const w = primary.weight ?? 0
+    const roleLabel = primary.role && primary.role !== 'work' ? resolveRoleName(primary.role, customSetRoles, t) : null
+    const load = w > 0 ? (bw ? '+' : '') + fmtNum(w) + ' ' + exUnit : bw ? t('Bodyweight') : null
+    const head = sets > 0 && range ? `${sets} × ${range}` : sets > 0 ? t('{0} sets', sets) : range
+    return { parts: [...(roleLabel ? [roleLabel] : []), head, load].filter(Boolean), eff }
+  }
   const range = repsLabel(tg)
   const eff = targetEffortLabel(tg.targetRir, effKind)
   if (!eff && !(range && range.includes('–'))) return null
-  // D4: o que a progressão decidiu para hoje vence; o resto vem da rotina.
-  const plan = entry.plan && entry.plan.kind !== 'off' ? entry.plan : {}
+  // Compatibilidade passiva apenas para treinos antigos gravados com entry.plan antes da Entrega 2.
+  const plan = !entry.setsTagged && entry.plan && entry.plan.kind !== 'off' ? entry.plan : {}
   const sets = plan.sets ?? tg.sets
   const w = plan.weight ?? tg.weight
   const reps = plan.reps != null ? String(plan.reps) : range
-  const bw = isBw({ ...tg, id: entry.id })
   const load = w > 0 ? (bw ? '+' : '') + fmtNum(w) + ' ' + exUnit : bw ? t('Bodyweight') : null
   const head = sets > 0 && reps ? `${sets} × ${reps}` : sets > 0 ? t('{0} sets', sets) : reps
   return { parts: [head, load].filter(Boolean), eff }
@@ -212,16 +241,24 @@ export function defaultConfig(id, mode) {
 }
 // One-line summary of a planned exercise ("3 × 10 · 60 kg"), shared by the routine editor
 // and the plan export so a mode is described the same way everywhere.
-export function exLine(cfg, unit) {
+export function exLine(cfg, unit, customSetRoles = []) {
   const mode = modeOf(cfg)
   const n = cfg.sets || 1
+  if (mode === 'reps' && Array.isArray(cfg.setTargets) && cfg.setTargets.length) {
+    const sum = targetSummary({ id: cfg.id, target: cfg }, unit, 'none', customSetRoles)
+    if (sum?.parts?.length) {
+      const extra = cfg.setTargets.filter(st => resolveRoleClass(st.role, customSetRoles) === 'prep').length
+      return sum.parts.join(' · ') + (extra > 0 ? ` (+${extra})` : '')
+    }
+  }
   // Added weight reads as added: "+10 kg" on a dip belt, "60 kg" on a barbell.
   const load = cfg.weight ? ' · ' + (isBw(cfg) ? '+' : '') + fmtNum(cfg.weight) + ' ' + unit : ''
   if (mode === 'cardio') return `${n} × ${cfg.min || 20} min @ ${fmtNum(cfg.speed || 8)} km/h`
   if (mode === 'time') return `${n} × ${fmtSec(cfg.sec || 45)}${load}`
   // This is the line with room for it, so the split is spelled out: "3 × 16 · 8/side".
+  const repsTxt = repsLabel(cfg) ?? String(cfg.reps ?? 10)
   const split = isPerSide(cfg) ? ' · ' + t('{0}/side', fmtNum(sideReps(cfg.reps))) : ''
-  return `${n} × ${cfg.reps}${load}${split}`
+  return `${n} × ${repsTxt}${load}${split}`
 }
 
 // Drop superset ids that no longer have an adjacent partner (after unlink/reorder/remove).
@@ -248,11 +285,16 @@ export function lastEntryFor(S, exId) {
 // nele, venceria a correcao (lib/workout-edit.js).
 export function bestEntryFor(S, exId, exclude) {
   let w = 0, d = null, src = null
+  const customRoles = S.customSetRoles || []
   ;(S.workouts || []).forEach(x => {
     if (exclude && x.id === exclude) return
     x.entries.forEach(e => {
       if (e.id !== exId) return
-      e.sets.forEach(s => { if (s.done && s.w > w) { w = s.w; d = x.d; src = x.id } })
+      e.sets.forEach(s => {
+        if (!s.done) return
+        if (resolveRoleClass(s.role, customRoles) === 'prep') return
+        if (s.w > w) { w = s.w; d = x.d; src = x.id }
+      })
       if (e.topW && e.topW > w) { w = e.topW; d = x.d; src = x.id }
     })
   })
@@ -304,19 +346,69 @@ export function buildSets(S, cfg) {
     }
     return sets
   }
-  const conf = S.exWeights[cfg.id]
-  // The routine is the prescription: what it states wins for both the load and the reps, and the
-  // notebook / last session are only suggestions for what it leaves blank. This is the opposite of
-  // the order this function used until 2026-09-10, where the notebook (one monotonically rising
-  // entry per exercise, shared by every routine) was consulted first and flattened every routine
-  // onto the heaviest weight ever lifted.
+  const conf = S.exWeights?.[cfg.id]
+  const customRoles = S.customSetRoles || []
+  const targetUnit = normUnit(cfg.unit ?? S.unit)
+  const convW = (s, eTarget) => {
+    if (!s || s.w == null) return null
+    const srcUnit = normUnit(s.wUnit ?? eTarget?.unit ?? S.unit)
+    return srcUnit === targetUnit ? Number(s.w) : fromKg(toKg(Number(s.w), srcUnit), targetUnit)
+  }
+
+  if (Array.isArray(cfg.setTargets) && cfg.setTargets.length > 0) {
+    const lastSets = (last ? last.sets : []).filter(s => s && s.r > 0)
+    const hasAnyRoleTag = lastSets.some(s => s.role != null)
+    const workCount = cfg.setTargets.filter(st => (st?.role || 'work') === 'work').length
+    const legacyWorkSlice = !hasAnyRoleTag && lastSets.length > workCount
+      ? lastSets.slice(-workCount)
+      : (!hasAnyRoleTag ? lastSets : null)
+    const byRole = new Map()
+    for (const ls of lastSets) {
+      const k = ls.role || 'work'
+      if (!byRole.has(k)) byRole.set(k, [])
+      byRole.get(k).push(ls)
+    }
+    const cursor = new Map()
+    for (const st of cfg.setTargets) {
+      const role = st?.role || 'work'
+      const baseClass = resolveRoleClass(role, customRoles)
+      const idx = cursor.get(role) ?? 0
+      cursor.set(role, idx + 1)
+      let prevSame = null
+      if (legacyWorkSlice && role === 'work') {
+        prevSame = legacyWorkSlice[idx] ?? legacyWorkSlice[legacyWorkSlice.length - 1] ?? null
+      } else {
+        const arr = byRole.get(role) || []
+        prevSame = arr.length ? (arr[idx] ?? arr[arr.length - 1]) : null
+      }
+      let w
+      if (st?.weight != null) {
+        w = Number(st.weight)
+      } else if (prevSame && prevSame.w != null) {
+        w = convW(prevSame, last?.target)
+      } else if (baseClass === 'standard' && (role === 'work' || !NATIVE_SET_ROLES.includes(role)) && conf && conf.w > 0) {
+        w = conf.w
+      } else {
+        w = 0
+      }
+      const tr = repFloor(st?.reps)
+      const r = tr > 0 ? tr : (prevSame ? prevSame.r : 10)
+      sets.push({ w, r, done: false, ...(role !== 'work' ? { role } : {}) })
+    }
+    return sets
+  }
+
+  const lastWorkSets = last
+    ? (last.sets.some(s => s.role != null)
+        ? last.sets.filter(s => resolveRoleClass(s.role, customRoles) !== 'prep')
+        : last.sets)
+    : []
+  const prevWorkAt = i => (lastWorkSets.length ? (lastWorkSets[i] || lastWorkSets[lastWorkSets.length - 1]) : null)
   const tplW = Number(cfg.weight) > 0 ? Number(cfg.weight) : null
   const defR = repFloor(cfg.reps)
   const tplR = defR > 0 ? defR : null
   for (let i = 0; i < n; i++) {
-    const prev = prevAt(i)
-    // `usable` needs reps > 0 on purpose: a timed set from last time must not seed reps work
-    // with its load (see history.test.js, "does not seed reps from a timed set...").
+    const prev = prevWorkAt(i)
     const usable = prev && prev.r > 0 ? prev : null
     const w = tplW != null ? tplW : (conf && conf.w > 0 ? conf.w : (usable ? usable.w : cfg.weight))
     const r = tplR != null ? tplR : (usable ? usable.r : defR)

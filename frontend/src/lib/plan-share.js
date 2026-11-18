@@ -9,7 +9,8 @@
 //     a page break — each exercise, and each routine that fits, stays in one place.
 
 import { EXIDX, isBodyweightEq } from './exercises.js'
-import { modeOf, fmtSec, isBw, isPerSide, sideReps, normTargetRir } from './history.js'
+import { modeOf, fmtSec, isBw, isPerSide, sideReps, normTargetRir, migrateLegacyRepRange, targetSummary, repsLabel } from './history.js'
+import { NATIVE_SET_ROLES, resolveRoleClass, isValidSetReps, normSetReps } from './set-roles.js'
 import { uid, todayISO, DAYN, fmtNum, exCount } from './format.js'
 import { t } from './i18n.js'
 import { unitOfCfg } from './units.js'
@@ -32,22 +33,30 @@ function cleanEx(e) {
     if (e.weight) o.weight = e.weight
     if (e.weight && e.unit) o.unit = e.unit          // BACKLOG-01: a unidade viaja com o peso
   } else {
-    if (e.reps != null) o.reps = e.reps
+    const migReps = migrateLegacyRepRange(e)
+    if (migReps) o.reps = migReps
+    else if (e.reps != null) o.reps = e.reps
     if (e.targetRir != null) o.targetRir = e.targetRir   // spec_meta_de_hoje: RIR alvo viaja com o plano
     if (e.weight) o.weight = e.weight
     if (e.weight && e.unit) o.unit = e.unit          // BACKLOG-01
+    if (Array.isArray(e.setTargets) && e.setTargets.length) {
+      o.setTargets = e.setTargets.map(st => {
+        const sOut = {}
+        // Custom role IDs sao locais do perfil; exporta papel nativo equivalente ou 'work'
+        if (st.role && NATIVE_SET_ROLES.includes(st.role) && st.role !== 'work') sOut.role = st.role
+        if (st.weight != null) sOut.weight = st.weight
+        if (st.reps != null) sOut.reps = st.reps
+        if (st.targetRir != null && resolveRoleClass(sOut.role) !== 'prep') sOut.targetRir = st.targetRir
+        if (st.goal === true && resolveRoleClass(sOut.role) !== 'prep') sOut.goal = true
+        return sOut
+      })
+    }
   }
   // How the exercise is logged travels too (issues #31/#32) — the bodyweight flag only when
   // it disagrees with the catalogue, since agreeing is what the other end already assumes.
   if (e.bodyweight != null && e.bodyweight !== isBodyweightEq(e.id)) o.bodyweight = e.bodyweight
   // Only on reps work — `side` counts reps, and a timed hold has none to split.
   if (e.side && mode !== 'time' && mode !== 'cardio') o.side = true
-  // Progression settings travel with the plan — a shared Greyskull routine that arrives
-  // without its rule is just a list of weights.
-  if (e.prog) o.prog = e.prog
-  if (e.inc > 0) o.inc = e.inc
-  if (e.repsMin != null) o.repsMin = e.repsMin
-  if (e.repsMax != null) o.repsMax = e.repsMax
   if (e.sg) o.sg = e.sg
   return o
 }
@@ -55,7 +64,7 @@ function cleanEx(e) {
 /** Build the shareable bundle: every routine, the week schedule, referenced customs. */
 export function buildPlanBundle(S, name) {
   const routines = (S.routines || []).map(r => ({
-    id: r.id, name: r.name, emoji: r.emoji, ...(r.prog ? { prog: r.prog } : {}), ex: (r.ex || []).map(cleanEx)
+    id: r.id, name: r.name, emoji: r.emoji, ex: (r.ex || []).map(cleanEx)
   }))
   const usedIds = new Set(routines.flatMap(r => r.ex.map(e => e.id)))
   const customEx = (S.customEx || [])
@@ -90,12 +99,33 @@ export function parsePlan(raw) {
       if (!ok) dropped++
       return ok
     }).map(e => {
-      // RIR alvo inválido não entra: senão todo PUT seguinte seria recusado com
-      // BAD_TARGET_RIR (spec_meta_de_hoje D15).
-      if (e.targetRir === undefined) return e
-      const { targetRir, ...rest } = e
-      const n = normTargetRir(targetRir)
-      return n === undefined ? rest : { ...rest, targetRir: n }
+      let out = { ...e }
+      if (out.targetRir !== undefined) {
+        const n = normTargetRir(out.targetRir)
+        if (n === undefined) delete out.targetRir
+        else out.targetRir = n
+      }
+      if (Array.isArray(out.setTargets)) {
+        if (modeOf(out) !== 'reps' || !out.setTargets.length) {
+          delete out.setTargets
+        } else {
+          out.setTargets = out.setTargets.map(st => {
+            const sOut = {}
+            if (st?.role && NATIVE_SET_ROLES.includes(st.role) && st.role !== 'work') sOut.role = st.role
+            if (st?.weight != null && Number.isFinite(Number(st.weight)) && Number(st.weight) >= 0) sOut.weight = Number(st.weight)
+            if (st?.reps != null && isValidSetReps(st.reps)) sOut.reps = normSetReps(st.reps)
+            const cls = resolveRoleClass(sOut.role)
+            if (cls !== 'prep' && st?.targetRir !== undefined) {
+              const nr = normTargetRir(st.targetRir)
+              if (nr !== undefined) sOut.targetRir = nr
+            }
+            if (cls !== 'prep' && st?.goal === true) sOut.goal = true
+            return sOut
+          })
+          out.sets = out.setTargets.length
+        }
+      }
+      return out
     })
   }))
   return {
@@ -135,7 +165,7 @@ export function mergePlan(s, bundle, { schedule } = {}) {
       id: nid,
       name: r.name || t('Shared routine'),
       emoji: r.emoji,
-      ...(r.prog ? { prog: r.prog } : {}),
+      
       ex: (r.ex || []).map(e => ({ ...e, id: exIdMap[e.id] || e.id }))
     })
   })
@@ -154,14 +184,19 @@ const esc = str => String(str == null ? '' : str)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 // One exercise's scheme, e.g. "3 × 10 · 60 kg", "3 × 0:45" or "2 × 20 min @ 8 km/h".
-function scheme(e, unit) {
+function scheme(e, unit, customSetRoles = []) {
   const sets = e.sets || 1
   const mode = modeOf(e)
   if (mode === 'cardio') {
     const body = `${e.min || 20} min @ ${fmtNum(e.speed || 8)} km/h`
     return sets > 1 ? `${sets} × ${body}` : body
   }
-  let s = mode === 'time' ? `${sets} × ${fmtSec(e.sec || 45)}` : `${sets} × ${e.reps ?? 10}`
+  if (mode === 'reps' && Array.isArray(e.setTargets) && e.setTargets.length) {
+    const ts = targetSummary({ id: e.id, target: e }, unit, 'none', customSetRoles)
+    if (ts?.parts?.length) return ts.parts.join(' · ')
+  }
+  const rTxt = repsLabel(e) ?? String(e.reps ?? 10)
+  let s = mode === 'time' ? `${sets} × ${fmtSec(e.sec || 45)}` : `${sets} × ${rTxt}`
   if (e.weight) s += ` · ${isBw(e) ? '+' : ''}${fmtNum(e.weight)} ${unit}`
   // A printed plan is read at the rack, so the split earns its four characters.
   if (mode !== 'time' && isPerSide(e)) s += ` · ${t('{0}/side', fmtNum(sideReps(e.reps ?? 10)))}`
@@ -187,7 +222,7 @@ function routineHTML(r, S) {
       const ex = EXIDX[e.id]
       const name = ex ? ex.n : t('Unknown exercise')
       const part = ex && ex.bp && ex.bp !== 'cardio' ? `<span class="part">${esc(ex.bp)}</span>` : ''
-      return `<div class="ex"><div class="ex-n">${esc(name)}${part}</div><div class="ex-s">${esc(scheme(e, unitOfCfg(e, S)))}</div></div>`
+      return `<div class="ex"><div class="ex-n">${esc(name)}${part}</div><div class="ex-s">${esc(scheme(e, unitOfCfg(e, S), S.customSetRoles))}</div></div>`
     }).join('')
     return u.length > 1
       ? `<div class="ss"><div class="ss-tag">${esc(t('Superset'))}</div><div class="ss-items">${items}</div></div>`

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
-import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, targetSummary } from '../lib/history.js'
+import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, targetSummary, targetEffortLabel, repsLabel } from '../lib/history.js'
+import { resolveRoleClass, resolveRoleName } from '../lib/set-roles.js'
 import { fmtNum, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
@@ -14,7 +15,6 @@ import { notesOf, applyNote } from '../lib/notes.js'
 import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Check, NumberField } from '../components/ui.jsx'
-import { nextPrescription, applyPrescription } from '../lib/progression.js'
 import { unitOfEntry } from '../lib/units.js'
 import { glyphOf } from '../lib/glyphs.js'
 import UnitChip from '../components/UnitChip.jsx'
@@ -106,8 +106,8 @@ function RestChip({ entry, onChange }) {
 // "3 × 8–12 · 180 kg · RIR 2". Só em exercício de reps que está na rotina de origem (D8).
 // Só aparece quando diz algo que as linhas de série não dizem: uma faixa de reps ou um RIR
 // alvo. Sem isso ("3 séries de 10") ele repetiria as linhas, então fica de fora.
-function TargetCard({ entry, exUnit, effKind, inRoutine, compact }) {
-  const sum = inRoutine ? targetSummary(entry, exUnit, effKind) : null
+function TargetCard({ entry, exUnit, effKind, inRoutine, compact, customSetRoles }) {
+  const sum = inRoutine ? targetSummary(entry, exUnit, effKind, customSetRoles) : null
   if (!sum) return null
   const sep = <i aria-hidden="true">·</i>
   return <div className={'tgcard' + (compact ? ' compact' : '')} aria-label={t("Today's target")}>
@@ -122,7 +122,7 @@ function TargetCard({ entry, exUnit, effKind, inRoutine, compact }) {
   </div>
 }
 
-function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet, onRemoveSet, onStartTimed }) {
+function ExerciseBlock({ entryIdx, compact, onToggle, onField, onSetRole, onNote, onAddSet, onRemoveSet, onStartTimed }) {
   const S = useStore(s => s.S)
   const working = useUI(s => s.work)
   const entry = S.active.entries[entryIdx]
@@ -133,7 +133,6 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
   const last = lastEntryFor(S, entry.id)
   // What the progression policy decided for this session, and why (issue #17). Computed when
   // the session was built so the reason matches the numbers already in the rows.
-  const plan = entry.plan
   // A bodyweight set has no weight to type, so the column is not there (issue #32) — one
   // stepper instead of two, which is the whole point of the flag. Adding a belt weight in the
   // config brings it back, now labelled as the addition it is.
@@ -170,12 +169,33 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
     const [main, extra] = setLabel(entry.id, p, last.target, S).split(' (')
     return <div className="prev">{main}{extra && <i>{extra.replace(/\)$/, '')}</i>}</div>
   }
+  const customRoles = S.customSetRoles || []
+  const effRoleAt = i => entry.sets[i]?.role ?? entry.target?.setTargets?.[i]?.role ?? 'work'
+  const isPrepAt = i => resolveRoleClass(effRoleAt(i), customRoles) === 'prep'
+  const hasMixedRoles = !cardio && !timed && (entry.sets.some(s => s.role && s.role !== 'work') || Boolean(entry.target?.setTargets?.length))
+  const bandMetaAt = i => {
+    const st = entry.target?.setTargets?.[i]
+    if (!st) return null
+    const parts = []
+    if (st.weight > 0) parts.push(`${bw ? '+' : ''}${fmtNum(st.weight)} ${exUnit}`)
+    const rl = repsLabel({ reps: st.reps ?? entry.target?.reps })
+    if (rl) parts.push(`× ${rl}`)
+    const ef = targetEffortLabel(st.targetRir, kind)
+    if (ef) parts.push(ef)
+    return parts.length ? parts.join(' ').replace(' × ', ' × ') : null
+  }
+  const bandSigAt = i => `${effRoleAt(i)}|${bandMetaAt(i) || ''}`
+  const showBandAt = i => hasMixedRoles && (i === 0 || bandSigAt(i) !== bandSigAt(i - 1))
+  const pickRoleFor = i => rolePickerSheet(effRoleAt(i), customRoles, r => onSetRole(i, r))
+
   const openEffort = (s, i, col) => useUI.getState().openSheet(close => <EffortSheet kind={col.eff} value={s[col.f]}
     start={entry.sets[i - 1]?.[col.f]} onSave={v => onField(i, col.f, v)} close={close} />)
   const cell = (s, i, col, cls) => col.eff ? (
-    <button className={'stp effcell ' + cls + (s[col.f] == null ? ' empty' : '')} onClick={() => openEffort(s, i, col)}>
-      {s[col.f] == null ? col.hd : fmtNum(s[col.f])}
-    </button>
+    isPrepAt(i)
+      ? <div className={'stp effcell prep-off ' + cls} aria-disabled="true">—</div>
+      : <button className={'stp effcell ' + cls + (s[col.f] == null ? ' empty' : '')} onClick={() => openEffort(s, i, col)}>
+          {s[col.f] == null ? col.hd : fmtNum(s[col.f])}
+        </button>
   ) : (
     <div className={'stp ' + cls}>
       <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''} scrollOnFocus
@@ -234,6 +254,7 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
             ? t('Unit saved for {0} — {1}', routineName, v)
             : t('Unit saved for this session — {0}', v))
       }} />
+      {!cardio && !timed && <button className="tag tap nocap" onClick={() => pickRoleFor(0)}><Icon name="tag" />{t('Roles')}</button>}
       <NoteChip onClick={() => openNote()} />
       <RestChip entry={entry} onChange={v=>{
   if(v!=null && !isValidRest(v)){
@@ -260,17 +281,25 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
 }} />
     </div>
     <NoteLines notes={notes} onOpen={openNote} />
-    {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
-      <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
-      <span>{t(...plan.why)}</span>
-    </div>}
     <TargetCard entry={entry} exUnit={exUnit} effKind={kind} compact={compact}
-      inRoutine={!!routineId && !entry.adhoc} />
+      inRoutine={!!routineId && !entry.adhoc} customSetRoles={customRoles} />
     <div className="card" style={{ marginTop: 10, marginBottom: 0 }}>
       {/* the header carries the same eff3 sizing as the rows, or the labels drift off their columns */}
       <div className={'sethead' + rowCls}><span className="n-sp" />{last && <span className="p-sp">{t('Previous')}</span>}<span className="w-sp">{col1.hd}</span>{col2 && <span className="r-sp">{col2.hd}</span>}{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
-      {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + rowCls}>
-        <div className="n">{i + 1}</div>
+      {entry.sets.map((s, i) => {
+        const role = effRoleAt(i)
+        const cls = resolveRoleClass(role, customRoles)
+        const meta = bandMetaAt(i)
+        return <div key={i}>
+          {showBandAt(i) && <div className="setband">
+            <button type="button" className={'sb-pill tap ' + (cls === 'prep' ? 'sb-prep' : cls === 'intensified' ? 'sb-int' : 'sb-std')}
+              onClick={() => pickRoleFor(i)}>
+              {resolveRoleName(role, customRoles, t)} <Icon name="chevronDown" style={{ width: 10, height: 10 }} />
+            </button>
+            {meta && <span className="sb-meta">{t('meta')}: {meta}</span>}
+          </div>}
+          <div className={'setrow' + (s.done ? ' done' : '') + rowCls}>
+            <button type="button" className="n tap-role" aria-label={t('Set role')} onClick={() => !cardio && !timed && pickRoleFor(i)}>{i + 1}</button>
         {last && prevCell(i)}
         {cell(s, i, col1, 'w')}
         {col2 && cell(s, i, col2, 'r')}
@@ -280,7 +309,8 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onNote, onAddSet,
         {timed && <button className="setgo" aria-label={t('Start set')} disabled={s.done || !!working}
           onClick={() => onStartTimed(i)}><Icon name="play" /></button>}
         <Check checked={s.done} onChange={() => onToggle(i)} />
-      </div>)}
+      </div></div>
+      })}
       <div style={{ height: 8 }} />
       <div className="row">
         <Button size="sm" icon="minus" disabled={entry.sets.length <= 1} onClick={onRemoveSet}>{t('Remove set')}</Button>
@@ -315,6 +345,12 @@ function ActiveWorkout() {
   const setField = (idx, i, field, v) => mutEntry(idx, e => {
     if (v == null) delete e.sets[i][field]; else e.sets[i][field] = v
   })
+  const setRole = (idx, i, role) => mutEntry(idx, e => {
+    e.setsTagged = true
+    const prescribedRole = e.target?.setTargets?.[i]?.role ?? 'work'
+    if (role === 'work' && prescribedRole === 'work') delete e.sets[i].role
+    else e.sets[i].role = role
+  })
   // The workout note goes the same path as setField; applyNote trims, caps at NOTE_MAX and drops
   // the key when empty.
   const setNote = (idx, text) => mutEntry(idx, e => { applyNote(null, { entry: e }, 'workout', text) })
@@ -324,7 +360,7 @@ function ActiveWorkout() {
     const m = modeOf({ ...(e.target || {}), id: e.id })
     if (m === 'cardio') e.sets.push({ min: l ? l.min : (e.target.min || 20), speed: l ? l.speed : (e.target.speed || 8), done: false })
     else if (m === 'time') e.sets.push({ sec: l ? l.sec : (e.target.sec || 45), w: l ? (l.w || 0) : (e.target.weight || 0), done: false })
-    else e.sets.push({ w: l ? l.w : 0, r: l ? l.r : e.target.reps, done: false })
+    else e.sets.push({ w: l ? l.w : 0, r: l ? l.r : (e.target.reps || 10), done: false, ...(l?.role ? { role: l.role } : {}) })
   })
   const removeSet = idx => mutEntry(idx, e => { if (e.sets.length > 1) e.sets.pop() })
 
@@ -345,13 +381,21 @@ function ActiveWorkout() {
           const e = s.active?.entries[idx]
           // A sessao pode ter mudado com o picker aberto: so troca se ainda for a mesma entrada.
           if (!e || e.id !== oldId) return
-          const sameKind = modeOf({ ...(e.target || {}), id: e.id }) === modeOf({ id: ex.id })
-          const keep = sameKind ? ['mode', 'sets', 'reps', 'repsMin', 'repsMax', 'sec', 'min', 'speed', 'targetRir'] : []
+          const newMode = modeOf({ id: ex.id })
+          const sameKind = modeOf({ ...(e.target || {}), id: e.id }) === newMode
+          const keep = sameKind ? ['mode', 'sets', 'reps', 'sec', 'min', 'speed', 'targetRir'] : []
           const carried = Object.fromEntries(keep.filter(k => (e.target || {})[k] != null).map(k => [k, e.target[k]]))
-          const target = { ...defaultConfig(ex.id), sets: e.sets.length, ...carried }
+          const def = defaultConfig(ex.id)
+          const target = { ...def, sets: e.sets.length, ...carried }
+          if (sameKind) {
+            target.weight = 0
+            if (newMode === 'reps' && Array.isArray(e.target?.setTargets)) {
+              target.setTargets = e.target.setTargets.map(st => ({ ...st, weight: 0 }))
+              target.sets = target.setTargets.length
+            }
+          }
           const full = { ...target, id: ex.id }
-          const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
-          const next = { id: ex.id, target, plan, sets: applyPrescription(buildSets(s, full), plan) }
+          const next = { id: ex.id, target, setsTagged: true, sets: buildSets(s, full) }
           if (e.sg) next.sg = e.sg
           // Um avulso trocado continua avulso: não ganha o card "Meta de hoje" (spec_meta_de_hoje D8).
           if (e.adhoc) next.adhoc = true
@@ -422,7 +466,7 @@ function ActiveWorkout() {
               askTop = true
             } else {
               // B: auto-save silencioso sem modal — o maior peso do dia vira default da próxima vez
-              const maxSet = Math.max(0, ...e.sets.filter(x => x.done).map(x => x.w || 0))
+              const maxSet = Math.max(0, ...e.sets.filter(x => x.done && resolveRoleClass(x.role, s.customSetRoles) !== 'prep').map(x => x.w || 0))
               if (maxSet > 0) {
                 // `src` diz de qual treino veio o melhor peso: sem ele, uma edicao posterior nao
                 // consegue saber se o valor guardado veio do treino que esta sendo corrigido.
@@ -485,11 +529,11 @@ function ActiveWorkout() {
           {unit.map((idx, k) => <div key={idx} className="ss-ex">
             {k > 0 && <div className="ss-amp">+</div>}
             <ExerciseBlock entryIdx={idx} compact
-              onToggle={i => toggle(idx, i)} onField={(i, f, v) => setField(idx, i, f, v)} onNote={text => setNote(idx, text)} onAddSet={() => addSet(idx)} onRemoveSet={() => removeSet(idx)} onStartTimed={i => startTimed(idx, i)} />
+              onToggle={i => toggle(idx, i)} onField={(i, f, v) => setField(idx, i, f, v)} onSetRole={(i, r) => setRole(idx, i, r)} onNote={text => setNote(idx, text)} onAddSet={() => addSet(idx)} onRemoveSet={() => removeSet(idx)} onStartTimed={i => startTimed(idx, i)} />
           </div>)}
         </div>
       ) : (
-        <ExerciseBlock entryIdx={cur} onToggle={i => toggle(cur, i)} onField={(i, f, v) => setField(cur, i, f, v)} onNote={text => setNote(cur, text)} onAddSet={() => addSet(cur)} onRemoveSet={() => removeSet(cur)} onStartTimed={i => startTimed(cur, i)} />
+        <ExerciseBlock entryIdx={cur} onToggle={i => toggle(cur, i)} onField={(i, f, v) => setField(cur, i, f, v)} onSetRole={(i, r) => setRole(cur, i, r)} onNote={text => setNote(cur, text)} onAddSet={() => addSet(cur)} onRemoveSet={() => removeSet(cur)} onStartTimed={i => startTimed(cur, i)} />
       )}
     </> : <div className="empty"><div className="ico"><Icon name="shuffle" /></div>{t('Freestyle workout — add your first exercise.')}</div>}
 
@@ -498,8 +542,7 @@ function ActiveWorkout() {
       <Button icon="chevronLeft" disabled={unitIdx <= 0} onClick={() => update(s => { s.active.cur = units[unitIdx - 1][0] })}>{t('Prev')}</Button>
       <Button onClick={() => exercisePicker(ex => exConfigSheet(ex, null, cfg => update(s => {
         const full = { ...cfg, id: ex.id }
-        const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
-        s.active.entries.push({ id: ex.id, adhoc: true, target: { ...cfg }, plan, sets: applyPrescription(buildSets(s, full), plan) })
+        s.active.entries.push({ id: ex.id, adhoc: true, target: { ...cfg }, setsTagged: true, sets: buildSets(s, full) })
         s.active.cur = s.active.entries.length - 1
       }), null, S.routines.find(r => r.id === A.routineId)), S.active.entries.map(e => e.id))} icon="plus" className="mid">{t('Add exercise')}</Button>
       {A.entries.length > 0 && <Button onClick={swapCurrent} icon="shuffle" className="mid">{t('Swap exercise')}</Button>}

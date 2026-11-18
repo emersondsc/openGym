@@ -125,6 +125,7 @@ const P = {
   // Paleta: a forma fechada com o vao do polegar e tres pastilhas. So traco, como o resto do
   // set - as pastilhas sao circulos de contorno, nao pontos cheios, para o icone nao ficar
   // mais pesado que os vizinhos na mesma linha de Settings.
+  tag: <><path d="M12.2 4.2H6.4A2.2 2.2 0 0 0 4.2 6.4v5.8l7.6 7.6a2.1 2.1 0 0 0 3 0l5-5a2.1 2.1 0 0 0 0-3Z" /><circle cx="8.4" cy="8.4" r="1.1" fill="currentColor" stroke="none" /></>,
   palette: <><path d="M12 3.6a8.4 8.4 0 0 0 0 16.8c1.2 0 2-.8 2-1.8 0-.5-.2-.9-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8h1.5a3.3 3.3 0 0 0 3.3-3.3c0-3.9-3.4-7.4-7.6-7.4Z" /><circle cx="8.6" cy="11.4" r="1.1" /><circle cx="12" cy="8.4" r="1.1" /><circle cx="15.6" cy="11.4" r="1.1" /></>,
 }
 

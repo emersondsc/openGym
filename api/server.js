@@ -20,6 +20,7 @@ import * as proposals from './proposals.js';
 import * as coachLink from './coach-link.js';
 import * as coachAccess from './coach-access.js';
 import * as diet from './diet.js';
+import { sanitizeRoutineEntry, validateCustomSetRoles } from './set-roles.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -102,6 +103,8 @@ function checkState(s) {
     const bad = checkMesos(s.mesos);
     if (bad) return bad;
   }
+  const badRoles = validateCustomSetRoles(s.customSetRoles);
+  if (badRoles) return badRoles;
   if (badNote(s)) return NOTE_ERR;
   return null;
 }
@@ -884,6 +887,12 @@ const routes = {
     let cur;
     try { cur = readStateStrict(user.id); }
     catch (e) { return stateCorrupt(res, user.id, e); }
+    const allCustomRoles = [...(cur?.customSetRoles || []), ...(body.state.customSetRoles || [])];
+    for (const r of body.state.routines || []) {
+      for (const e of r?.ex || []) {
+        sanitizeRoutineEntry(e, allCustomRoles, { isValidTargetRir: routines.isValidTargetRir, normTargetRir: routines.normTargetRir });
+      }
+    }
     const badEx = checkRoutineFields(body.state, cur);
     if (badEx) {
       console.log(`[og-state] op=put-rejected uid=${user.id} reason=invalid code=${badEx.code}`);

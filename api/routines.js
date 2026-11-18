@@ -42,6 +42,7 @@ const AUDIT_TAIL = 64 * 1024;     // o bastante para achar a última linha sem l
 // `export { … } from './catalog.js'` NÃO cria binding local — só re-exportar daria ReferenceError
 // em toda escrita de rotina.
 import { loadCatalog, __resetCatalogCache, catalogEq } from './catalog.js';
+import { normSetTargetsEntry, resolveRoleClass, validateSetTargets } from './set-roles.js';
 export { loadCatalog, __resetCatalogCache, catalogEq };
 export { CATALOG_PATH, CATALOG_EXPECTED } from './catalog.js';
 
@@ -83,8 +84,8 @@ export function defaultExFields(eid, mode, eq) {
 /** Trocar de modo remove os campos do modo anterior (espelha exConfigSheet, sheets.jsx:512-523). */
 export function stripCrossModeFields(e, mode) {
   const o = { ...e };
-  if (mode === 'time') { delete o.reps; delete o.min; delete o.speed; delete o.repsMin; delete o.repsMax; delete o.targetRir; }
-  else if (mode === 'cardio') { for (const k of ['reps', 'sec', 'repsMin', 'repsMax', 'prog', 'inc', 'targetRir']) delete o[k]; }
+  if (mode === 'time') { delete o.reps; delete o.min; delete o.speed; delete o.repsMin; delete o.repsMax; delete o.targetRir; delete o.setTargets; }
+  else if (mode === 'cardio') { for (const k of ['reps', 'sec', 'repsMin', 'repsMax', 'prog', 'inc', 'targetRir', 'setTargets']) delete o[k]; }
   else { delete o.sec; delete o.min; delete o.speed; }
   return o;
 }
@@ -190,6 +191,12 @@ export function validateExEntry(e, opt = {}) {
     return bad('MODE_CARDIO_INCOMPLETE', 'min', 'mode "cardio" requires min and speed');
   }
   if (e.side === true && mode === 'time') return bad('SIDE_ON_TIME', 'side', 'side only applies to reps work');
+  if (e.setTargets !== undefined) {
+    const badSt = validateSetTargets(e, opt.customRoles || [], {
+      where, strictRoles: Array.isArray(opt.customRoles), isValidTargetRir
+    });
+    if (badSt) return badSt;
+  }
   return null;
 }
 
@@ -222,7 +229,7 @@ export function validateRoutineBody(body) {
  * O merge é SOBRE o item existente: o que a intenção não cita não muda (nem é normalizado).
  */
 export const NOTE_READ_ONLY_MSG = 'note is written by the user in the app; the coach can read it but not change it';
-export function mergeRoutine(cur, body, catalog, custom) {
+export function mergeRoutine(cur, body, catalog, custom, customRoles = null) {
   if (!Array.isArray(cur.ex)) cur.ex = [];      // o PUT aceita rotina sem `ex`
   if (body.exRemoved !== undefined) {
     for (const id of body.exRemoved) {
@@ -251,15 +258,32 @@ export function mergeRoutine(cur, body, catalog, custom) {
       const effective = mode === 'normal' ? 'reps' : mode;
       const base = target ? { ...target } : defaultExFields(eid, effective, meta.eq);
       const merged = stripCrossModeFields({ ...base, ...fields, id: eid }, effective);
+      if (fields.setTargets === null) delete merged.setTargets;
+      else if (Array.isArray(fields.setTargets) && effective === 'reps') {
+        if (fields.sets === undefined) merged.sets = fields.setTargets.length;
+        merged.setTargets = fields.setTargets.map((st, idx) => {
+          if (!st || typeof st !== 'object' || Array.isArray(st)) return st;
+          const prevSt = target?.setTargets?.[idx];
+          const nextSt = { ...st };
+          const cls = resolveRoleClass(nextSt.role, customRoles || []);
+          if (nextSt.targetRir === undefined && prevSt?.targetRir !== undefined && cls !== 'prep') {
+            nextSt.targetRir = prevSt.targetRir;
+          } else if (nextSt.targetRir === null) {
+            delete nextSt.targetRir;
+          }
+          return nextSt;
+        });
+      }
       // spec_meta_de_hoje: null apaga o RIR alvo; o valor gravado vem sem espaços.
       if (merged.targetRir === null) delete merged.targetRir;
       else if (merged.targetRir !== undefined && isValidTargetRir(merged.targetRir)) merged.targetRir = normTargetRir(merged.targetRir);
       const modeChanged = !target || ((declared ?? target.mode) !== target.mode);
       const bad = validateExEntry(merged, {
-        catalog, custom, where: `ex.${eid}`,
+        catalog, custom, ...(Array.isArray(customRoles) ? { customRoles } : {}), where: `ex.${eid}`,
         legacy: { mode: target?.mode, sg: target?.sg }, modeChanged, isNewEntry: !target
       });
       if (bad) return { ...bad, error: bad.message };
+      if (Array.isArray(merged.setTargets)) normSetTargetsEntry(merged, customRoles || [], { isValidTargetRir, normTargetRir });
       if (target) {
         for (const k of Object.keys(target)) if (!(k in merged)) delete target[k];   // troca de modo
         Object.assign(target, merged, { id: eid });
@@ -293,7 +317,8 @@ export function applyRoutinePatch(S, rid, body, catalog) {
   if (body.emoji !== undefined) cur.emoji = String(body.emoji).slice(0, 32);
   if (body.prog !== undefined) cur.prog = body.prog;
   const custom = new Set((S.customEx || []).map(c => c.id));
-  const out = mergeRoutine(cur, body, catalog, custom);
+  const customRoles = S.customSetRoles || [];
+  const out = mergeRoutine(cur, body, catalog, custom, customRoles);
   if (out) return out;
   return { _meta: { routines: [rid] } };
 }

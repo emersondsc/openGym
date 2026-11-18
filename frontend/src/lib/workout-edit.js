@@ -8,6 +8,7 @@
 // React (workout-edit.test.js). As funções de mescla, no fim do arquivo, também vivem aqui pelo
 // mesmo motivo: dentro do store elas seriam fechamento, e o projeto testa store lendo o texto.
 import { bestEntryFor, workoutVolume, repFloor } from './history.js'
+import { resolveRoleClass, MAX_ACTIVE_CUSTOM_ROLES, MAX_TOTAL_CUSTOM_ROLES } from './set-roles.js'
 
 const clone = o => JSON.parse(JSON.stringify(o))
 
@@ -40,7 +41,7 @@ export const setShape = (mode, prev, cfg = {}) => {
 // Compara séries CAMPO A CAMPO. `JSON.stringify` depende da ORDEM das chaves, e editar um valor
 // (apagar e redigitar) reordena o objeto: um exercício intocado passaria a contar como "mexido" e
 // perderia o `topW` confirmado à mão.
-const SET_FIELDS = ['w', 'r', 'sec', 'min', 'speed', 'rir', 'rpe', 'wUnit', 'done']
+const SET_FIELDS = ['w', 'r', 'sec', 'min', 'speed', 'rir', 'rpe', 'wUnit', 'done', 'role']
 const sameSets = (a, b) =>
   a.length === b.length && a.every((s, i) => SET_FIELDS.every(f => (s[f] ?? null) === (b[i][f] ?? null)))
 
@@ -107,7 +108,7 @@ export function applyWorkoutEdit(S, id, draft) {
         id: e.id,
         sets: e.sets.map(cleanSet),
         topW: touched.has(e.id)
-          ? (Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0)) || null)
+          ? (Math.max(0, ...e.sets.filter(s => s.done && resolveRoleClass(s.role, S.customSetRoles) !== 'prep').map(s => s.w || 0)) || null)
           : (e.topW ?? null),
         target: e.target || null,
         ...(e.note ? { note: e.note } : {})
@@ -127,7 +128,7 @@ export function applyWorkoutEdit(S, id, draft) {
   const others = { ...S, workouts: (S.workouts || []).filter(x => x.id !== id) }
   w.prs = entries
     .filter(e => {
-      const mx = Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0))
+      const mx = Math.max(0, ...e.sets.filter(s => s.done && resolveRoleClass(s.role, S.customSetRoles) !== 'prep').map(s => s.w || 0))
       return mx > 0 && mx > bestEntryFor(others, e.id).w
     })
     .map(e => e.id)
@@ -145,8 +146,8 @@ export function applyWorkoutEdit(S, id, draft) {
   ids.forEach(exId => {
     const e = entries.find(x => x.id === exId)
     const oldE = beforeById.get(exId)
-    const oldMx = Math.max(0, ...((oldE && oldE.sets) || []).filter(s => s.done).map(s => s.w || 0), (oldE && oldE.topW) || 0)
-    const mx = e ? Math.max(0, ...e.sets.filter(s => s.done).map(s => s.w || 0), e.topW || 0) : 0
+    const oldMx = Math.max(0, ...((oldE && oldE.sets) || []).filter(s => s.done && resolveRoleClass(s.role, S.customSetRoles) !== 'prep').map(s => s.w || 0), (oldE && oldE.topW) || 0)
+    const mx = e ? Math.max(0, ...e.sets.filter(s => s.done && resolveRoleClass(s.role, S.customSetRoles) !== 'prep').map(s => s.w || 0), e.topW || 0) : 0
     const cur = exWeights[exId]
     if (mx > 0 && (!cur || mx > cur.w)) { exWeights[exId] = { w: mx, d: w.d, src: id }; return }
     if (!cur || mx >= cur.w) return
@@ -225,4 +226,26 @@ export function mergeExWeights(serverEW, localEW, mark) {
     else delete out[exId]
   })
   return out
+}
+
+
+export function mergeCustomSetRoles(serverRoles, localRoles) {
+  const byId = new Map()
+  const add = r => {
+    if (!r || !r.id) return
+    const prev = byId.get(r.id)
+    if (!prev) { byId.set(r.id, { ...r }); return }
+    const deleted = !!(prev.deleted || r.deleted)
+    byId.set(r.id, { ...r, ...(deleted ? { deleted: true } : {}) })
+  }
+  ;(serverRoles || []).forEach(add)
+  ;(localRoles || []).forEach(add)
+  const list = [...byId.values()]
+  let active = 0
+  const capped = []
+  for (const r of list) {
+    if (r.deleted) { capped.push(r); continue }
+    if (active < MAX_ACTIVE_CUSTOM_ROLES) { capped.push(r); active++ }
+  }
+  return capped.slice(-MAX_TOTAL_CUSTOM_ROLES)
 }

@@ -21,6 +21,7 @@ import {
   validateExEntry, defaultExFields, stripCrossModeFields, loadCatalog, PROG_ALLOWED, CATALOG_PATH, NOTE_READ_ONLY_MSG,
   isValidTargetRir, normTargetRir
 } from './routines.js';
+import { normSetTargetsEntry, resolveRoleClass } from './set-roles.js';
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;        // igual ao PATTERNS do server.js
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -231,7 +232,7 @@ function effectiveMode(raw, before, meta) {
  * routines.js é o validador do PATCH (merge, `ex` chaveado por id) e recusaria este payload (B1).
  * O legado do estado vivo (`mode:"normal"`, `sg:0`) é aceito e normalizado (A5d).
  */
-export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) {
+export function validatePublish(body, catalog, custom, hoje, prevRoutines = [], customRoles = null) {
   const bad = (code, field, message, allowed) => ({ error: message, code, field, ...(allowed ? { allowed } : {}) });
   if (!body || typeof body !== 'object' || Array.isArray(body)) return bad('BAD_BODY', null, 'body must be an object');
   if (typeof body.meso_id !== 'string' || !MESO_RE.test(body.meso_id)) {
@@ -279,13 +280,28 @@ export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) 
         return bad('NOTE_READ_ONLY', `${exWhere}.note`, NOTE_READ_ONLY_MSG);
       }
       // Defaults do app antes de validar, com o modo efetivo e o `eq` do catálogo (M17).
+      const prevItem = prevEx.get(raw.id) || {};
       const meta = catalog ? (catalog.get(raw.id) || {}) : {};
-      const mode = effectiveMode(raw, prevEx.get(raw.id) || {}, meta);
-      const filled = stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...raw, id: raw.id, mode }, mode);
+      const mode = effectiveMode(raw, prevItem, meta);
+      const rawNorm = raw.setTargets === null ? { ...raw, setTargets: undefined }
+        : (Array.isArray(raw.setTargets) && raw.sets === undefined && mode === 'reps'
+            ? { ...raw, sets: raw.setTargets.length } : raw);
+      const filled = stripCrossModeFields({ ...defaultExFields(raw.id, mode, meta.eq), ...rawNorm, id: raw.id, mode }, mode);
+      if (raw.setTargets === null) delete filled.setTargets;
+      if (raw.setTargets === undefined && prevItem.setTargets && raw.sets !== undefined && raw.sets !== prevItem.setTargets.length && mode === 'reps') {
+        return bad('BAD_SET_TARGETS', `${exWhere}.setTargets`, 'sets changed while preserving setTargets; pass explicit setTargets or setTargets: null');
+      }
+      if (Array.isArray(filled.setTargets) && mode === 'reps') {
+        filled.setTargets = filled.setTargets.map(st => (st && typeof st === 'object' && st.targetRir === null
+          ? Object.fromEntries(Object.entries(st).filter(([k]) => k !== 'targetRir')) : st));
+      }
       // `sg: 0` e `sg: ""` são o marcador de "sem superset" do estado antigo: some antes de validar,
       // senão `isNewEntry` os leria como legado INTRODUZIDO e recusaria (A5d).
       if (filled.sg === 0 || filled.sg === '') delete filled.sg;
-      const v = validateExEntry(filled, { catalog, custom, where: exWhere, modeChanged: true, isNewEntry: true });
+      const v = validateExEntry(filled, {
+        catalog, custom, ...(Array.isArray(customRoles) ? { customRoles } : {}),
+        where: exWhere, modeChanged: true, isNewEntry: true
+      });
       if (v) return { ...v, error: v.message };
     }
     if (r.dias !== undefined) {
@@ -335,7 +351,7 @@ export function validatePublish(body, catalog, custom, hoje, prevRoutines = []) 
  * (A5d) e o `prog` preservado quando o payload não declara (A5b). Campos desconhecidos no nível da
  * rotina que já existia são preservados — nada do usuário é jogado fora por não estar no schema.
  */
-export function materializeRoutine(r, catalog, prev) {
+export function materializeRoutine(r, catalog, prev, customRoles = []) {
   const prevEx = new Map((((prev || {}).ex) || []).map(e => [e.id, e]));
   const ex = r.ex.map(raw => {
     const meta = catalog ? (catalog.get(raw.id) || {}) : {};
@@ -350,10 +366,32 @@ export function materializeRoutine(r, catalog, prev) {
     // spec_meta_de_hoje U2: publicar sem citar o RIR alvo mantém o que estava (só em reps, como o
     // stripCrossModeFields); null apaga; o valor gravado vem sem espaços. Vale para a proposta e
     // para a publicação direta, que passam as duas por aqui.
-    const prevRir = (prevEx.get(raw.id) || {}).targetRir;
+    const prevItem = prevEx.get(raw.id) || {};
+    const prevRir = prevItem.targetRir;
     if (raw.targetRir === undefined && prevRir !== undefined && mode === 'reps') merged.targetRir = prevRir;
     else if (merged.targetRir === null) delete merged.targetRir;
+    if (raw.setTargets === null) {
+      delete merged.setTargets;
+    } else if (raw.setTargets === undefined && Array.isArray(prevItem.setTargets) && mode === 'reps'
+               && (raw.sets === undefined || raw.sets === prevItem.setTargets.length)) {
+      merged.setTargets = JSON.parse(JSON.stringify(prevItem.setTargets));
+    } else if (Array.isArray(raw.setTargets) && mode === 'reps') {
+      if (raw.sets === undefined) merged.sets = raw.setTargets.length;
+      merged.setTargets = raw.setTargets.map((st, idx) => {
+        if (!st || typeof st !== 'object') return st;
+        const pSt = prevItem.setTargets?.[idx];
+        const nextSt = { ...st };
+        const cls = resolveRoleClass(nextSt.role, customRoles);
+        if (nextSt.targetRir === undefined && pSt?.targetRir !== undefined && cls !== 'prep') {
+          nextSt.targetRir = pSt.targetRir;
+        } else if (nextSt.targetRir === null) {
+          delete nextSt.targetRir;
+        }
+        return nextSt;
+      });
+    }
     else if (merged.targetRir !== undefined && isValidTargetRir(merged.targetRir)) merged.targetRir = normTargetRir(merged.targetRir);
+    if (Array.isArray(merged.setTargets)) normSetTargetsEntry(merged, customRoles, { isValidTargetRir, normTargetRir });
     return merged;
   });
   cleanupSg(ex);
@@ -396,7 +434,7 @@ export function applyPublish(S, body, catalog) {
   const criadas = [], trocadas = [], progAntes = {}, progDepois = {};
   for (const pub of body.routines) {
     const i = list.findIndex(x => x.id === pub.id);
-    const mat = materializeRoutine(pub, catalog, i >= 0 ? list[i] : null);
+    const mat = materializeRoutine(pub, catalog, i >= 0 ? list[i] : null, S.customSetRoles || []);
     if (i < 0) { list.push(mat); criadas.push(pub.id); } else {
       progAntes[pub.id] = list[i].prog ?? null;
       list[i] = mat;
@@ -475,7 +513,7 @@ export function makeHandlers(deps) {
     const custom = new Set((S0.customEx || []).map(c => c.id));
     const hoje = todaySP();
 
-    const bad = validatePublish(body, catalog, custom, hoje, S0.routines || []);
+    const bad = validatePublish(body, catalog, custom, hoje, S0.routines || [], S0.customSetRoles || []);
     if (bad) return json(res, 400, bad);
 
     const { datas } = findConflicts(S0, body);

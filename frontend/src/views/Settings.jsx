@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { ACCENTS, SKINS, skinOf, effAccent, todayISO, localTZ, fmtDate } from '../lib/format.js'
+import { ACCENTS, SKINS, skinOf, effAccent, todayISO, localTZ, fmtDate, uid } from '../lib/format.js'
+import { NATIVE_SET_ROLES, ROLE_NAME_KEY, BASE_CLASS_OF_NATIVE, MAX_ACTIVE_CUSTOM_ROLES, MAX_ROLE_NAME } from '../lib/set-roles.js'
 import { effortOf } from '../lib/history.js'
 import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID, deviceName, listPasskeys, passkeyAddStart, passkeyAddFinish, passkeyRemove } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
@@ -153,6 +154,8 @@ export default function Settings() {
       </Row>
     </Section>
 
+    <SetRolesSection S={S} update={update} toast={toast} />
+
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 
     {/* ---------- appearance ---------- */}
@@ -252,7 +255,7 @@ function effortHelpSheet() {
     </div>
     <div className="dim small" style={{ lineHeight: 1.5, display: 'grid', gap: 8 }}>
       <div>{t('RIR counts the reps you left; RPE reads the same effort off a 10-point scale — so RPE ≈ 10 − RIR. Pick the one you already think in.')}</div>
-      <div>{t('The highlighted row is where most working sets land. Sets you have already logged keep their own scale, and nothing else reads the value — progression and estimated 1RM are unaffected.')}</div>
+      <div>{t('The highlighted row is where most working sets land. Sets you have already logged keep their own scale, and nothing else reads the value — estimated 1RM is unaffected.')}</div>
     </div>
     <div style={{ height: 8 }} />
   </>)
@@ -437,4 +440,111 @@ function RegisterInline({ close, setUser, pushState, pullState, toast }) {
     </>}
     <div style={{ height: 12 }} /><Button variant="primary" onClick={go}>{t('Create passkey')}</Button>
   </>
+}
+
+
+const CLASS_LABEL = {
+  prep: 'Prep',
+  standard: 'Standard work',
+  intensified: 'Intensified work'
+}
+const CLASS_DESC = {
+  prep: 'Excluded from volume, RIR adherence, e1RM, and PRs. RIR input stays off.',
+  standard: 'Counts 1.0 toward volume (if RIR <= 3), adherence, e1RM, and PRs.',
+  intensified: 'Counts 1.0 toward volume (if RIR <= 3) and RIR adherence; excluded from e1RM.'
+}
+
+function SetRoleSheet({ existing, S, update, toast, close }) {
+  const [name, setName] = useState(existing?.name || '')
+  const [baseClass, setBaseClass] = useState(existing?.baseClass || 'standard')
+  const isNew = !existing
+
+  const save = () => {
+    const clean = name.trim().slice(0, MAX_ROLE_NAME)
+    if (!clean) { toast(t('Enter a role name')); return }
+    const active = (S.customSetRoles || []).filter(r => !r.deleted)
+    if (isNew && active.length >= MAX_ACTIVE_CUSTOM_ROLES) {
+      toast(t('Maximum of {0} custom roles reached', MAX_ACTIVE_CUSTOM_ROLES)); return
+    }
+    update(s => {
+      s.customSetRoles = s.customSetRoles || []
+      if (isNew) {
+        s.customSetRoles.push({ id: 'cr_' + uid(), name: clean, baseClass })
+      } else {
+        const item = s.customSetRoles.find(x => x.id === existing.id)
+        if (item) item.name = clean
+      }
+    })
+    close()
+  }
+
+  const remove = () => {
+    const usedRoutines = (S.routines || []).filter(r => (r.ex || []).some(e => Array.isArray(e.setTargets) && e.setTargets.some(st => st.role === existing.id)))
+    const doDelete = () => {
+      update(s => {
+        for (const r of s.routines || []) {
+          for (const e of r.ex || []) {
+            if (!Array.isArray(e.setTargets)) continue
+            for (const st of e.setTargets) if (st.role === existing.id) delete st.role
+          }
+        }
+        const item = (s.customSetRoles || []).find(x => x.id === existing.id)
+        if (item) item.deleted = true
+      })
+      close()
+    }
+    if (usedRoutines.length) {
+      close()
+      confirmSheet({
+        title: t('Delete role?'),
+        message: t('This role is used in {0} routine(s) and will become Working.', usedRoutines.length),
+        confirmText: t('Delete'), danger: true, onConfirm: doDelete
+      })
+    } else doDelete()
+  }
+
+  return <>
+    <h3>{isNew ? t('Add role') : t('Edit role')}</h3>
+    <div style={{ marginBottom: 14 }}>
+      <div className="muted small" style={{ marginBottom: 6 }}>{t('Role name')}</div>
+      <TextField maxLength={MAX_ROLE_NAME} value={name} onChange={e => setName(e.target.value)} placeholder={t('e.g. Drop-set, Top Set')} autoFocus />
+    </div>
+    <div style={{ marginBottom: 16 }}>
+      <div className="muted small" style={{ marginBottom: 6 }}>{t('Accounting class')}{!isNew ? ` · ${t('locked after creation')}` : ''}</div>
+      <div className="sect-b">
+        {['prep', 'standard', 'intensified'].map(cls => {
+          const on = baseClass === cls
+          return <button key={cls} type="button" className="lrow tap" disabled={!isNew && !on}
+            style={{ opacity: !isNew && !on ? .45 : 1 }}
+            onClick={() => isNew && setBaseClass(cls)}>
+            <span className="lrow-m">
+              <span className="lrow-t">{t(CLASS_LABEL[cls])}</span>
+              <span className="lrow-s">{t(CLASS_DESC[cls])}</span>
+            </span>
+            {on && <Icon name="check" className="lrow-k" />}
+          </button>
+        })}
+      </div>
+    </div>
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+    {!isNew && <><div style={{ height: 8 }} /><Button variant="danger" onClick={remove}>{t('Delete role')}</Button></>}
+  </>
+}
+
+function SetRolesSection({ S, update, toast }) {
+  const custom = (S.customSetRoles || []).filter(r => !r.deleted)
+  const openRole = existing => useUI.getState().openSheet(close => <SetRoleSheet existing={existing} S={S} update={update} toast={toast} close={close} />)
+  return (
+    <Section title={t('Set roles')} footer={t('Native roles stay fixed; custom roles map to an accounting class for volume, RIR, and e1RM.')}>
+      {NATIVE_SET_ROLES.map(r => (
+        <Row key={r} icon="tag" iconTint={BASE_CLASS_OF_NATIVE[r] === 'prep' ? 'var(--yellow)' : 'var(--acc)'}
+          title={t(ROLE_NAME_KEY[r])} value={t(CLASS_LABEL[BASE_CLASS_OF_NATIVE[r]])} />
+      ))}
+      {custom.map(r => (
+        <Row key={r.id} icon="sparkles" iconTint={r.baseClass === 'prep' ? 'var(--yellow)' : r.baseClass === 'intensified' ? 'var(--purple)' : 'var(--acc)'}
+          title={r.name} value={t(CLASS_LABEL[r.baseClass])} accessory="chevron" onClick={() => openRole(r)} />
+      ))}
+      <Row icon="plus" iconTint="var(--blue)" title={t('Add role')} accessory="chevron" onClick={() => openRole(null)} />
+    </Section>
+  )
 }

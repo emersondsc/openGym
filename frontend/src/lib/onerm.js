@@ -1,3 +1,4 @@
+import { resolveRoleClass } from './set-roles.js'
 // Estimated one-rep max (issue #18).
 //
 // Deliberately knows nothing about the exercise database: an estimate needs a weight AND a
@@ -41,10 +42,12 @@ export function estimate1RM(w, r, formula = DEFAULT_FORMULA) {
 // Best estimate out of one workout entry's completed sets.
 // `topW` is ignored on purpose: it records the working weight a user confirmed after the
 // exercise, with no rep count attached, so it cannot produce an estimate.
-export function bestSetOf(entry, formula = DEFAULT_FORMULA) {
+export function bestSetOf(entry, formula = DEFAULT_FORMULA, customSetRoles = []) {
   let best = null
   ;(entry?.sets || []).forEach(s => {
     if (!s.done) return
+    const cls = resolveRoleClass(s.role, customSetRoles)
+    if (cls === 'prep' || cls === 'intensified') return
     const est = estimate1RM(s.w, s.r, formula)
     if (est !== null && (!best || est > best.est)) best = { est, w: Number(s.w), r: Math.round(Number(s.r)) }
   })
@@ -58,7 +61,7 @@ export function e1rmSeries(S, exId, formula = DEFAULT_FORMULA) {
   ;(S.workouts || []).forEach(w => {
     const entry = w.entries.find(e => e.id === exId)
     if (!entry) return
-    const best = bestSetOf(entry, formula)
+    const best = bestSetOf(entry, formula, S?.customSetRoles || [])
     if (best) pts.push({ t: w.start, d: w.d, y: best.est, w: best.w, r: best.r })
   })
   return pts
@@ -75,7 +78,7 @@ export function best1RM(S, exId, formula = DEFAULT_FORMULA) {
 // Did this workout beat every estimate that came before it? Used for the finish summary,
 // so it compares against history that does not yet contain `w`.
 export function is1RMRecord(S, exId, entry, formula = DEFAULT_FORMULA) {
-  const now = bestSetOf(entry, formula)
+  const now = bestSetOf(entry, formula, S?.customSetRoles || [])
   if (!now) return null
   const prev = best1RM(S, exId, formula)
   return !prev || now.est > prev.est ? { ...now, prev: prev ? prev.est : 0 } : null

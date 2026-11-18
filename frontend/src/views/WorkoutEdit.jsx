@@ -17,7 +17,8 @@ import {
 } from '../lib/history.js'
 import { applyWorkoutEdit, removeWorkout, shiftWorkoutDate, setShape } from '../lib/workout-edit.js'
 import { normUnit } from '../lib/units.js'
-import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet, workoutUnitSheet, openNotes } from '../sheets.jsx'
+import { exercisePicker, exConfigSheet, confirmSheet, workoutDateSheet, workoutUnitSheet, openNotes, rolePickerSheet } from '../sheets.jsx'
+import { resolveRoleClass, resolveRoleName } from '../lib/set-roles.js'
 import { notesOf, applyNote } from '../lib/notes.js'
 import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import { Button, Check, NumberField, Row } from '../components/ui.jsx'
@@ -42,7 +43,7 @@ const clearDraft = id => { try { sessionStorage.removeItem(DRAFT_KEY(id)) } catc
 /* ---------- um exercício do treino, em modo edição ----------
    Mesma grade da tela de treino (`.setrow`/`.sethead`), com a coluna do `×` por série e sem o
    que só faz sentido durante a sessão: descanso, "última vez", prescrição e cronômetro. */
-function EditBlock({ entry, S, routineId, isFirst, isLast, onField, onNote, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onRemove, onUnit }) {
+function EditBlock({ entry, S, routineId, isFirst, isLast, onField, onSetRole, onNote, onToggle, onAddSet, onRemoveSet, onMove, onSwap, onRemove, onUnit }) {
   const ex = exOr(entry.id)
   const cfg = { ...(entry.target || {}), id: entry.id }     // treino antigo pode não ter `target`
   const mode = modeOf(cfg)
@@ -64,7 +65,16 @@ function EditBlock({ entry, S, routineId, isFirst, isLast, onField, onNote, onTo
   const col3 = mode === 'reps' && eff ? { ...eff, eff: kind, dec: true, opt: true, hd: t(eff.hd) } : null
 
   // Sem −/+, como na tela de treino (spec_nota_por_serie): cada valor é digitado.
-  const cell = (s, i, col, cls) => (
+  const customRoles = S.customSetRoles || []
+  const effRoleAt = i => entry.sets[i]?.role ?? entry.target?.setTargets?.[i]?.role ?? 'work'
+  const isPrepAt = i => resolveRoleClass(effRoleAt(i), customRoles) === 'prep'
+  const hasMixedRoles = !cardio && !timed && (entry.sets.some(s => s.role && s.role !== 'work') || Boolean(entry.target?.setTargets?.length))
+  const showBandAt = i => hasMixedRoles && (i === 0 || effRoleAt(i) !== effRoleAt(i - 1))
+  const pickRoleFor = i => rolePickerSheet(effRoleAt(i), customRoles, r => onSetRole(i, r))
+
+  const cell = (s, i, col, cls) => (col.eff && isPrepAt(i)) ? (
+    <div className={'stp effcell prep-off ' + cls} aria-disabled="true">—</div>
+  ) : (
     <div className={'stp ' + cls}>
       <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''} scrollOnFocus
         aria-label={col.hd} onChange={v => onField(i, col.f, col.eff ? capEffort(col.eff, v) : v)} /></span>
@@ -97,22 +107,31 @@ function EditBlock({ entry, S, routineId, isFirst, isLast, onField, onNote, onTo
       {col3 && <span className="eff-sp">{col3.hd}</span>}
       <span className="ck-sp" /><span className="rm-sp" />
     </div>
-    {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
-      <div className="n">{i + 1}</div>
-      {cell(s, i, col1, 'w')}
-      {col2 && cell(s, i, col2, 'r')}
-      {col3 && cell(s, i, col3, 'eff')}
-      <Check checked={s.done} onChange={() => onToggle(i)} />
-      {/* O × por série é o que a tela de treino não tem: lá a série acabou de ser feita e
-          "Remove set" tira a última; aqui você está corrigindo um registro, e a série errada
-          pode ser a do meio. Com uma série só ele fica desabilitado — um treino não pode ficar
-          sem nenhuma. */}
-      <button className="iconbtn rm-sp" disabled={entry.sets.length <= 1} aria-label={t('Remove this set')}
-        style={{ opacity: entry.sets.length <= 1 ? .32 : 1 }} onClick={() => onRemoveSet(i)}><Icon name="xmark" /></button>
-    </div>)}
+    {entry.sets.map((s, i) => {
+      const role = effRoleAt(i)
+      const rCls = resolveRoleClass(role, customRoles)
+      return <div key={i}>
+        {showBandAt(i) && <div className="setband">
+          <button type="button" className={'sb-pill tap ' + (rCls === 'prep' ? 'sb-prep' : rCls === 'intensified' ? 'sb-int' : 'sb-std')}
+            onClick={() => pickRoleFor(i)}>
+            {resolveRoleName(role, customRoles, t)} <Icon name="chevronDown" style={{ width: 10, height: 10 }} />
+          </button>
+        </div>}
+        <div className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
+          <button type="button" className="n tap-role" aria-label={t('Set role')} onClick={() => !cardio && !timed && pickRoleFor(i)}>{i + 1}</button>
+          {cell(s, i, col1, 'w')}
+          {col2 && cell(s, i, col2, 'r')}
+          {col3 && cell(s, i, col3, 'eff')}
+          <Check checked={s.done} onChange={() => onToggle(i)} />
+          <button className="iconbtn rm-sp" disabled={entry.sets.length <= 1} aria-label={t('Remove this set')}
+            style={{ opacity: entry.sets.length <= 1 ? .32 : 1 }} onClick={() => onRemoveSet(i)}><Icon name="xmark" /></button>
+        </div>
+      </div>
+    })}
     <div style={{ height: 8 }} />
     <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
       <Button size="sm" icon="plus" onClick={onAddSet}>{t('Add set')}</Button>
+      {!cardio && !timed && <Button size="sm" variant="ghost" icon="tag" onClick={() => pickRoleFor(0)}>{t('Roles')}</Button>}
       <Button size="sm" variant="ghost" icon="shuffle" onClick={onSwap}>{t('Swap exercise')}</Button>
       {!cardio && <Button size="sm" variant="ghost" icon="scale" onClick={onUnit}>{unit}</Button>}
       <Button size="sm" variant="ghost" icon="trash" style={{ color: 'var(--red)' }} onClick={onRemove}>{t('Remove exercise')}</Button>
@@ -244,7 +263,7 @@ export default function WorkoutEdit() {
 
   const addEx = () => exercisePicker(ex => exConfigSheet(ex, null, cfg => mut(d => {
     const full = { ...cfg, id: ex.id }
-    d.entries.push({ id: ex.id, target: { ...cfg }, sets: buildSets(useStore.getState().S, full) })
+    d.entries.push({ id: ex.id, target: { ...cfg }, setsTagged: true, sets: buildSets(useStore.getState().S, full) })
   }), null, S.routines.find(r => r.id === w.routineId)), usedIds())
 
   const del = () => confirmSheet({
@@ -293,9 +312,14 @@ export default function WorkoutEdit() {
       ? draft.entries.map((e, i) => <EditBlock key={i} entry={e} S={S} routineId={draft.routineId || null}
           isFirst={i === 0} isLast={i === draft.entries.length - 1}
           onField={(k, f, v) => mutEntry(i, en => { if (v == null) delete en.sets[k][f]; else en.sets[k][f] = v })}
+          onSetRole={(k, r) => mutEntry(i, en => {
+            en.setsTagged = true
+            const pr = en.target?.setTargets?.[k]?.role ?? 'work'
+            if (r === 'work' && pr === 'work') delete en.sets[k].role; else en.sets[k].role = r
+          })}
           onNote={text => mutEntry(i, en => { applyNote(null, { entry: en }, 'workout', text) })}
           onToggle={k => mutEntry(i, en => { en.sets[k].done = !en.sets[k].done })}
-          onAddSet={() => mutEntry(i, en => en.sets.push(setShape(modeOf({ ...(en.target || {}), id: en.id }), en.sets[en.sets.length - 1], en.target || {})))}
+          onAddSet={() => mutEntry(i, en => { const l = en.sets[en.sets.length - 1]; const ns = setShape(modeOf({ ...(en.target || {}), id: en.id }), l, en.target || {}); if (l?.role) ns.role = l.role; en.sets.push(ns) })}
           onRemoveSet={k => mutEntry(i, en => { if (en.sets.length > 1) en.sets.splice(k, 1) })}
           onMove={dir => moveEx(i, dir)}
           onSwap={() => swapEx(i)}

@@ -27,7 +27,7 @@ const SNAPSHOTS_DIAS = 30;
 
 const CAMPOS_ROTINA = ['id', 'name', 'emoji', 'prog'];
 const CAMPOS_EX = ['id', 'sets', 'reps', 'weight', 'mode', 'restSec', 'unit', 'sec', 'min', 'speed',
-  'inc', 'repsMin', 'repsMax', 'side', 'sg', 'prog', 'targetRir'];
+  'inc', 'repsMin', 'repsMax', 'side', 'sg', 'prog', 'targetRir', 'setTargets'];
 const CAMPOS_MESO = ['id', 'name', 'start', 'end', 'goal', 'origin', 'priorities', 'rules', 'weeks',
   'evidence', 'log', 'cargas_prescritas', 'estrutura_atual', 'status_semanas', 'fonte', 'criado_em',
   'atualizado_em'];
@@ -35,7 +35,7 @@ const MESO_SISTEMA = ['updatedAt', 'activatedAt', 'activatedBy'];
 const CAMPOS_DIET = ['id', 'name', 'goal', 'referenceDate', 'start', 'end', 'origin', 'profile',
   'targets', 'meals', 'rules', 'notes', 'executionTips', 'markdown', 'log'];
 const DIET_SISTEMA = ['updatedAt', 'activatedAt', 'activatedBy'];
-const CAMPOS_SET = ['done', 'w', 'wUnit', 'r', 'rir', 'rpe', 'min', 'speed', 'sec'];
+const CAMPOS_SET = ['done', 'w', 'wUnit', 'r', 'rir', 'rpe', 'min', 'speed', 'sec', 'role'];
 
 const so = (o, c) => Object.fromEntries(c.filter(k => o?.[k] !== undefined).map(k => [k, o[k]]));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -150,13 +150,13 @@ export function validarPlano(S, kind, plan, catalog, D) {
   const temMeso = id => (S.mesos || []).some(m => m.id === id);
   const ds = dietStore(S, D);
   const temDiet = id => (ds.plans || []).some(d => d.id === id);
-  if (kind === 'week') return validatePublish(plan, catalog, custom, todaySP(), S.routines || []);
+  if (kind === 'week') return validatePublish(plan, catalog, custom, todaySP(), S.routines || [], S.customSetRoles || []);
   if (kind === 'routine_patch') {
     if (!existe(plan.routine_id)) return { code: 'ROUTINE_NOT_FOUND', error: 'routine not found', field: 'routine_id' };
     const ruim = validateRoutineBody(plan.patch);
     if (ruim) return ruim;
     const cur = clone((S.routines || []).find(r => r.id === plan.routine_id));
-    return mergeRoutine(cur, plan.patch, catalog, custom);
+    return mergeRoutine(cur, plan.patch, catalog, custom, S.customSetRoles || []);
   }
   if (kind === 'routine_delete') {
     return existe(plan.routine_id) ? null : { code: 'ROUTINE_NOT_FOUND', error: 'routine not found', field: 'routine_id' };
