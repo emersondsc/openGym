@@ -14,7 +14,7 @@ const BARS = [['Shoulders', 100, '39.4'], ['Upper back', 44, '14.4'], ['Hamstrin
 export default function StylePreview({ skin }) {
   return <div className="skin-prev" data-skin={skin} aria-hidden="true">
     <div className="pv-hdr">
-      <b className="pv-h1">Hi emerson</b>
+      <b className="pv-h1">Hi</b>
       <span className="pv-date">Sunday 20 September</span>
     </div>
     <div className="pv-week">
