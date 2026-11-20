@@ -5,12 +5,12 @@ import { useSyncExternalStore } from 'react'
 import ptDict from '../locales/pt.js'
 import ptEx from '../ex/pt.js'
 
-// UI languages. de/pt have no instruction pack upstream — instructions fall back to English.
+// UI languages. de has no instruction pack upstream — instructions fall back to English.
 export const LANGS = {
   pt: 'Português (Brasil)', en: 'English', de: 'Deutsch', es: 'Español', fr: 'Français', it: 'Italiano',
   pl: 'Polski', tr: 'Türkçe', ru: 'Русский', zh: '中文', ko: '한국어', hi: 'हिन्दी'
 }
-export const INSTR_LANGS = ['en', 'es', 'fr', 'it', 'tr', 'ru', 'zh', 'hi', 'pl', 'ko']
+export const INSTR_LANGS = ['pt', 'en', 'es', 'fr', 'it', 'tr', 'ru', 'zh', 'hi', 'pl', 'ko']
 const DATE_LOCALES = {
   en: 'en-GB', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', it: 'it-IT', pt: 'pt-BR',
   pl: 'pl-PL', tr: 'tr-TR', ru: 'ru-RU', zh: 'zh-CN', ko: 'ko-KR', hi: 'hi-IN'
@@ -23,6 +23,7 @@ let lang = 'en'
 let dict = {}
 let exNames = null          // { exId: translatedName } for PT-BR, null = dataset English
 let instr = null            // { exId: [steps] } for the current language, null = English
+let ptInstr = null          // lazy-loaded cache of src/instr/pt.js
 let version = 0
 const subs = new Set()
 const notify = () => { version++; subs.forEach(f => f()) }
@@ -53,13 +54,29 @@ export async function setLang(l) {
   if (!LANGS[l]) l = 'pt'
   if (l === lang && version > 0) return
   lang = l
-  if (l === 'pt') { dict = ptDict; exNames = ptEx; instr = null; notify(); return }
+  if (l === 'pt') {
+    dict = ptDict
+    exNames = ptEx
+    instr = ptInstr
+    notify()
+    if (!ptInstr) {
+      try {
+        const mod = await instrPacks['../instr/pt.js']()
+        ptInstr = mod.default
+        if (lang === 'pt') { instr = ptInstr; notify() }
+      } catch (e) { /* keep English fallback */ }
+    }
+    return
+  }
   if (l === 'en') { dict = {}; exNames = null; instr = null; notify(); return }
   exNames = null
   try {
-    dict = (await localePacks['../locales/' + l + '.js']()).default
-    instr = INSTR_LANGS.includes(l) ? (await instrPacks['../instr/' + l + '.js']()).default : null
-  } catch (e) { dict = {}; instr = null }
+    const nextDict = (await localePacks['../locales/' + l + '.js']()).default
+    const nextInstr = INSTR_LANGS.includes(l) ? (await instrPacks['../instr/' + l + '.js']()).default : null
+    if (lang !== l) return
+    dict = nextDict
+    instr = nextInstr
+  } catch (e) { if (lang !== l) return; dict = {}; instr = null }
   notify()
 }
 

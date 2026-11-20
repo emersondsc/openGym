@@ -1,10 +1,11 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { LANGS, effLang, setLang, getLang, dateLocale, t, exNameFor } from './i18n.js'
+import { LANGS, INSTR_LANGS, effLang, setLang, getLang, dateLocale, t, exNameFor, instrFor } from './i18n.js'
 import { EXDB, EXIDX, exName, matchesExercise, compareExNames, normText } from './exercises.js'
 import ptEx from '../ex/pt.js'
 import ptLocale from '../locales/pt.js'
+import ptInstr from '../instr/pt.js'
 
 afterAll(async () => {
   await setLang('en')
@@ -50,6 +51,10 @@ describe('bilingual PT-BR default, migration, and coverage', () => {
     expect(exName('0025')).toBe(ptEx['0025'])
     expect(exName('0025')).not.toBe(EXIDX['0025'].n)
     expect(exName({ id: 'c1', n: 'Meu supino', custom: true })).toBe('Meu supino')
+    expect(INSTR_LANGS).toContain('pt')
+    expect(INSTR_LANGS).toContain('en')
+    expect(instrFor(EXIDX['0025'])).toEqual(ptInstr['0025'])
+    expect(instrFor(EXIDX['0025'])).not.toEqual(EXIDX['0025'].st)
 
     await setLang('en')
     expect(getLang()).toBe('en')
@@ -57,6 +62,7 @@ describe('bilingual PT-BR default, migration, and coverage', () => {
     expect(t('Home')).toBe('Home')
     expect(exNameFor('0025')).toBeNull()
     expect(exName('0025')).toBe(EXIDX['0025'].n)
+    expect(instrFor(EXIDX['0025'])).toEqual(EXIDX['0025'].st)
   })
 
   it('searches bilingual & accent-insensitively and sorts using locale rules', async () => {
@@ -102,5 +108,28 @@ describe('bilingual PT-BR default, migration, and coverage', () => {
       expect(pv, k).toEqual(pk)
       expect(v, k).not.toMatch(leakRe)
     }
+  })
+
+  it('covers 100% of exercises-data.json in instr/pt.js with PT-BR imperatives and zero leaks', () => {
+    const ids = EXDB.map(e => e.id).sort()
+    expect(Object.keys(ptInstr).sort()).toEqual(ids)
+    let totalSteps = 0
+    const leakRe = /\bhaltere\b|gémeos|abdómen|\banca[s]?\b|bola de estabilidade|barra EZ|máquina de alavanca|\bteu[s]?\b|\btua[s]?\b|\btu\b|«|»/i
+    for (const e of EXDB) {
+      const stepsPt = ptInstr[e.id]
+      expect(Array.isArray(stepsPt), e.id).toBe(true)
+      expect(stepsPt.length, e.id).toBe(e.st.length)
+      for (let i = 0; i < stepsPt.length; i++) {
+        const s = stepsPt[i]
+        expect(typeof s, `${e.id}:${i}`).toBe('string')
+        expect(s.trim().length, `${e.id}:${i}`).toBeGreaterThan(0)
+        expect(s, `${e.id}:${i}`).not.toMatch(/[\r\n]/)
+        expect(s.toLowerCase(), `${e.id}:${i}`).not.toBe(e.st[i].toLowerCase())
+        expect(s, `${e.id}:${i}`).not.toMatch(leakRe)
+        expect(s, `${e.id}:${i}`).not.toMatch(/\bBOSU\b/)
+        totalSteps++
+      }
+    }
+    expect(totalSteps).toBe(7710)
   })
 })
