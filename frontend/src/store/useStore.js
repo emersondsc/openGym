@@ -19,8 +19,8 @@ export const DEF = {
   // a profile saved before this change carries `lang: 'en'` from the old default, so only
   // langChosen: true keeps English after the migration.
   langChosen: false,
-  // Padrão do app (2026-11): estilo Takt em modo claro. Perfil que já gravou skin/theme mantém o seu.
-  theme: 'light', accent: 'teal', skin: 'takt', body: 'male', targetW: null,
+  // Padrão do app (2026-11): estilo Takt em modo escuro. Perfil que já gravou skin/theme mantém o seu.
+  theme: 'dark', accent: 'teal', skin: 'takt', body: 'male', targetW: null,
   // Accent default changed lime -> teal (2026-10, matches the app icon). accentChosen is
   // written ONLY by the swatch picker: a profile saved before this change carries accent
   // 'lime' from the old default, and pullState adopts that state wholesale - so the flag,
