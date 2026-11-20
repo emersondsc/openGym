@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useStore, isValidRest } from '../store/useStore.js'
-import { exOr } from '../lib/exercises.js'
+import { exOr, exName } from '../lib/exercises.js'
 import { uid } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { supersetUnits, cleanupSg, exLine, fmtSec } from '../lib/history.js'
@@ -107,7 +107,7 @@ export default function RoutineEdit() {
           }), () => edit(x => { x.splice(i, 1); cleanupSg(x) }), r, { routineEdit: true })
         }}>
           <Thumb ex={ex} />
-          <div className="grow"><div className="tt capitalize">{ex.n}</div><div className="ss">{exLine(e, unitOfCfg(e, S), S.customSetRoles)}</div><div className="row" style={{marginTop:4,gap:6,flexWrap:'wrap'}}><RestChipForRoutine ex={e} routineId={r.id} /><span onClick={ev => ev.stopPropagation()}><NoteChip onClick={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></span></div><NoteLines notes={{ routine: e.note }} lines={2} onOpen={() => openNotes({ exId: e.id, exName: ex.n, routineId: r.id, types: ['routine'] })} /></div>
+          <div className="grow"><div className="tt capitalize">{exName(ex)}</div><div className="ss">{exLine(e, unitOfCfg(e, S), S.customSetRoles)}</div><div className="row" style={{marginTop:4,gap:6,flexWrap:'wrap'}}><RestChipForRoutine ex={e} routineId={r.id} /><span onClick={ev => ev.stopPropagation()}><NoteChip onClick={() => openNotes({ exId: e.id, exName: exName(ex), routineId: r.id, types: ['routine'] })} /></span></div><NoteLines notes={{ routine: e.note }} lines={2} onOpen={() => openNotes({ exId: e.id, exName: exName(ex), routineId: r.id, types: ['routine'] })} /></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 'none', alignItems: 'center' }}>
             {i > 0 && <button className={'iconbtn' + (linkedPrev ? ' on-ss' : '')} title={t('Superset with exercise above')} style={{ width: 32, height: 28, borderRadius: 'var(--r-sm)', fontSize: 15 }} onClick={ev => { ev.stopPropagation(); toggleLink(i) }}><Icon name="link" /></button>}
             <div style={{ display: 'flex', gap: 2 }}>

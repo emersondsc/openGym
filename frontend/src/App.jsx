@@ -4,7 +4,7 @@ import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
 import { resolveSkin, effAccent } from './lib/format.js'
-import { setLang, useLang } from './lib/i18n.js'
+import { setLang, useLang, effLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
 import { startFlow, styleIntroSheet } from './sheets.jsx'
@@ -64,8 +64,9 @@ function Shell() {
     return () => clearTimeout(id)
   }, [ready, user, isGuest, S.skinIntro])
   useEffect(() => { applyPrefs(S.theme, effAccent(S), S.skin) }, [S.theme, S.accent, S.accentChosen, S.skin])
-  useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
-  useEffect(() => { document.documentElement.lang = S.lang || 'en' }, [langV, S.lang])
+  const curLang = effLang(S)
+  useEffect(() => { setLang(curLang) }, [curLang])
+  useEffect(() => { document.documentElement.lang = curLang === 'pt' ? 'pt-BR' : curLang }, [langV, curLang])
   // every tab/route change starts at the top of the page
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   // bound to the workout, not to the route — checking Stats mid-session keeps the screen on

@@ -8,11 +8,11 @@
 //  2. A clean, printable page (Save as PDF) where a single exercise never splits across
 //     a page break — each exercise, and each routine that fits, stays in one place.
 
-import { EXIDX, isBodyweightEq } from './exercises.js'
+import { EXIDX, isBodyweightEq, exName } from './exercises.js'
 import { modeOf, fmtSec, isBw, isPerSide, sideReps, normTargetRir, migrateLegacyRepRange, targetSummary, repsLabel } from './history.js'
 import { NATIVE_SET_ROLES, resolveRoleClass, isValidSetReps, normSetReps } from './set-roles.js'
 import { uid, todayISO, DAYN, fmtNum, exCount } from './format.js'
-import { t } from './i18n.js'
+import { t, getLang } from './i18n.js'
 import { unitOfCfg } from './units.js'
 
 const PLAN_FMT = 1
@@ -220,8 +220,8 @@ function routineHTML(r, S) {
   const rows = units(r.ex).map(u => {
     const items = u.map(e => {
       const ex = EXIDX[e.id]
-      const name = ex ? ex.n : t('Unknown exercise')
-      const part = ex && ex.bp && ex.bp !== 'cardio' ? `<span class="part">${esc(ex.bp)}</span>` : ''
+      const name = ex ? exName(ex) : t('Unknown exercise')
+      const part = ex && ex.bp && ex.bp !== 'cardio' ? `<span class="part">${esc(t(ex.bp))}</span>` : ''
       return `<div class="ex"><div class="ex-n">${esc(name)}${part}</div><div class="ex-s">${esc(scheme(e, unitOfCfg(e, S), S.customSetRoles))}</div></div>`
     }).join('')
     return u.length > 1
@@ -251,7 +251,8 @@ export function planPrintHTML(S, owner) {
     ? routines.map(r => routineHTML(r, S)).join('')
     : `<p class="none">${esc(t('No routines yet.'))}</p>`
   const sub = [owner, todayISO()].filter(Boolean).map(esc).join(' · ')
-  return `<!doctype html><html><head><meta charset="utf-8">
+  const htmlLang = getLang() === 'pt' ? 'pt-BR' : getLang()
+  return `<!doctype html><html lang="${esc(htmlLang)}"><head><meta charset="utf-8">
 <title>${esc(t('Weekly Training Plan'))}</title>
 <style>
   @page { margin: 16mm 15mm; }
@@ -294,6 +295,7 @@ export function planPrintHTML(S, owner) {
   .ss-tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #6a7a3a; font-weight: 700; padding-top: 4px; }
   .ss .ex:first-of-type { padding-top: 2px; }
 
+  html[lang^="pt"] .ex-n, html[lang^="pt"] .ex-n .part, html[lang^="pt"] .w-r, html[lang^="pt"] .r-head h2 { text-transform: none; }
   footer { margin-top: 26px; padding-top: 10px; border-top: 1px solid #eef0f4; color: #a2a8b6; font-size: 11px; text-align: center; }
 </style></head>
 <body><div class="doc">

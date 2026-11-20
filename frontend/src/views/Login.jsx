@@ -2,14 +2,14 @@ import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { webauthnOK, passkeyLogin, passkeyRegister, api, BIO } from '../lib/api.js'
 import { hasData } from '../store/useStore.js'
-import { t } from '../lib/i18n.js'
+import { t, effLang } from '../lib/i18n.js'
 import { DEMO, REPO } from '../lib/demo.js'
 import { useState, useRef, useEffect } from 'react'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 
 function RegisterSheet({ close }) {
-  const { setUser, pushState, pullState } = useStore()
+  const { setUser, pushState, pullState, update } = useStore()
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [inviteOnly, setInviteOnly] = useState(false)
@@ -24,7 +24,16 @@ function RegisterSheet({ close }) {
       const u = await passkeyRegister(n, code.trim())
       setUser(u); close()
       if (hasData(useStore.getState().S)) { await pushState(); useUI.getState().toast(t('Profile created — data from this device moved into it')) }
-      else { await pullState(); useUI.getState().toast(t('Welcome, {0}', u.name)) }
+      else {
+        const pre = useStore.getState().S
+        const chosen = pre.langChosen ? pre.lang : null
+        await pullState()
+        if (chosen) {
+          update(s => { s.lang = chosen; s.langChosen = true })
+          try { await pushState() } catch {}
+        }
+        useUI.getState().toast(t('Welcome, {0}', u.name))
+      }
     } catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') useUI.getState().toast(e.message || t('Registration failed')) }
   }
   return <>
@@ -43,12 +52,21 @@ function RegisterSheet({ close }) {
 }
 
 export default function Login() {
-  const { setUser, pullState, setGuest } = useStore()
+  const { S, update, setUser, pullState, setGuest } = useStore()
+  const curLang = effLang(S)
+  const pickLang = v => update(s => { s.lang = v; s.langChosen = true })
   const signIn = async () => {
     try { const u = await passkeyLogin(); setUser(u); await pullState(); useUI.getState().toast(t('Welcome back, {0}', u.name)) }
     catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') useUI.getState().toast(e.message || t('Sign-in failed')) }
   }
+  const langToggle = (
+    <div className="lang-toggle" role="group" aria-label={t('Language')}>
+      <button type="button" className={curLang === 'pt' ? 'on' : ''} onClick={() => pickLang('pt')}>PT-BR</button>
+      <button type="button" className={curLang === 'en' ? 'on' : ''} onClick={() => pickLang('en')}>EN</button>
+    </div>
+  )
   const head = <>
+    {langToggle}
     <div style={{ display: 'flex', justifyContent: 'center' }}><img src="icon-180.png?v=3" alt="openGym" width="72" height="72" style={{ borderRadius: 17 }} /></div>
     <h1 style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-.028em', margin: '10px 0 4px' }}>openGym</h1>
   </>

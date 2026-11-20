@@ -6,7 +6,7 @@ import { useUI } from '../store/useUI.js'
 import { approveProposal, getProposal, listProposals, rejectProposal } from '../lib/proposals.js'
 import { fmtValue, groupChanges } from '../lib/proposal-diff.js'
 import { savedFromChat } from '../lib/proposal-card.js'
-import { EXIDX } from '../lib/exercises.js'
+import { EXIDX, exName } from '../lib/exercises.js'
 import { t } from '../lib/i18n.js'
 import { Button, TextArea } from '../components/ui.jsx'
 
@@ -26,7 +26,7 @@ const secao = { fontSize: 12, letterSpacing: '.07em', textTransform: 'uppercase'
 const aviso = cor => ({ background: 'var(--surface)', borderLeft: `3px solid ${cor}`, borderRadius: 10, padding: '9px 12px', fontSize: 14, marginTop: 6 })
 const linha = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, padding: '7px 0', fontVariantNumeric: 'tabular-nums' }
 
-const nomeEx = id => EXIDX[id]?.n || id
+const nomeEx = id => EXIDX[id] ? exName(EXIDX[id]) : id
 
 function Status({ value, mode }) {
   const [txt, cor] = savedFromChat({ status: value, mode }) ? ['Saved from chat', 'var(--acc)'] : STATUS[value] || [value, 'var(--grey)']

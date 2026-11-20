@@ -1,7 +1,7 @@
 // O card de progresso de um exercício. Aparece na Home e em Stats, com o mesmo exercício em foco.
 import { useState } from 'react'
 import { useStore } from '../store/useStore.js'
-import { EXIDX } from '../lib/exercises.js'
+import { EXIDX, exName, compareExNames } from '../lib/exercises.js'
 import { setLabel, modeOf } from '../lib/history.js'
 import { unitOfCfg } from '../lib/units.js'
 import { fmtNum, fmtDate } from '../lib/format.js'
@@ -30,7 +30,7 @@ export default function ExerciseProgressCard() {
   const [exMetric, setExMetric] = useState('top')
   const kind = displayScale(S)
   const hd = scaleName(kind)
-  const exHist = [...new Set(S.workouts.flatMap(w => w.entries.map(e => e.id)))].filter(id => EXIDX[id]).sort((a, b) => EXIDX[a].n < EXIDX[b].n ? -1 : 1)
+  const exHist = [...new Set(S.workouts.flatMap(w => w.entries.map(e => e.id)))].filter(id => EXIDX[id]).sort((a, b) => compareExNames(EXIDX[a], EXIDX[b]))
   const curEx = exId && exHist.includes(exId) ? exId : exHist[0] || null
   // How this exercise was logged most recently decides what the curve means: top weight,
   // longest hold or top speed. Sets logged in another mode lack the field and score 0, so a
@@ -89,7 +89,7 @@ export default function ExerciseProgressCard() {
     {exHist.length ? <>
       <div className="sect-b" style={{ marginBottom: 10 }}>
         <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={pickEx}
-          options={exHist.map(id => ({ value: id, label: EXIDX[id].n }))} />
+          options={exHist.map(id => ({ value: id, label: exName(EXIDX[id]) }))} />
       </div>
       {exOpts.length > 1 && <Segmented className="seg-range" value={onEff ? 'effort' : onE1 ? 'e1rm' : 'top'} onChange={setExMetric} options={exOpts} />}
       <div className="chart">

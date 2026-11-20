@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { exOr } from '../lib/exercises.js'
+import { exOr, exName } from '../lib/exercises.js'
 import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, targetSummary, targetEffortLabel, repsLabel } from '../lib/history.js'
 import { resolveRoleClass, resolveRoleName } from '../lib/set-roles.js'
 import { fmtNum, todayISO, exCount, DAYN } from '../lib/format.js'
@@ -206,12 +206,12 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onSetRole, onNote
   // exercise in the routine the workout came from, and this workout's own.
   const routineId = S.active.routineId || null
   const notes = notesOf(S, { exId: entry.id, routineId, entry })
-  const openNote = type => openNotes({ exId: entry.id, exName: ex.n, routineId, entryNote: entry.note,
+  const openNote = type => openNotes({ exId: entry.id, exName: exName(ex), routineId, entryNote: entry.note,
     saveWorkout: onNote, initialType: type })
   return <>
     <Media ex={ex} key={entry.id} compact={compact} minimizable />
     <div className="row between" style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: compact ? 17 : 20, fontWeight: 600, letterSpacing: '-.02em', textTransform: 'capitalize', lineHeight: 1.2 }}>{ex.n}</div>
+      <div className="capitalize" style={{ fontSize: compact ? 17 : 20, fontWeight: 600, letterSpacing: '-.02em', lineHeight: 1.2 }}>{exName(ex)}</div>
       <button className="iconbtn" aria-label={t('Details')} onClick={() => exerciseDetailSheet(ex, {
         // spec_meta_de_hoje D10: o "Melhor" saiu dos chips e mora aqui, com a mesma conta de
         // antes (série mais pesada ou peso de trabalho confirmado) e a unidade desta sessão.
@@ -418,7 +418,7 @@ function ActiveWorkout() {
       <h3>{t('Swap which exercise?')}</h3>
       <div className="list">
         {unit.map(i => <div key={i} className="item" onClick={() => { close(); swapEntry(i) }}>
-          <div className="grow"><div className="tt capitalize">{exOr(A.entries[i].id).n}</div></div><Icon name="shuffle" className="chev" />
+          <div className="grow"><div className="tt capitalize">{exName(exOr(A.entries[i].id))}</div></div><Icon name="shuffle" className="chev" />
         </div>)}
       </div>
     </>)
@@ -430,7 +430,7 @@ function ActiveWorkout() {
   // behave exactly as they do for a reps set.
   const startTimed = (idx, i) => {
     const e = A.entries[idx]
-    useUI.getState().startWork(e.sets[i].sec || 45, exOr(e.id).n, elapsed => {
+    useUI.getState().startWork(e.sets[i].sec || 45, exName(exOr(e.id)), elapsed => {
       mutEntry(idx, en => { en.sets[i].sec = elapsed })
       if (!useStore.getState().S.active.entries[idx].sets[i].done) toggle(idx, i)
     })

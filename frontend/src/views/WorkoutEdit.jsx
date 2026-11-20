@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { exOr } from '../lib/exercises.js'
+import { exOr, exName } from '../lib/exercises.js'
 import { fmtDate, todayISO } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import {
@@ -83,14 +83,14 @@ function EditBlock({ entry, S, routineId, isFirst, isLast, onField, onSetRole, o
   // As notas são do exercício (spec_tipos_de_nota). A do treino vai para o rascunho e sobe ao
   // salvar a edição; as fixas vão direto para o estado, como na tela de treino.
   const notes = notesOf(S, { exId: entry.id, routineId, entry })
-  const openNote = type => openNotes({ exId: entry.id, exName: ex.n, routineId, entryNote: entry.note,
+  const openNote = type => openNotes({ exId: entry.id, exName: exName(ex), routineId, entryNote: entry.note,
     saveWorkout: onNote, initialType: type })
 
   return <div className="card" style={{ marginBottom: 12 }}>
     <div className="row" style={{ gap: 10, marginBottom: 8 }}>
       <Thumb ex={ex} />
       <div className="grow" style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 17, textTransform: 'capitalize' }}>{ex.n}</div>
+        <div className="capitalize" style={{ fontWeight: 600, fontSize: 17 }}>{exName(ex)}</div>
         <div className="small dim">{t('{0} sets', entry.sets.length)}</div>
       </div>
       <NoteChip onClick={() => openNote()} />

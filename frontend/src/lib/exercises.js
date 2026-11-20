@@ -1,5 +1,29 @@
 import EXDB from './exercises-data.json'
-import { t } from './i18n.js'
+import { t, exNameFor, dateLocale } from './i18n.js'
+
+export const normText = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+export function exName(exOrId) {
+  const ex = typeof exOrId === 'string' ? EXIDX[exOrId] : exOrId
+  if (!ex) return ''
+  if (ex.custom) return ex.n
+  return exNameFor(ex.id) || ex.n
+}
+
+export function matchesExercise(ex, rawQuery) {
+  const q = normText(rawQuery)
+  if (!q) return true
+  const fields = [
+    exName(ex), ex.n,
+    ex.tg, ex.tg ? t(ex.tg) : '',
+    ex.eq, ex.eq ? t(ex.eq) : '',
+    ex.bp, ex.bp ? t(ex.bp) : '',
+    ex.desc
+  ]
+  return fields.some(f => f && normText(f).includes(q))
+}
+
+export const compareExNames = (a, b) => exName(a).localeCompare(exName(b), dateLocale())
 
 export { EXDB }
 export const EXIDX = {}

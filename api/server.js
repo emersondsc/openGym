@@ -21,6 +21,7 @@ import * as coachLink from './coach-link.js';
 import * as coachAccess from './coach-access.js';
 import * as diet from './diet.js';
 import { sanitizeRoutineEntry, validateCustomSetRoles } from './set-roles.js';
+import { restOverPayload, dayReminderPayload } from './push-copy.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -243,7 +244,7 @@ function scheduleRestTimer(userId, sec) {
   if (t) clearTimeout(t);
   restTimers.set(userId, setTimeout(() => {
     restTimers.delete(userId);
-    sendPush(userId, { title: 'Rest over 💪', body: 'Time for your next set.', tag: 'rest-timer' });
+    sendPush(userId, restOverPayload(readState(userId)));
   }, sec * 1000));
 }
 function cancelRestTimer(userId) {
@@ -287,11 +288,7 @@ setInterval(() => {
     console.log('reminder firing', user.id, rid);
     user.lastReminder = now.date;
     saveDbQuiet();
-    sendPush(user.id, {
-      title: routine ? `${routine.emoji || '🏋️'} ${routine.name} today` : 'Workout planned today',
-      body: "It's on your plan — let's go 💪",
-      tag: 'day-reminder'
-    });
+    sendPush(user.id, dayReminderPayload(S, routine));
   }
 // Checked every 10s (not 60s) — ticks aren't aligned to the top of the minute, so a 60s
 // interval could sit on your target minute for up to 59s before noticing. 10s caps that at ~9s.

@@ -14,7 +14,11 @@ import { migrateLegacyRepRange } from '../lib/history.js'
 
 const KEY = 'gym_state_v1'
 export const DEF = {
-  unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'en',
+  unit: 'kg', restSec: 90, globalRestSec: 90, sound: true, keepAwake: true, lang: 'pt',
+  // Default changed en -> pt (2026-11). langChosen is written ONLY by an explicit language pick:
+  // a profile saved before this change carries `lang: 'en'` from the old default, so only
+  // langChosen: true keeps English after the migration.
+  langChosen: false,
   theme: 'dark', accent: 'teal', skin: 'classic', body: 'male', targetW: null,
   // Accent default changed lime -> teal (2026-10, matches the app icon). accentChosen is
   // written ONLY by the swatch picker: a profile saved before this change carries accent
@@ -391,8 +395,9 @@ export const useStore = create((set, get) => {
 
     async resetDemo() {
       const { buildDemoState } = await import('../lib/demoSeed.js')
+      const cur = get().S
       localStorage.removeItem('gym_dirty')
-      persist(Object.assign(clone(DEF), buildDemoState()), false)
+      persist(Object.assign(clone(DEF), buildDemoState(), cur.langChosen ? { lang: cur.lang, langChosen: true } : {}), false)
     },
 
     async boot() {
