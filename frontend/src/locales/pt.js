@@ -1075,5 +1075,17 @@ export default {
   "“{0}” added to {1}": "“{0}” adicionado a {1}",
   "“{0}” already exists": "“{0}” já existe",
   "“{0}” and its exercises will be removed.": "“{0}” e seus exercícios serão removidos.",
-  "“{0}” created": "“{0}” criado"
+  "“{0}” created": "“{0}” criado",
+  // Pré-início (conta nova)
+  "Which body diagram do you want to see?": "Qual diagrama do corpo você quer ver?",
+  "Only used to draw the muscles you trained.": "Usado só para desenhar os músculos trabalhados.",
+  "Choose the language of the app.": "Escolha o idioma do app.",
+  "You can change it later in Settings. Switching does not convert numbers already logged.": "Você pode trocar depois nas configurações. Trocar não converte os números já registrados.",
+  "You can switch anytime in Settings.": "Você pode trocar quando quiser nas configurações.",
+  "Step {0} of 4": "Etapa {0} de 4",
+  "Kilograms (kg)": "Quilos (kg)",
+  "Pounds (lb)": "Libras (lb)",
+  "Continue": "Continuar",
+  "Could not save. Check your connection.": "Não foi possível salvar. Verifique a conexão.",
+  "Try again": "Tentar de novo"
 }

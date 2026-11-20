@@ -1,4 +1,13 @@
 # Changelog
+## Não lançado — pré-início de conta nova
+Uma conta nova passa por 4 etapas antes da primeira home (`docs/designs/design_pre_inicio.md`).
+- **Etapas:** sexo (diagrama do corpo), idioma (PT-BR marcado), unidade (kg/lb) e estilo, com
+  um resumo antes de "Começar". Idioma e estilo valem na tela assim que escolhidos.
+- **Só contas novas:** o cadastro grava `setupPending: true` no `db.json`; contas antigas não têm
+  o campo. `POST /api/me/setup-done` encerra o fluxo; a vitrine de estilos não aparece depois.
+- **Admin:** etiqueta "setup pending" e botão "Repeat setup" (`POST /api/admin/user/setup-reset`).
+- **Flag:** `SETUP_ENABLED=0` desliga o pré-início sem deploy (ver `INFRA.md`).
+
 ## Não lançado — tipos de nota
 A nota sai da série e passa para o exercício, em **três tipos** que convivem
 (`docs/specs/spec_tipos_de_nota.md`).

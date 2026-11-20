@@ -40,6 +40,9 @@ const COACH_AUTO_APPLY = process.env.COACH_AUTO_APPLY === '1';
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
+// Pré-início (configuração inicial de conta nova): ligado por padrão. SETUP_ENABLED=0 (ou false/no/off)
+// faz o /api/me devolver setupPending: false para todos, sem apagar o marcador gravado no db.json.
+const SETUP_ENABLED = !/^(0|false|no|off)$/i.test((process.env.SETUP_ENABLED || '').trim());
 // 90 days keeps someone who trains a few times a week permanently signed in without a stolen
 // cookie staying good for a year. Overridable because a family instance and one on the open
 // internet don't want the same number. Only affects cookies minted from now on — the expiry is
@@ -63,7 +66,8 @@ db.subs = db.subs || [];
 db.invites = db.invites || [];
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
 const publicUser = user => ({ id: user.id, name: user.name, admin: isAdmin(user),
-  coachOwner: !!COACH_OWNER_UID && user.id === COACH_OWNER_UID });
+  coachOwner: !!COACH_OWNER_UID && user.id === COACH_OWNER_UID,
+  setupPending: SETUP_ENABLED && !!user.setupPending });
 function saveDb() { atomicWrite(dbFile, JSON.stringify(db, null, 2)); }
 // Para quem roda fora de uma requisição (timer, push em segundo plano): lá não existe o catch do
 // servidor, e um disco cheio viraria exceção não tratada, que derruba o processo.
@@ -180,7 +184,7 @@ function guardMesoStamps(state, cur, actor) {
 export { checkState, checkRoutineFields, readActor, agentKey, matchRoute, readRawBody, readBody,
          cleanPushSub, restSeconds, sameSiteWrite, saveDbQuiet, readStateStrict, guardMesoStamps,
          readSession, readState, stateFile, dietFile, atomicWrite, VOLATILE, DATA, SECRET, CATALOG_PATH, server,
-         ROUTINE_HANDLERS, meso, micro, diet, livePresence };
+         ROUTINE_HANDLERS, meso, micro, diet, livePresence, db };
 
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
@@ -661,6 +665,23 @@ const routes = {
     json(res, 200, { user: publicUser(user) });
   },
 
+  // Fim do pré-início. Idempotente: sem o campo, responde 200 sem gravar. Se o saveDb falhar, o campo
+  // volta na memória, para a memória nunca ficar diferente do disco (o "Tentar de novo" grava de verdade).
+  'POST /api/me/setup-done': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    if (!user.setupPending) return json(res, 200, { user: publicUser(user) });
+    delete user.setupPending;
+    try { saveDb(); }
+    catch (e) {
+      user.setupPending = true;
+      console.error(`[og-setup] op=done-failed uid=${user.id}`, e.message);
+      return json(res, 500, { error: 'could not save' });
+    }
+    console.log(`[og-setup] op=done uid=${user.id}`);
+    json(res, 200, { user: publicUser(user) });
+  },
+
   'POST /api/register/options': async (req, res) => {
     const body = await readBody(req);
     const name = String(body.name || '').trim().slice(0, 40);
@@ -703,7 +724,8 @@ const routes = {
       invite = db.invites.find(i => i.code === c.code && !i.usedBy && !i.revoked);
       if (!invite) return json(res, 403, { error: 'invite code is no longer valid — ask for a new one' });
     }
-    const user = { id: c.uid, name: c.name, created: new Date().toISOString() };
+    // setupPending: a conta nova passa pelo pré-início antes da home. Contas antigas não têm o campo.
+    const user = { id: c.uid, name: c.name, created: new Date().toISOString(), setupPending: true };
     if (invite) { user.invitedBy = invite.code; invite.usedBy = user.id; invite.usedAt = user.created; }
     db.users.push(user);
     db.creds.push({
@@ -714,6 +736,7 @@ const routes = {
       created: user.created
     });
     saveDb();
+    console.log(`[og-setup] op=pending uid=${user.id}`);
     json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
   },
 
@@ -1033,6 +1056,7 @@ const routes = {
       return {
         id: u.id, name: u.name, created: u.created || null,
         disabled: !!u.disabled, admin: isAdmin(u), invitedBy: u.invitedBy || null,
+        setupPending: !!u.setupPending,
         workouts: workouts.length,
         lastWorkout: last ? last.d : null,
         lastSync: S._ts || null,
@@ -1051,7 +1075,7 @@ const routes = {
     if (!u) return json(res, 404, { error: 'no such user' });
     const S = readState(u.id) || {};
     json(res, 200, {
-      user: { id: u.id, name: u.name, created: u.created || null, disabled: !!u.disabled, admin: isAdmin(u), invitedBy: u.invitedBy || null },
+      user: { id: u.id, name: u.name, created: u.created || null, disabled: !!u.disabled, admin: isAdmin(u), invitedBy: u.invitedBy || null, setupPending: !!u.setupPending },
       unit: S.unit || 'kg',
       lastSync: S._ts || null,
       routines: (S.routines || []).map(r => ({ id: r.id, name: r.name, emoji: r.emoji, count: (r.ex || []).length })),
@@ -1073,6 +1097,25 @@ const routes = {
     }
     saveDb();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
+  },
+
+  // Volta uma conta para o pré-início (testes do dono). O valor anterior é restaurado se o saveDb falhar.
+  'POST /api/admin/user/setup-reset': async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = await readBody(req);
+    if (!body.id) return json(res, 400, { error: 'id required' });
+    const u = db.users.find(x => x.id === body.id);
+    if (!u) return json(res, 404, { error: 'no such user' });
+    const prev = u.setupPending;
+    u.setupPending = true;
+    try { saveDb(); }
+    catch (e) {
+      if (prev === undefined) delete u.setupPending; else u.setupPending = prev;
+      console.error(`[og-setup] op=reset-failed uid=${u.id}`, e.message);
+      return json(res, 500, { error: 'could not save' });
+    }
+    console.log(`[og-setup] op=reset uid=${u.id}`);
+    json(res, 200, { ok: true, id: u.id });
   },
 
   'GET /api/admin/invites': async (req, res) => {

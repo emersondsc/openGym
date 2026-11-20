@@ -8,6 +8,7 @@ import { setLang, useLang, effLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
 import { startFlow, styleIntroSheet } from './sheets.jsx'
+import { shellMode } from './lib/setup.js'
 import Icon from './components/Icon.jsx'
 import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
@@ -30,6 +31,7 @@ import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
 import Proposals, { ProposalDetail } from './views/Proposals.jsx'
 import CoachLink from './views/CoachLink.jsx'
+import Setup from './views/Setup.jsx'
 
 bindUI(useUI)   // lets the shared controls open sheets without importing the store at module scope
 
@@ -53,18 +55,24 @@ function Shell() {
   const { S, user, ready } = useStore()
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
+  const setupPreview = useUI(s => s.setupPreview)
+  const authed = user || isGuest
+  // Pré-início: conta nova com setupPending só vê as 4 etapas, em qualquer rota (sem redirecionamento).
+  const mode = shellMode({ authed: !!authed, ready, setupPending: !!user?.setupPending })
   useEffect(() => { setNav(navigate) }, [navigate])
   // A vitrine dos estilos, com um respiro para nao competir com o primeiro render. A marca de
   // "ja vi" (skinIntro) NAO e posta aqui: quem marca e a escolha na folha ou o "Not now" - quem
   // fecha no fundo sem olhar nao perde a vitrine, e ve de novo na proxima abertura. O atraso e
   // cancelado se o app desmontar antes (StrictMode incluso).
   useEffect(() => {
-    if (!ready || (!user && !isGuest) || S.skinIntro) return
+    if (!ready || (!user && !isGuest) || S.skinIntro || mode !== 'app') return
     const id = setTimeout(() => styleIntroSheet(), 800)
     return () => clearTimeout(id)
-  }, [ready, user, isGuest, S.skinIntro])
-  useEffect(() => { applyPrefs(S.theme, effAccent(S), S.skin) }, [S.theme, S.accent, S.accentChosen, S.skin])
-  const curLang = effLang(S)
+  }, [ready, user, isGuest, S.skinIntro, mode])
+  // Ao entrar no pré-início, nenhuma folha fica por cima (ex.: cadastro feito pelas configurações).
+  useEffect(() => { if (mode === 'setup') useUI.getState().closeAll() }, [mode])
+  useEffect(() => { applyPrefs(S.theme, effAccent(S), setupPreview?.skin ?? S.skin) }, [S.theme, S.accent, S.accentChosen, S.skin, setupPreview])
+  const curLang = setupPreview?.lang ?? effLang(S)
   useEffect(() => { setLang(curLang) }, [curLang])
   useEffect(() => { document.documentElement.lang = curLang === 'pt' ? 'pt-BR' : curLang }, [langV, curLang])
   // every tab/route change starts at the top of the page
@@ -72,8 +80,7 @@ function Shell() {
   // bound to the workout, not to the route — checking Stats mid-session keeps the screen on
   useWakeLock(!!S.active && S.keepAwake !== false)
 
-  const authed = user || isGuest
-  if (!ready && !authed) return (
+  if (mode === 'loading') return (
     <div id="app">
       <div style={{ paddingTop: '44vh', display: 'flex', justifyContent: 'center' }}>
         <img src="icon-180.png?v=3" alt="openGym" width="64" height="64" style={{ borderRadius: 15 }} />
@@ -87,7 +94,7 @@ function Shell() {
           re-mounts the boundary, so the tab bar is always a way out */}
       <div id="app" className="vfade" key={loc.pathname}>
         <ErrorBoundary>
-          {!authed ? <Login /> : (
+          {!authed ? <Login /> : mode === 'setup' ? <Setup /> : (
             <Routes>
               <Route path="/home" element={<Home />} />
               <Route path="/coach-link" element={<CoachLink />} />
@@ -110,8 +117,8 @@ function Shell() {
           )}
         </ErrorBoundary>
       </div>
-      <TabBar onStart={startFlow} />
-      <RestTimer />
+      {mode !== 'setup' && <TabBar onStart={startFlow} />}
+      {mode !== 'setup' && <RestTimer />}
       <Modals />
       <Toast />
     </>

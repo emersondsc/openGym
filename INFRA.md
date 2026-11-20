@@ -237,6 +237,19 @@ sudo -H -u pi /usr/local/bin/og_watchdog.sh --test       # testa o caminho do Te
 bash /usr/local/bin/sync_og_credentials.sh               # forcar a sincronizacao agora
 ```
 
+### Pré-início (configuração inicial de conta nova)
+
+Conta criada por passkey nasce com `setupPending: true` no `db.json` e só vê a home depois das 4
+etapas (sexo, idioma, unidade, estilo). Contas antigas não têm o campo e nunca veem o fluxo.
+
+- **Desligar sem deploy:** `SETUP_ENABLED=0` no `.env` e
+  `docker compose up -d --force-recreate api`. `docker restart` e `docker compose restart` **não**
+  bastam: não releem o `.env`.
+- Com a flag desligada, o cadastro continua gravando o marcador. Ao religar, as contas criadas
+  nesse meio tempo passam pelo pré-início.
+- **Repetir o fluxo numa conta de teste:** tela de admin → usuário → "Repeat setup".
+- **Log:** `docker compose logs api | grep og-setup` (`op=pending|done|done-failed|reset|reset-failed`).
+
 `docker compose down` **não** apaga o dado: o `data/` e a mídia são volumes amarrados a caminhos
 absolutos do host, não volumes nomeados do Docker. Recriar os containers é seguro.
 
