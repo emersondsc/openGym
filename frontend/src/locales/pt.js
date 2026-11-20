@@ -1077,8 +1077,7 @@ export default {
   "“{0}” and its exercises will be removed.": "“{0}” e seus exercícios serão removidos.",
   "“{0}” created": "“{0}” criado",
   // Pré-início (conta nova)
-  "Which body diagram do you want to see?": "Qual diagrama do corpo você quer ver?",
-  "Only used to draw the muscles you trained.": "Usado só para desenhar os músculos trabalhados.",
+  "What is your sex?": "Qual é o seu sexo?",
   "Choose the language of the app.": "Escolha o idioma do app.",
   "You can change it later in Settings. Switching does not convert numbers already logged.": "Você pode trocar depois nas configurações. Trocar não converte os números já registrados.",
   "You can switch anytime in Settings.": "Você pode trocar quando quiser nas configurações.",

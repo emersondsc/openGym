@@ -79,8 +79,8 @@ export default function Setup() {
 
   let title, sub, body
   if (key === 'body') {
-    title = t('Which body diagram do you want to see?')
-    sub = t('Only used to draw the muscles you trained.')
+    title = t('What is your sex?')
+    sub = null
     body = <RadioGroup label={title} value={draft.body} disabled={busy} onChange={v => set('body', v)}
       options={[{ value: 'male', label: t('Male') }, { value: 'female', label: t('Female') }]} />
   } else if (key === 'lang') {
@@ -117,7 +117,7 @@ export default function Setup() {
     <div className="setup">
       <div className="setup-step">{t('Step {0} of 4', step + 1)}</div>
       <h2 ref={head} tabIndex={-1}>{title}</h2>
-      <div className="setup-sub">{sub}</div>
+      {sub ? <div className="setup-sub">{sub}</div> : <div style={{ height: 14 }} />}
       {body}
       {last && error && <div className="setup-err" role="alert">{t('Could not save. Check your connection.')}</div>}
       <div className="setup-nav">
