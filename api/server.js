@@ -1235,8 +1235,8 @@ const server = http.createServer(async (req, res) => {
 // Importado por um teste, o módulo não abre porta nenhuma.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const HOST = (process.env.HOST || '').trim();
-const onListen = () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})${HOST ? ` host=${HOST}` : ''}`);
-HOST ? server.listen(PORT, HOST, onListen) : server.listen(PORT, onListen);
+  const onListen = () => console.log(`gym-api on :${PORT} (rpID=${RP_ID}, origin=${ORIGIN})${HOST ? ` host=${HOST}` : ''}`);
+  HOST ? server.listen(PORT, HOST, onListen) : server.listen(PORT, onListen);
   if (COACH_AUTO_APPLY && COACH_OWNER_UID) {
     // Relógio de 3 s e aviso da pasta: o que chegar em `pending/` e puder entrar direto entra.
     const varrer = () => { try { ROUTINE_HANDLERS.varrerAutomaticas(); } catch (e) { console.error('[og-proposal] varrer', e.message); } };
