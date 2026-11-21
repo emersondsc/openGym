@@ -7,7 +7,7 @@
 // and the lock is re-acquired on every visibilitychange for as long as it holds.
 import { useEffect } from 'react'
 
-export const wakeLockSupported = () => 'wakeLock' in navigator
+export const wakeLockSupported = () => typeof navigator !== 'undefined' && 'wakeLock' in navigator
 
 let sentinel = null       // the live WakeLockSentinel, null when we hold nothing
 let wanted = false        // do we currently want the screen to stay on?

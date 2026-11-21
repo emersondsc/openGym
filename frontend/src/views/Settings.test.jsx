@@ -24,6 +24,9 @@ vi.mock('../store/useUI.js', () => ({
   }),
 }))
 
+vi.stubGlobal('navigator', { userAgent: '' })
+vi.stubGlobal('window', {})
+
 const { setLang } = await import('../lib/i18n.js')
 const { default: Settings } = await import('./Settings.jsx')
 
@@ -38,6 +41,7 @@ const renderSettings = () => renderToStaticMarkup(<MemoryRouter><Settings /></Me
 
 afterAll(async () => {
   await setLang('en')
+  vi.unstubAllGlobals()
 })
 
 describe('Settings — seção Cards', () => {
