@@ -159,7 +159,7 @@ function RunEditForm({ id, had, initDay }) {
     place,
     km: parseKm(km),
     sec: parseDuration(time),
-    elev: place === 'treadmill' ? null : numOrEmpty(opt.elev),
+    elev: numOrEmpty(opt.elev),
     hrAvg: numOrEmpty(opt.hrAvg),
     hrMax: numOrEmpty(opt.hrMax),
     rpe,
@@ -283,7 +283,7 @@ function RunEditForm({ id, had, initDay }) {
   const runEx = EXIDX[RUN_MEDIA_ID[place]]
 
   const detailBadges = [
-    place !== 'treadmill' && opt.elev.trim() !== '' ? `${opt.elev.trim()} m` : null,
+    opt.elev.trim() !== '' ? `${opt.elev.trim()} m` : null,
     opt.hrAvg.trim() !== '' ? `${opt.hrAvg.trim()} bpm` : null,
     rpe != null ? `${t('Effort')} ${rpe}/10` : null,
     note.trim() ? t('Note') : null,
@@ -513,23 +513,21 @@ function RunEditForm({ id, had, initDay }) {
               </div>
             </div>
 
-            {place !== 'treadmill' && (
-              <div style={{ marginTop: 12 }}>
-                <label htmlFor="run-elev" className="run-field-lbl">{t('Elevation gain')}</label>
-                <div className={'run-box sm' + (touched.elev && bad.elev ? ' bad' : '')}>
-                  <input
-                    id="run-elev"
-                    inputMode="numeric"
-                    placeholder="48"
-                    value={opt.elev}
-                    onChange={e => setOpt(o => ({ ...o, elev: e.target.value }))}
-                    onBlur={touch('elev')}
-                  />
-                  <span className="u">m</span>
-                </div>
-                {err('elev')}
+            <div style={{ marginTop: 12 }}>
+              <label htmlFor="run-elev" className="run-field-lbl">{t('Elevation gain')}</label>
+              <div className={'run-box sm' + (touched.elev && bad.elev ? ' bad' : '')}>
+                <input
+                  id="run-elev"
+                  inputMode="numeric"
+                  placeholder="48"
+                  value={opt.elev}
+                  onChange={e => setOpt(o => ({ ...o, elev: e.target.value }))}
+                  onBlur={touch('elev')}
+                />
+                <span className="u">m</span>
               </div>
-            )}
+              {err('elev')}
+            </div>
 
             <div style={{ marginTop: 14 }}>
               <div className="row between" style={{ marginBottom: 6, gap: 8 }}>

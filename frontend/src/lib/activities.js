@@ -73,7 +73,6 @@ export function withRun(map, id, fields, now = Date.now()) {
   const e = { d: fields.d, sport: 'run', km: round2(fields.km), sec: fields.sec,
     min: Math.max(1, Math.round(fields.sec / 60)), place: PLACES.includes(fields.place) ? fields.place : 'outdoor' }
   for (const k of OPT_NUM) {
-    if (k === 'elev' && e.place === 'treadmill') continue
     if (!empty(fields[k])) e[k] = fields[k]
   }
   if (!empty(fields.note)) {
@@ -177,7 +176,7 @@ export function validateRun(f, today = todayISO()) {
     if (!empty(f[k]) && !(f[k] >= LIMITS.hrMin && f[k] <= LIMITS.hrMax)) errors[k] = 'Heart rate must be between 30 and 250'
   }
   if (!errors.hrAvg && !errors.hrMax && !empty(f.hrAvg) && !empty(f.hrMax) && f.hrMax < f.hrAvg) errors.hrMax = 'Max heart rate is below average'
-  if (!empty(f.elev) && f.place !== 'treadmill' && !(f.elev >= 0 && f.elev <= LIMITS.elevMax)) errors.elev = 'Elevation must be between 0 and 10,000 m'
+  if (!empty(f.elev) && !(f.elev >= 0 && f.elev <= LIMITS.elevMax)) errors.elev = 'Elevation must be between 0 and 10,000 m'
   if (!empty(f.rpe) && !(Number.isInteger(f.rpe) && f.rpe >= LIMITS.rpeMin && f.rpe <= LIMITS.rpeMax)) errors.rpe = 'Effort must be 1 to 10'
   if (!errors.km && !errors.sec) {
     const p = paceOf(km, f.sec)

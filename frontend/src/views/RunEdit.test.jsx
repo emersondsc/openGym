@@ -117,12 +117,12 @@ describe('RunEdit — helpers e tela dedicada', () => {
     expect(html).toContain('Excluir')
   })
 
-  it('oculta ganho de elevação quando a corrida é na esteira', () => {
+  it('mantém ganho de elevação disponível quando a corrida é na esteira', () => {
     mockS = baseState({
       activities: {
         r2: {
           d: todayISO(), sport: 'run', km: 3, sec: 1200, min: 20,
-          place: 'treadmill', hrAvg: 145, src: 'manual', _ts: 100,
+          place: 'treadmill', elev: 120, hrAvg: 145, src: 'manual', _ts: 100,
         },
       },
     })
@@ -130,6 +130,7 @@ describe('RunEdit — helpers e tela dedicada', () => {
     expect(html).toContain('Esteira')
     expect(html).toContain('0684-y5p0H8a.gif')
     expect(html).toContain('FC média')
-    expect(html).not.toContain('Ganho de elevação')
+    expect(html).toContain('Ganho de elevação')
+    expect(html).toContain('value="120"')
   })
 })
