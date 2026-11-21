@@ -1,11 +1,11 @@
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { t } from '../lib/i18n.js'
-import { runSheet } from '../sheets.jsx'
 import { runsOf, historyItems } from '../lib/activities.js'
 import HistoryList from '../components/HistoryList.jsx'
 import RunCard from '../components/RunCard.jsx'
 import Icon from '../components/Icon.jsx'
+import { Button } from '../components/ui.jsx'
 
 // Treinos e corridas numa lista só (docs/specs/spec_corrida.md, DIP §13): por dia, do mais recente
 // para o mais antigo; no mesmo dia, os treinos primeiro e as corridas depois.
@@ -18,7 +18,7 @@ export default function History() {
   return <>
     <div className="hdr"><button className="iconbtn" onClick={() => nav('/stats')} aria-label={t('Stats')}><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1, marginLeft: 12 }}><h1>{t('History')}</h1><div className="sub">{sub}</div></div>
-      <button className="iconbtn" onClick={() => runSheet()} aria-label={t('Log a run')}><Icon name="figureRun" /></button></div>
+      <Button size="sm" variant="tinted" icon="plus" onClick={() => nav('/run/new')} aria-label={t('Log a run')}>{t('Run')}</Button></div>
     <RunCard runs={runs} />
     {items.length ? <HistoryList items={items} />
       : <div className="empty"><div className="ico"><Icon name="history" /></div>{t('No workouts yet.')}</div>}

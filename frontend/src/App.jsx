@@ -26,6 +26,7 @@ import Workout from './views/Workout.jsx'
 import Stats from './views/Stats.jsx'
 import History from './views/History.jsx'
 import WorkoutEdit from './views/WorkoutEdit.jsx'
+import RunEdit from './views/RunEdit.jsx'
 import Library from './views/Library.jsx'
 import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
@@ -107,6 +108,8 @@ function Shell() {
               <Route path="/stats" element={<Stats />} />
               <Route path="/history" element={<History />} />
               <Route path="/history/w/:id" element={<WorkoutEdit />} />
+              <Route path="/run/new" element={<RunEdit />} />
+              <Route path="/run/:id" element={<RunEdit />} />
               <Route path="/library" element={<Library />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/proposals" element={user?.coachOwner ? <Proposals /> : <Navigate to="/home" replace />} />

@@ -18,7 +18,7 @@ import BodyMap from './components/BodyMap.jsx'
 import StylePreview from './components/StylePreview.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
 import { removeWorkout } from './lib/workout-edit.js'
-import { runsOf, runsOn, runDays, withRun, removeRun, parseKm, parseDuration, fmtDuration, fmtPace, paceOf, validateRun } from './lib/activities.js'
+import { runsOn, runDays } from './lib/activities.js'
 import RunRow from './components/RunRow.jsx'
 import { NOTE_MAX, NOTE_TYPES, noteLength, notesOf, applyNote, routineExOf, withoutNote } from './lib/notes.js'
 import { NOTE_META, NOTE_ORDER, NoteLines } from './components/NoteList.jsx'
@@ -1175,94 +1175,13 @@ function WorkoutDate({ iso, onPick, close }) {
 }
 export const workoutDateSheet = (iso, onPick) => ui().openSheet(close => <WorkoutDate iso={iso} onPick={onPick} close={close} />)
 
-/* ============================ corrida (docs/specs/spec_corrida.md) ============================ */
-// Formulário de uma corrida já feita. Fica aqui, ao lado do DayOverride, para reaproveitar o seletor
-// de data (workoutDateSheet, que já desabilita dias futuros), o confirmSheet, o update e o toast.
-const RUN_OPT = [
-  ['elev', 'Elevation gain', 'm'], ['hrAvg', 'Avg HR', 'bpm'], ['hrMax', 'Max HR', 'bpm'],
-]
-const numOrEmpty = v => { const s = String(v ?? '').trim(); if (!s) return null; const n = Number(s.replace(',', '.')); return Number.isFinite(n) ? n : NaN }
-function RunLog({ id, day, close }) {
-  const st = useStore(s => s.S)
-  const had = id ? runsOf(st).find(x => x.id === id) : null
-  const [d, setD] = useState(had?.d || day || todayISO())
-  const [place, setPlace] = useState(had?.place || 'outdoor')
-  const [km, setKm] = useState(had ? fmtNum(had.km) : '')
-  const [time, setTime] = useState(had ? fmtDuration(had.sec) : '')
-  const [opt, setOpt] = useState(() => ({ elev: had?.elev ?? '', hrAvg: had?.hrAvg ?? '', hrMax: had?.hrMax ?? '' }))
-  const [rpe, setRpe] = useState(had?.rpe ?? null)
-  const [note, setNote] = useState(had?.note || '')
-  const [more, setMore] = useState(!!had && ['elev', 'hrAvg', 'hrMax', 'rpe', 'note'].some(k => had[k] != null && had[k] !== ''))
-  const [touched, setTouched] = useState({})
-  const touch = k => () => setTouched(x => ({ ...x, [k]: true }))
-  const fields = {
-    d, place, km: parseKm(km), sec: parseDuration(time),
-    elev: place === 'treadmill' ? null : numOrEmpty(opt.elev), hrAvg: numOrEmpty(opt.hrAvg), hrMax: numOrEmpty(opt.hrMax),
-    rpe, note,
-  }
-  // Texto que não vira número conta como inválido, não como vazio.
-  if (km.trim() && fields.km == null) fields.km = NaN
-  if (time.trim() && fields.sec == null) fields.sec = NaN
-  const { errors, warnings } = validateRun(fields)
-  const bad = { ...errors }
-  if (Number.isNaN(fields.km)) bad.km = 'Distance must be between 0 and 300 km'
-  if (Number.isNaN(fields.sec)) bad.sec = 'Time must be between 1:00 and 24:00:00'
-  const ok = !Object.keys(bad).length
-  const err = k => touched[k] && bad[k] ? <div className="small" style={{ color: 'var(--red)', marginTop: 4 }}>{t(bad[k])}</div> : null
-  const save = () => {
-    if (!ok) return
-    update(s => { s.activities = withRun(s.activities, id, fields).map })
-    close()
-    toast(had ? t('Saved') : t('Run logged'))
-  }
-  const remove = () => confirmSheet({
-    title: t('Delete run?'), confirmText: t('Delete'), danger: true,
-    onConfirm: () => { update(s => { s.activities = removeRun(s.activities, id) }); close(); toast(t('Run deleted')) },
-  })
-  const pace = ok ? fmtPace(paceOf(fields.km, fields.sec)) : null
-  return <>
-    <h3>{had ? t('Edit run') : t('Log a run')}</h3>
-    <div className="item" onClick={() => workoutDateSheet(d, setD)}>
-      <div className="grow"><div className="tt">{t('Date')}</div><div className="ss">{fmtDate(d, true)}</div></div>
-      <Icon name="calendar" className="chev" />
-    </div>
-    {err('d')}
-    <div className="chips" role="radiogroup" aria-label={t('Run')} style={{ margin: '12px 0' }}>
-      {['outdoor', 'treadmill'].map(k => <button key={k} type="button" role="radio" aria-checked={place === k}
-        className={'chip' + (place === k ? ' on' : '')} onClick={() => setPlace(k)}>{t(k === 'outdoor' ? 'Outdoor' : 'Treadmill')}</button>)}
-    </div>
-    <label className="small muted">{t('Distance')} (km)</label>
-    <input className="input" inputMode="decimal" placeholder="5,2" value={km} onChange={e => setKm(e.target.value)} onBlur={touch('km')} />
-    {err('km')}
-    <label className="small muted" style={{ display: 'block', marginTop: 10 }}>{t('Moving time')}</label>
-    <input className="input" inputMode="numeric" placeholder="28:41" value={time} onChange={e => setTime(e.target.value)}
-      onBlur={() => { const s = parseDuration(time); if (s != null) setTime(fmtDuration(s)); touch('sec')() }} />
-    {!(touched.sec && bad.sec) && <div className="small dim" style={{ marginTop: 4 }}>{t('Numbers only: 2841 = 28:41')}</div>}
-    {err('sec')}
-    {pace && <div className="small" style={{ marginTop: 8 }}>{t('Pace')}: <b>{pace}</b></div>}
-    {ok && warnings.map(w => <div key={w} className="small" style={{ color: 'var(--orange)', marginTop: 4 }}>{t(w)}</div>)}
-    <button type="button" className="btn plain" style={{ marginTop: 10 }} onClick={() => setMore(v => !v)}>
-      <span>{t('More details')}</span><Icon name={more ? 'chevronUp' : 'chevronDown'} /></button>
-    {more && <div style={{ marginTop: 6 }}>
-      {RUN_OPT.filter(([k]) => !(k === 'elev' && place === 'treadmill')).map(([k, label, unit]) => <div key={k} style={{ marginBottom: 8 }}>
-        <label className="small muted">{t(label)} ({unit})</label>
-        <input className="input" inputMode="numeric" value={opt[k]} onChange={e => setOpt(o => ({ ...o, [k]: e.target.value }))} onBlur={touch(k)} />
-        {err(k)}
-      </div>)}
-      <label className="small muted">{t('Perceived effort')}</label>
-      <div className="chips" style={{ flexWrap: 'wrap', margin: '6px 0 10px' }}>
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <button key={n} type="button" aria-pressed={rpe === n}
-          className={'chip' + (rpe === n ? ' on' : '')} onClick={() => setRpe(rpe === n ? null : n)}>{n}</button>)}
-      </div>
-      <label className="small muted">{t('Note')}</label>
-      <TextArea rows={2} maxLength={NOTE_MAX} value={note} onChange={e => setNote(e.target.value)} />
-    </div>}
-    <div style={{ height: 12 }} />
-    <Button variant="primary" icon="check" onClick={save} disabled={!ok}>{t('Save')}</Button>
-    {had && <><div style={{ height: 8 }} /><Button variant="ghost" className="dim" icon="trash" onClick={remove}>{t('Delete')}</Button></>}
-  </>
+/* ============================ corrida (views/RunEdit.jsx) ============================ */
+// A criação e edição de corrida vivem em tela própria (`/run/new` e `/run/:id`). Este atalho
+// fecha as folhas abertas (Calendar / DayOverride) e navega para lá.
+export const runSheet = (id = null, day = null) => {
+  ui().closeAll()
+  nav(id ? '/run/' + id : day ? '/run/new?day=' + day : '/run/new')
 }
-export const runSheet = (id = null, day = null) => ui().openSheet(close => <RunLog id={id} day={day} close={close} />)
 
 /* A folha de unidade do treino grava em `S.active` E na rotina de origem; aqui o alvo e o rascunho
    de um treino JA finalizado, e a rotina nao pode ser tocada. O numero nao e convertido: `200`
