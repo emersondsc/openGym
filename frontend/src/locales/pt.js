@@ -1123,5 +1123,21 @@ export default {
   "Elevation must be between 0 and 10,000 m": "A elevação precisa ficar entre 0 e 10.000 m",
   "Effort must be 1 to 10": "O esforço vai de 1 a 10",
   "Unusual pace, check distance and time": "Ritmo fora do comum, confira distância e tempo",
-  "Numbers only: 2841 = 28:41": "Só números: 2841 = 28:41"
+  "Numbers only: 2841 = 28:41": "Só números: 2841 = 28:41",
+  // esconder/reexibir cards de Home e Stats
+  "Your progress": "Seu progresso",
+  "Hide {0}": "Ocultar {0}",
+  "Card hidden — show again in Settings": "Card oculto — reexiba em Configurações",
+  "Cards": "Cards",
+  "Home cards": "Cards da tela Início",
+  "Stats cards": "Cards de Estatísticas",
+  "Choose which cards appear on {0}.": "Escolha quais cards aparecem em {0}.",
+  "Hide any card from its corner icon and bring it back here anytime.": "Oculte qualquer card pelo ícone no canto dele e traga de volta aqui quando quiser.",
+  "All visible": "Todos visíveis",
+  "1 hidden": "1 oculto",
+  "{0} hidden": "{0} ocultos",
+  "Show all": "Mostrar todos",
+  "Show all cards": "Mostrar todos os cards",
+  "All cards visible": "Todos os cards visíveis",
+  "All Stats cards are hidden.": "Todos os cards de Estatísticas estão ocultos."
 }

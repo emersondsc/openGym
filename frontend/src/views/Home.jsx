@@ -9,8 +9,10 @@ import { dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan } from '../
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
+import { isCardHidden } from '../lib/cards.js'
 import ExerciseProgressCard from '../components/ExerciseProgressCard.jsx'
 import ProposalsCard from '../components/ProposalsCard.jsx'
+import HideCardBtn from '../components/HideCardBtn.jsx'
 
 // Home = what to do now + a quick glance. Deep charts & history live in Stats.
 export default function Home() {
@@ -76,6 +78,7 @@ export default function Home() {
 
   // today's session shown right under the week strip
   const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
+  const hidden = id => isCardHidden(S, 'home', id)
 
   return <div className="narrow">
     <div className="hdr">
@@ -106,11 +109,14 @@ export default function Home() {
       </div>
     </div>
 
-    {!S.routines.length && !S.active && (
+    {!S.routines.length && !S.active && !hidden('welcome') && (
       <div className="card">
-        <div className="row" style={{ gap: 10, marginBottom: 6 }}>
-          <span className="lrow-i"><Icon name="sparkles" /></span>
-          <div className="big" style={{ fontSize: 22 }}>{t('Welcome!')}</div>
+        <div className="row between" style={{ marginBottom: 6 }}>
+          <div className="row" style={{ gap: 10 }}>
+            <span className="lrow-i"><Icon name="sparkles" /></span>
+            <div className="big" style={{ fontSize: 22 }}>{t('Welcome!')}</div>
+          </div>
+          <HideCardBtn screen="home" id="welcome" label={t('Welcome!')} />
         </div>
         <div className="muted small" style={{ marginBottom: 12 }}>{t('Set up your weekly routine to get going — or load a ready-made Push / Pull / Legs plan.')}</div>
         <Button variant="primary" icon="sparkles" onClick={loadStarterPlan}>{t('Load starter plan (PPL)')}</Button>
@@ -118,7 +124,7 @@ export default function Home() {
       </div>
     )}
 
-    <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>
+    {!hidden('streak') && <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>
       <div className="row between">
         <div>
           <div className="row" style={{ gap: 7, fontSize: 22, fontWeight: 600, letterSpacing: '-.021em' }}>
@@ -127,11 +133,14 @@ export default function Home() {
           </div>
           <div className="muted small" style={{ marginTop: 2 }}>{wThisWeek}{plannedPerWeek ? ' / ' + plannedPerWeek : ''} {t('this week')} · {t(S.workouts.length === 1 ? '{0} workout total' : '{0} workouts total', S.workouts.length)}</div>
         </div>
-        <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
+        <div className="row" style={{ gap: 10 }}>
+          <HideCardBtn screen="home" id="streak" label={t('Week streak')} />
+          <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
+        </div>
       </div>
-    </div>
+    </div>}
 
-    {planWorked.length > 0 ? (
+    {!hidden('volume') && (planWorked.length > 0 ? (
       <div className="card tappable" style={{ cursor: 'pointer' }} role="button" tabIndex={0}
         onClick={() => nav('/plan')}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') nav('/plan') }}
@@ -141,13 +150,16 @@ export default function Home() {
         {/* Header: title + overall progress pill. Future weeks show planned-only */}
         <div className="row between" style={{ marginBottom: isFuture ? 10 : 6 }}>
           <h2 style={{ margin: 0 }}>{t('Weekly volume')}{isFuture ? ' · ' + t('planned') : ''}</h2>
-          {isFuture ? (
-            <span className="muted small">{t('{0} workouts', nPlan)}</span>
-          ) : (
-            <span className="tag" style={{ background: overallPct >= 100 ? 'var(--acc)' : 'var(--acc-soft)', color: overallPct >= 100 ? 'var(--on-acc)' : 'var(--acc)', fontWeight: 600, fontSize: 12, padding: '3px 8px', borderRadius: 99 }}>
-              {overallPct}% · {t('{0} of {1} workouts', nDone, nPlan)}
-            </span>
-          )}
+          <div className="row" style={{ gap: 8 }}>
+            {isFuture ? (
+              <span className="muted small">{t('{0} workouts', nPlan)}</span>
+            ) : (
+              <span className="tag" style={{ background: overallPct >= 100 ? 'var(--acc)' : 'var(--acc-soft)', color: overallPct >= 100 ? 'var(--on-acc)' : 'var(--acc)', fontWeight: 600, fontSize: 12, padding: '3px 8px', borderRadius: 99 }}>
+                {overallPct}% · {t('{0} of {1} workouts', nDone, nPlan)}
+              </span>
+            )}
+            <HideCardBtn screen="home" id="volume" label={t('Weekly volume')} />
+          </div>
         </div>
         {!isFuture && totalPlan > 0 && (
           <div className="muted small" style={{ marginBottom: 10, lineHeight: 1.35 }}>
@@ -193,7 +205,10 @@ export default function Home() {
         aria-label={t('Weekly volume done, {0} workouts — open Plan', nDone)}>
         <div className="row between" style={{ marginBottom: 8 }}>
           <h2 style={{ margin: 0 }}>{t('Weekly volume')} · {t('done')}</h2>
-          <span className="muted small">{t('{0} workouts', nDone)}</span>
+          <div className="row" style={{ gap: 8 }}>
+            <span className="muted small">{t('{0} workouts', nDone)}</span>
+            <HideCardBtn screen="home" id="volume" label={t('Weekly volume')} />
+          </div>
         </div>
         {doneTop.map(m => <div key={m} className="mrow">
           <span className="nm">{t(MUSCLE_NAME[m])}</span>
@@ -210,12 +225,15 @@ export default function Home() {
         aria-label={t('No plan this week yet. — open Plan')}>
         <div className="row between">
           <h2 style={{ margin: 0 }}>{t('Weekly volume')} · {t('planned')}</h2>
-          <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
+          <div className="row" style={{ gap: 10 }}>
+            <HideCardBtn screen="home" id="volume" label={t('Weekly volume')} />
+            <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
+          </div>
         </div>
         <div className="muted small" style={{ marginTop: 6 }}>{t('No plan this week yet.')}</div>
       </div>
-    )}
-    <ProposalsCard />
-    <ExerciseProgressCard />
+    ))}
+    {!hidden('proposals') && <ProposalsCard />}
+    {!hidden('exercise') && <ExerciseProgressCard screen="home" />}
   </div>
 }

@@ -4,12 +4,17 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 
 let mockS = {}
-const useStoreMock = Object.assign(sel => sel({ S: mockS, user: null }), {
+const useStoreMock = Object.assign(sel => sel({ S: mockS, user: null, update: () => {} }), {
   getState: () => ({ S: mockS, user: null, update: () => {} }),
 })
 vi.mock('../store/useStore.js', () => ({
   useStore: useStoreMock,
   isValidRest: () => true,
+}))
+vi.mock('../store/useUI.js', () => ({
+  useUI: Object.assign(sel => sel({ toast: () => {}, openSheet: () => {} }), {
+    getState: () => ({ toast: () => {}, openSheet: () => {} }),
+  }),
 }))
 
 const { setLang } = await import('../lib/i18n.js')
@@ -84,5 +89,30 @@ describe('Stats — Treinos recentes com corridas', () => {
     })
     const html = renderStats()
     expect(html).not.toContain('Treinos recentes')
+  })
+
+  it('oculta cards individuais de Stats e ajusta o grid quando só Peso ou Exercício fica visível', () => {
+    mockS = baseState({
+      workouts: [workout('w1', '2026-11-21')],
+      activities: { r1: run('2026-11-21') },
+      hiddenCards: { home: {}, stats: { heatmap: true, recent: true, coach: true, muscles: true, weight: true } },
+    })
+    const html = renderStats()
+    expect(html).not.toContain('Atividade — últimos 12 meses')
+    expect(html).not.toContain('Treinos recentes')
+    expect(html).not.toContain('Seu progresso')
+    expect(html).not.toContain('Equilíbrio muscular')
+    expect(html).not.toContain('Peso corporal')
+    expect(html).toContain('Progresso por exercício')
+    expect(html).not.toContain('class="cols"')
+  })
+
+  it('mostra aviso e botão de restaurar quando todos os cards de Stats estão ocultos', () => {
+    mockS = baseState({
+      hiddenCards: { home: {}, stats: { heatmap: true, recent: true, coach: true, muscles: true, effort: true, weight: true, exercise: true } },
+    })
+    const html = renderStats()
+    expect(html).toContain('Todos os cards de Estatísticas estão ocultos.')
+    expect(html).toContain('Mostrar todos os cards')
   })
 })

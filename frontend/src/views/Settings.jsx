@@ -5,6 +5,8 @@ import { useUI } from '../store/useUI.js'
 import { ACCENTS, SKINS, skinOf, effAccent, todayISO, localTZ, fmtDate, uid } from '../lib/format.js'
 import { NATIVE_SET_ROLES, ROLE_NAME_KEY, BASE_CLASS_OF_NATIVE, MAX_ACTIVE_CUSTOM_ROLES, MAX_ROLE_NAME } from '../lib/set-roles.js'
 import { effortOf } from '../lib/history.js'
+import { hasEffort } from '../lib/effort.js'
+import { visibleCardsFor, isCardHidden, withCardHidden, clearHiddenCards, countHidden } from '../lib/cards.js'
 import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID, deviceName, listPasskeys, passkeyAddStart, passkeyAddFinish, passkeyRemove } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
 import { wakeLockSupported } from '../lib/wakelock.js'
@@ -195,6 +197,8 @@ export default function Settings() {
         </div>
       </div>}
     </Section>
+
+    <CardsSection S={S} user={user} update={update} toast={toast} />
 
     {/* ---------- data: fill it, bring things over, back it up, wipe it ---------- */}
     <Section title={t('Data')}>
@@ -545,6 +549,59 @@ function SetRolesSection({ S, update, toast }) {
           title={r.name} value={t(CLASS_LABEL[r.baseClass])} accessory="chevron" onClick={() => openRole(r)} />
       ))}
       <Row icon="plus" iconTint="var(--blue)" title={t('Add role')} accessory="chevron" onClick={() => openRole(null)} />
+    </Section>
+  )
+}
+
+function CardsSheet({ screen, close }) {
+  const S = useStore(s => s.S)
+  const user = useStore(s => s.user)
+  const update = useStore(s => s.update)
+  const cards = visibleCardsFor(S, user, screen, hasEffort(S))
+  const hiddenN = countHidden(S, screen, cards)
+  return <>
+    <h3>{screen === 'home' ? t('Home cards') : t('Stats cards')}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>
+      {t('Choose which cards appear on {0}.', t(screen === 'home' ? 'Home' : 'Stats'))}
+    </div>
+    <div className="sect-b">
+      {cards.map(c => {
+        const shown = !isCardHidden(S, screen, c.id)
+        return (
+          <Row key={c.id} title={t(c.label)}>
+            <Switch checked={shown} onChange={v => update(s => { s.hiddenCards = withCardHidden(s.hiddenCards, screen, c.id, !v) })} />
+          </Row>
+        )
+      })}
+    </div>
+    {hiddenN > 0 && <>
+      <div style={{ height: 12 }} />
+      <Button onClick={() => update(s => { s.hiddenCards = clearHiddenCards(s.hiddenCards, screen) })}>
+        {t('Show all')}
+      </Button>
+    </>}
+    <div style={{ height: 8 }} />
+    <Button variant="primary" onClick={close}>{t('Done')}</Button>
+  </>
+}
+
+function CardsSection({ S, user, update, toast }) {
+  const eff = hasEffort(S)
+  const homeCards = visibleCardsFor(S, user, 'home', eff)
+  const statsCards = visibleCardsFor(S, user, 'stats', eff)
+  const homeHidden = countHidden(S, 'home', homeCards)
+  const statsHidden = countHidden(S, 'stats', statsCards)
+  const anyHidden = homeHidden + statsHidden > 0
+  const status = n => (n === 0 ? t('All visible') : n === 1 ? t('1 hidden') : t('{0} hidden', n))
+  const openCards = screen => useUI.getState().openSheet(close => <CardsSheet screen={screen} close={close} />)
+  return (
+    <Section title={t('Cards')} footer={t('Hide any card from its corner icon and bring it back here anytime.')}>
+      <Row icon="house" iconTint="var(--acc)" title={t('Home')} value={status(homeHidden)} accessory="chevron" onClick={() => openCards('home')} />
+      <Row icon="chart" iconTint="var(--blue)" title={t('Stats')} value={status(statsHidden)} accessory="chevron" onClick={() => openCards('stats')} />
+      {anyHidden && (
+        <Row icon="eye" iconTint="var(--teal)" title={t('Show all cards')} accessory="chevron"
+          onClick={() => { update(s => { s.hiddenCards = clearHiddenCards(s.hiddenCards) }); toast(t('All cards visible')) }} />
+      )}
     </Section>
   )
 }
