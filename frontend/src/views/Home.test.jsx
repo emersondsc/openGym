@@ -66,8 +66,10 @@ describe('Home — esconder cards', () => {
     expect(html).toContain('Registrar corrida')
   })
 
-  it('mostra atalho de corrida na Home com km da semana ou resumo da última corrida', () => {
-    expect(renderHome()).toContain('Ao ar livre ou esteira')
+  it('mostra atalho de corrida na Home com gif de corrida, km da semana ou resumo da última corrida', () => {
+    const emptyHtml = renderHome()
+    expect(emptyHtml).toContain('Ao ar livre ou esteira')
+    expect(emptyHtml).toContain('0685-oLrKqDH.gif')
 
     mockS = baseState({
       activities: {
