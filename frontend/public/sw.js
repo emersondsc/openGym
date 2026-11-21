@@ -1,6 +1,6 @@
 /* openGym service worker — runtime caching (works with Vite's hashed asset names).
-   Media (img/gif) cache-first; everything else network-first with offline fallback. */
-const CACHE = 'opengym-rt-v2'
+   Media (still/clip) cache-first; everything else network-first with offline fallback. */
+const CACHE = 'opengym-rt-v3'
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', e => {
@@ -33,10 +33,12 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return
   if (url.pathname.startsWith('/api/')) return    // never cache auth/data
 
-  const isMedia = url.pathname.includes('/img/') || url.pathname.includes('/gif/')
+  const isMedia = url.pathname.includes('/exercise-media/') || url.pathname.includes('/img/') || url.pathname.includes('/gif/')
   if (isMedia) {
+    // Video elements often issue Range requests (206 Partial Content); Cache.put rejects 206, so only cache full 200 responses.
+    if (e.request.headers.has('range')) return
     e.respondWith(caches.open(CACHE).then(c => c.match(e.request).then(hit =>
-      hit || fetch(e.request).then(res => { if (res.ok) c.put(e.request, res.clone()); return res })
+      hit || fetch(e.request).then(res => { if (res.ok && res.status === 200) c.put(e.request, res.clone()); return res })
     )))
   } else {
     e.respondWith(fetch(e.request).then(res => {

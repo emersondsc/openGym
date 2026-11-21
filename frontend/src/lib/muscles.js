@@ -35,6 +35,7 @@ export const MUSCLE_NAME = {
 const ALIAS = {
   // primaries
   abs: 'abs', pectorals: 'chest', biceps: 'biceps', glutes: 'gluteal', delts: 'deltoids',
+  'front delts': 'deltoids', 'side delts': 'deltoids', 'rear delts': 'deltoids',
   triceps: 'triceps', 'upper back': 'upper-back', lats: 'upper-back', calves: 'calves',
   quads: 'quadriceps', forearms: 'forearm', hamstrings: 'hamstring', spine: 'lower-back',
   traps: 'trapezius', adductors: 'adductors', 'serratus anterior': 'serratus',
@@ -64,6 +65,7 @@ const BY_BODYPART = {
   'upper legs': { quadriceps: 0.4, hamstring: 0.35, gluteal: 0.25 },
   'lower legs': { calves: 0.8, tibialis: 0.2 },
   neck: { trapezius: 1 },
+  'full body': { quadriceps: 0.25, hamstring: 0.2, gluteal: 0.2, chest: 0.15, 'upper-back': 0.1, abs: 0.1 },
   cardio: {},
 }
 

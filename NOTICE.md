@@ -44,13 +44,52 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Exercise data & media
+## Exercise media (stills and animations)
 
-The exercise names, instructions (English in `frontend/src/lib/exercises-data.json`, other
-languages in `frontend/src/instr/`, regenerated via `scripts/build-instructions.mjs`), images
-and animations (fetched into `media/` at build time) come from
-[**hasaneyldrm/exercises-dataset**](https://github.com/hasaneyldrm/exercises-dataset)
-and are **not** covered by openGym's AGPL license — they remain under that dataset's own terms.
-The media files are not distributed in this repository; they are downloaded from the upstream
-source on first run. If you redistribute openGym with the media included, review the upstream
-license first.
+The exercise stills and animations in `catalogue/media/` (and inside the built container image)
+are licensed to openGym by Gym visual. **They are not covered by openGym's AGPL** and not by any
+licence of the exercise text below.
+
+> © Aliaksandr Makatserchyk, Gym visual, gymvisual.com (reuse is governed by Gym visual's Terms & Conditions; obtain your own license there before reusing the media). NOTICE TO DEVELOPERS: The exercise animations included in this project are provided strictly for use within the openGym application. Third parties have no rights to reuse, extract, or integrate these media assets into independent apps, websites, or commercial products. To use these animations for your own software, you must obtain a license directly from gymvisual.com.
+
+What that means in practice:
+
+- The repository and self-hosted server carry the media at 180×180 px at most.
+- There is no public API, CDN or downloadable media pack. Don't hotlink the files or copy them out
+  of this repository or a running instance.
+- A non-commercial fork of openGym may keep the unmodified 180 px media together with this notice.
+  A commercial fork, or any other use, needs its own licence from [gymvisual.com](https://gymvisual.com/).
+- The media may not be used to train, prompt or feed any AI system, or as a basis for generated
+  images, animations or video.
+
+## Exercise text (names, muscles, descriptions, instructions)
+
+The 1,324 original entries in `frontend/src/lib/exercises-data.json` keep names, muscles and
+instructions originating from [**ExerciseDB v1**](https://exercisedb.dev/) by AscendAPI through
+[**hasaneyldrm/exercises-dataset**](https://github.com/hasaneyldrm/exercises-dataset), under the MIT
+license reproduced below. The additional exercises and translations from `DuarteSantos8/openGym`
+are covered by openGym's AGPL.
+
+```
+MIT License
+
+Copyright (c) 2026 Hasan Emir Yıldırım
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

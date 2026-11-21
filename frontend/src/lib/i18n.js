@@ -49,6 +49,7 @@ export function t(s, ...args) {
 }
 // Instructions for an exercise in the current language (English steps as fallback).
 export const instrFor = ex => (instr && instr[ex.id]) || ex.st || []
+export const instrTranslated = ex => !!(instr && ex && instr[ex.id])
 
 export async function setLang(l) {
   if (!LANGS[l]) l = 'pt'

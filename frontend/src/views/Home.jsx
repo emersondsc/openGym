@@ -8,7 +8,8 @@ import { t, dateLocale } from '../lib/i18n.js'
 import { dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan } from '../sheets.jsx'
 import { runsOf, runDays, fmtKm, fmtPace, paceOf } from '../lib/activities.js'
 import { thisWeekKm } from '../lib/run-stats.js'
-import { EXIDX, gifSrc } from '../lib/exercises.js'
+import { EXIDX } from '../lib/exercises.js'
+import { ExerciseAnim } from '../components/Media.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
@@ -122,7 +123,7 @@ export default function Home() {
         <div className="row" style={{ gap: 9, minWidth: 0 }}>
           {EXIDX['0685'] && (
             <span className="run-quick-gif">
-              <img decoding="async" src={gifSrc(EXIDX['0685'])} alt="" />
+              <ExerciseAnim ex={EXIDX['0685']} alt="" />
             </span>
           )}
           <div style={{ minWidth: 0 }}>

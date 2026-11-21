@@ -1148,5 +1148,16 @@ export default {
   "Tap or slide": "Toque ou arraste",
   "Hard effort": "Forte",
   "Max effort": "Máximo",
-  "How did the run feel? (optional)": "Como foi a corrida? (opcional)"
+  "How did the run feel? (optional)": "Como foi a corrida? (opcional)",
+  // taxonomia do catálogo expandido (5.632 exercícios)
+  "full body": "Corpo inteiro",
+  "front delts": "Deltoide anterior",
+  "side delts": "Deltoide lateral",
+  "rear delts": "Deltoide posterior",
+  "suspension trainer": "Fita de suspensão",
+  "landmine": "Landmine",
+  "weight plate": "Anilha",
+  "massage ball": "Bola de massagem",
+  "sandbag": "Saco de areia",
+  "macebell": "Macebell"
 }

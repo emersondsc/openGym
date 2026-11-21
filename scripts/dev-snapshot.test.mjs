@@ -257,9 +257,13 @@ test('createMediaMiddleware serve /img e /gif com segurança estrita e bloqueia 
   try {
     fs.mkdirSync(path.join(mediaRoot, 'img'), { recursive: true })
     fs.mkdirSync(path.join(mediaRoot, 'gif'), { recursive: true })
+    fs.mkdirSync(path.join(mediaRoot, 'still'), { recursive: true })
+    fs.mkdirSync(path.join(mediaRoot, 'clip'), { recursive: true })
     fs.mkdirSync(path.join(mediaRoot, 'img2'), { recursive: true })
     fs.writeFileSync(path.join(mediaRoot, 'img', 'bench.jpg'), Buffer.from([0xff, 0xd8, 0xff]))
     fs.writeFileSync(path.join(mediaRoot, 'gif', 'bench.gif'), Buffer.from('GIF89a'))
+    fs.writeFileSync(path.join(mediaRoot, 'still', '0025.webp'), Buffer.from('RIFFWEBP'))
+    fs.writeFileSync(path.join(mediaRoot, 'clip', '0025.mp4'), Buffer.from('0123456789'))
     fs.writeFileSync(path.join(mediaRoot, 'img2', 'secret.jpg'), Buffer.from('nope'))
     fs.writeFileSync(path.join(mediaRoot, 'secret.jpg'), Buffer.from('nope'))
 
@@ -284,6 +288,17 @@ test('createMediaMiddleware serve /img e /gif com segurança estrita e bloqueia 
     assert.equal(gifRes.headers.get('content-type'), 'image/gif')
     assert.equal(await gifRes.text(), 'GIF89a')
 
+    const stillRes = await fetch(`${baseUrl}/exercise-media/still/0025.webp`)
+    assert.equal(stillRes.status, 200)
+    assert.equal(stillRes.headers.get('content-type'), 'image/webp')
+    assert.equal(await stillRes.text(), 'RIFFWEBP')
+
+    const clipRes = await fetch(`${baseUrl}/exercise-media/clip/0025.mp4`, { headers: { range: 'bytes=2-5' } })
+    assert.equal(clipRes.status, 206)
+    assert.equal(clipRes.headers.get('content-type'), 'video/mp4')
+    assert.equal(clipRes.headers.get('content-range'), 'bytes 2-5/10')
+    assert.equal(await clipRes.text(), '2345')
+
     const headRes = await fetch(`${baseUrl}/img/bench.jpg`, { method: 'HEAD' })
     assert.equal(headRes.status, 200)
     assert.equal(headRes.headers.get('content-type'), 'image/jpeg')
@@ -300,7 +315,9 @@ test('createMediaMiddleware serve /img e /gif com segurança estrita e bloqueia 
       '/img/%2e%2e%2fsecret.jpg',
       '/img/../gif/bench.gif',
       '/img/../img2/secret.jpg',
-      '/img/../img2/secret.jpg?x=1'
+      '/img/../img2/secret.jpg?x=1',
+      '/exercise-media/still/../secret.jpg',
+      '/exercise-media/clip/../still/0025.webp'
     ]) {
       const sockRes = await new Promise((resolve, reject) => {
         const req = http.request({ hostname: '127.0.0.1', port: srv.address().port, path: badPath, method: 'GET' }, res => {

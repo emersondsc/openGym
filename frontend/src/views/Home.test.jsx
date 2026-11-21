@@ -69,7 +69,7 @@ describe('Home — esconder cards', () => {
   it('mostra atalho de corrida na Home com gif de corrida, km da semana ou resumo da última corrida', () => {
     const emptyHtml = renderHome()
     expect(emptyHtml).toContain('Ao ar livre ou esteira')
-    expect(emptyHtml).toContain('0685-oLrKqDH.gif')
+    expect(emptyHtml).toContain('exercise-media/clip/0685.mp4')
 
     mockS = baseState({
       activities: {

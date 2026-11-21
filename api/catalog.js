@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const API_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /** Quantos exercícios a base tem hoje. Divergir não é erro — é aviso no boot. */
-export const CATALOG_EXPECTED = 1324;
+export const CATALOG_EXPECTED = 5632;
 
 /** Caminho canônico do catálogo. */
 export const CATALOG_PATH = process.env.OG_CATALOG

@@ -551,7 +551,10 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .wprog{height:4px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-bottom:16px}
 .wprog i{display:block;height:100%;background:var(--acc);border-radius:99px;transition:width var(--med) var(--ease)}
 .exmedia{position:relative;border-radius:var(--r-lg);overflow:hidden;background:#fff;margin-bottom:12px}
-.exmedia img{width:100%;height:320px;object-fit:contain;display:block}
+.exmedia img,.exmedia video{width:100%;height:320px;object-fit:contain;display:block}
+.exmedia video.catvid{background:#fff}
+.exmedia.broken{background:var(--surface-2)}
+.exmedia-x{width:100%;height:320px;display:flex;align-items:center;justify-content:center;color:var(--label-3);font-size:34px}
 .exmedia .gifhint,.exmedia .giftoggle{
   position:absolute;bottom:9px;display:inline-flex;align-items:center;gap:4px;
   background:rgba(0,0,0,.45);color:#fff;border-radius:99px;padding:5px 11px;
@@ -563,8 +566,8 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .exmedia .gifhint .icn,.exmedia .giftoggle .icn{font-size:13px}
 /* superset: both exercises are on screen together, so the animations have to give way —
    at 180px you had to scroll a full screen between two exercises done back-to-back */
-.exmedia.compact img{height:120px}
-.exmedia.mini img{height:84px}
+.exmedia.compact img,.exmedia.compact video,.exmedia.compact .exmedia-x{height:120px}
+.exmedia.mini img,.exmedia.mini video,.exmedia.mini .exmedia-x{height:84px}
 
 .sethead{
   display:flex;align-items:center;gap:8px;padding:0 0 6px;
@@ -1004,7 +1007,7 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
   /* 520px fits the clock, the bar and all three controls on one line again */
   #timer.rest{flex-direction:row;align-items:center;gap:14px}
   #timer.rest .head{flex:1;min-width:0}
-  .exmedia img{height:380px}
+  .exmedia img,.exmedia video{height:380px}
   .hm-wrap{display:flex;flex-direction:column;align-items:center}
 }
 
@@ -1577,7 +1580,7 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
   background:#fff;padding:2px;border:var(--hair) solid var(--sep-op);
   display:flex;align-items:center;justify-content:center;
 }
-.run-quick-gif img{width:100%;height:100%;object-fit:contain;display:block}
+.run-quick-gif img,.run-quick-gif video{width:100%;height:100%;object-fit:contain;display:block}
 .run-quick-t{font-size:15px;font-weight:500;letter-spacing:-.01em;line-height:1.25}
 .run-quick-s{font-size:12.5px;color:var(--label-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tag.run-tag{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue);font-weight:600}
@@ -1611,7 +1614,7 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
   transition:transform var(--fast) var(--ease);
 }
 .run-hero-media:active{transform:scale(.96)}
-.run-hero-media img{width:100%;height:100%;object-fit:contain;display:block}
+.run-hero-media img,.run-hero-media video{width:100%;height:100%;object-fit:contain;display:block}
 .run-hero-warn{
   display:flex;align-items:center;gap:6px;margin-top:10px;padding:8px 10px;
   border-radius:var(--r-sm);font-size:13px;line-height:1.35;

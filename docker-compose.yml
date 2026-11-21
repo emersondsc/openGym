@@ -1,26 +1,6 @@
 name: opengym
 
 services:
-  # One-time: download the exercise images + GIFs into ./media (skipped if already there).
-  # ~140 MB, from github.com/hasaneyldrm/exercises-dataset (CC).
-  media:
-    image: alpine/git
-    volumes:
-      - /mnt/drivebackup/apps/openGym/media/img:/out/img
-      - /mnt/drivebackup/apps/openGym/media/gif:/out/gif
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        if [ -z "$$(ls -A /out/img 2>/dev/null)" ]; then
-          echo "↓ Downloading exercise media (~140 MB, one time)…"
-          git clone --depth 1 https://github.com/hasaneyldrm/exercises-dataset /tmp/ds
-          cp /tmp/ds/images/*.jpg /out/img/ && cp /tmp/ds/videos/*.gif /out/gif/
-          echo "✓ Exercise media ready ($$(ls /out/img | wc -l) images)."
-        else
-          echo "✓ Exercise media already present — skipping download."
-        fi
-    restart: "no"
-
   # Passkey auth + per-user data (Node, no framework).
   # image: prebuilt (docker compose pull). build: from source (docker compose up --build).
   api:
@@ -58,7 +38,7 @@ services:
       - /mnt/drivebackup/apps/openGym/coach-links/state:/coach-links/state
 
   # Builds the React frontend (multi-stage) and serves it, proxying /api → api
-  # and the exercise media from the shared volume. Single origin for passkeys.
+  # and the exercise stills/animations (180 px) shipped inside the image. Single origin for passkeys.
   # No fork arvids-unavailable/openGym o Dockerfile do web esta na RAIZ (nao em web/).
   web:
     image: opengym-web:local
@@ -67,8 +47,6 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      media:
-        condition: service_completed_successfully
       api:
         condition: service_started
     healthcheck:
@@ -83,7 +61,5 @@ services:
       - "${WEB_PORT:-8080}:9000"
       - "8081:8081"
     volumes:
-      - /mnt/drivebackup/apps/openGym/media/img:/usr/share/nginx/html/img:ro
-      - /mnt/drivebackup/apps/openGym/media/gif:/usr/share/nginx/html/gif:ro
       - /mnt/drivebackup/apps/openGym/openGym/og.crt:/etc/nginx/ssl/og.crt:ro
       - /mnt/drivebackup/apps/openGym/openGym/og.key:/etc/nginx/ssl/og.key:ro

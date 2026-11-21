@@ -27,7 +27,7 @@ describe('catálogo canônico', () => {
     }
     const ids = new Set(data.map(e => e.id));
     assert.equal(ids.size, data.length, 'há id repetido');
-    for (const id of ids) assert.match(id, /^\d{4}$/);
+    for (const id of ids) assert.match(id, /^\d{4,5}$/);
 
     const le = data.find(e => e.id === '0001');
     assert.equal(typeof le.n, 'string');

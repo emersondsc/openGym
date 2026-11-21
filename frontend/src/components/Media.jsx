@@ -1,8 +1,66 @@
 import { useState } from 'react'
-import { imgSrc, gifSrc, exName } from '../lib/exercises.js'
+import { imgSrc, gifSrc, isVideoSrc, exName } from '../lib/exercises.js'
 import { useStore } from '../store/useStore.js'
 import { t } from '../lib/i18n.js'
 import Icon from './Icon.jsx'
+
+function autoplayMuted(el) {
+  if (!el) return
+  el.muted = true
+  el.defaultMuted = true
+  el.setAttribute('muted', '')
+  const p = el.play?.()
+  if (p && typeof p.catch === 'function') p.catch(() => {})
+}
+
+let clipObserver = null
+const clipsInView = () => clipObserver || (clipObserver = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    const v = e.target
+    if (e.isIntersecting) { const p = v.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {}) }
+    else v.pause?.()
+  }
+}, { rootMargin: '100px 0px' }))
+
+export function autoplayClip(el) {
+  autoplayMuted(el)
+  if (!el || typeof IntersectionObserver === 'undefined') return
+  const io = clipsInView()
+  io.observe(el)
+  return () => io.unobserve(el)
+}
+
+export function ExerciseAnim({ ex, playing = true, alt = '', className = 'catvid', onError }) {
+  const [failed, setFailed] = useState(false)
+  if (!ex) return null
+  const animUrl = ex.gif ? gifSrc(ex) : ''
+  const stillUrl = ex.img ? imgSrc(ex) : ''
+  const showAnim = playing && !failed && !!animUrl
+  const handleError = () => {
+    if (showAnim && stillUrl) setFailed(true)
+    onError?.(showAnim ? 'gif' : 'all')
+  }
+  if (showAnim && isVideoSrc(animUrl)) {
+    return (
+      <video
+        ref={autoplayClip}
+        className={className}
+        src={animUrl}
+        autoPlay
+        muted
+        loop
+        playsInline
+        disablePictureInPicture
+        aria-label={alt || undefined}
+        aria-hidden={!alt || undefined}
+        onError={handleError}
+      />
+    )
+  }
+  const imgUrl = showAnim ? animUrl : stillUrl
+  if (!imgUrl) return null
+  return <img decoding="async" draggable={false} src={imgUrl} alt={alt} onError={handleError} />
+}
 
 // Big autoplaying animation; tap toggles to the still frame. `compact` shrinks it (superset cards).
 // Custom exercises have no media — the animation stays blank by design (issue #11).
@@ -11,6 +69,7 @@ import Icon from './Icon.jsx'
 // across exercises and future workouts (issue #12).
 export default function Media({ ex, id, compact, minimizable }) {
   const [playing, setPlaying] = useState(true)
+  const [failed, setFailed] = useState(null)
   const gifSize = useStore(s => s.S.gifSize)
   const gifSizeChosen = useStore(s => s.S.gifSizeChosen)
   const update = useStore(s => s.update)
@@ -19,15 +78,22 @@ export default function Media({ ex, id, compact, minimizable }) {
   // 'full' from the old default, and that stale value must not beat the new default.
   const mini = minimizable && !(gifSizeChosen && gifSize === 'full')
   const toggleSize = e => { e.stopPropagation(); update(s => { s.gifSize = mini ? 'full' : 'mini'; s.gifSizeChosen = true }) }
+  const onError = kind => setFailed(kind)
+  const onTap = () => {
+    if (failed) { setFailed(null); setPlaying(true); return }
+    setPlaying(p => !p)
+  }
   return (
-    <div className={'exmedia' + (compact ? ' compact' : '') + (mini ? ' mini' : '')} id={id} onClick={() => setPlaying(p => !p)}>
-      <img decoding="async" src={playing ? gifSrc(ex) : imgSrc(ex)} alt={exName(ex)} />
+    <div className={'exmedia' + (compact ? ' compact' : '') + (mini ? ' mini' : '') + (failed === 'all' ? ' broken' : '')} id={id} onClick={onTap}>
+      {failed === 'all'
+        ? <div className="exmedia-x"><Icon name="dumbbell" /></div>
+        : <ExerciseAnim key={failed || 'ok'} ex={ex} playing={playing && failed == null} alt={exName(ex)} onError={onError} />}
       {minimizable && (
         <button className="giftoggle" onClick={toggleSize}>
           <Icon name={mini ? 'expand' : 'minimize'} />{mini ? t('Expand') : t('Minimize')}
         </button>
       )}
-      {!mini && (
+      {!mini && !failed && (
         <span className="gifhint">
           <Icon name={playing ? 'pause' : 'play'} />{playing ? t('tap to pause') : t('tap to play')}
         </span>
@@ -37,6 +103,8 @@ export default function Media({ ex, id, compact, minimizable }) {
 }
 
 export function Thumb({ ex }) {
-  if (!ex.img) return <div className="thumb thumb-x"><Icon name="dumbbell" /></div>
-  return <img className="thumb" loading="lazy" decoding="async" src={imgSrc(ex)} alt="" />
+  const src = ex.img ? imgSrc(ex) : null
+  const [broken, setBroken] = useState(null)
+  if (!src || broken === src) return <div className="thumb thumb-x"><Icon name="dumbbell" /></div>
+  return <img className="thumb" loading="lazy" decoding="async" draggable={false} src={src} alt="" onError={() => setBroken(src)} />
 }

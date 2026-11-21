@@ -9,7 +9,8 @@ import { NOTE_MAX, noteLength } from '../lib/notes.js'
 import {
   runsOf, withRun, removeRun, parseKm, parseDuration, fmtDuration, fmtKm, fmtPace, paceOf, round2, validateRun,
 } from '../lib/activities.js'
-import { EXIDX, gifSrc, imgSrc } from '../lib/exercises.js'
+import { EXIDX } from '../lib/exercises.js'
+import { ExerciseAnim } from '../components/Media.jsx'
 import { confirmSheet, workoutDateSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Segmented, TextArea } from '../components/ui.jsx'
@@ -322,9 +323,9 @@ function RunEditForm({ id, had, initDay }) {
               aria-label={t(playing ? 'tap to pause' : 'tap to play')}
               title={t(playing ? 'tap to pause' : 'tap to play')}
             >
-              <img
-                decoding="async"
-                src={playing ? gifSrc(runEx) : imgSrc(runEx)}
+              <ExerciseAnim
+                ex={runEx}
+                playing={playing}
                 alt={t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
               />
             </button>
