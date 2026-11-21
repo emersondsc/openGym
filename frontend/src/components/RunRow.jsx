@@ -11,7 +11,8 @@ export default function RunRow({ run, showDate = true, onClick }) {
     fmtKm(run.km), fmtDuration(run.sec), fmtPace(paceOf(run.km, run.sec)),
     t(run.place === 'treadmill' ? 'Treadmill' : 'Outdoor'),
   ].filter(Boolean)
-  return <div className="item" onClick={onClick}>
+  return <div className="item" role="button" tabIndex={0} onClick={onClick}
+    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}>
     <span className="lrow-i" style={{ width: 34, height: 34, borderRadius: 'var(--r-sm)', fontSize: 19 }}><Icon name="figureRun" /></span>
     <div className="grow"><div className="tt">{t('Run')}</div><div className="ss">{parts.join(' · ')}</div></div>
     <Icon name="chevronRight" className="chev" />

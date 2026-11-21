@@ -6,8 +6,8 @@ import { EXIDX, exName } from '../lib/exercises.js'
 import { effortOf } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet } from '../sheets.jsx'
-import { historyItems } from '../lib/activities.js'
+import { bwSheet, goalSheet, dayListSheet, workoutDetailSheet } from '../sheets.jsx'
+import { historyItems, runsOn } from '../lib/activities.js'
 import { isCardHidden, clearHiddenCards } from '../lib/cards.js'
 import HistoryList from '../components/HistoryList.jsx'
 import HideCardBtn from '../components/HideCardBtn.jsx'
@@ -222,7 +222,13 @@ export default function Stats() {
         <h2 style={{ margin: 0 }}>{t('Activity — last 12 months')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
         <HideCardBtn screen="stats" id="heatmap" label={t('Activity — last 12 months')} />
       </div>
-      <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
+      <Heatmap S={S} onDay={iso => {
+        const ws = S.workouts.filter(w => w.d === iso)
+        const rs = runsOn(S, iso)
+        if (ws.length === 1 && !rs.length) workoutDetailSheet(ws[0])
+        else if (!ws.length && rs.length === 1) nav('/run/' + rs[0].id)
+        else if (ws.length || rs.length) dayListSheet(iso, ws)
+      }} />
     </div>}
 
     {items.length > 0 && !hidden('recent') && <>

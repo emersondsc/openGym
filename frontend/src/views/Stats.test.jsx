@@ -18,6 +18,7 @@ vi.mock('../store/useUI.js', () => ({
 }))
 
 const { setLang } = await import('../lib/i18n.js')
+const { todayISO } = await import('../lib/format.js')
 const { default: Stats } = await import('./Stats.jsx')
 const { default: History } = await import('./History.jsx')
 
@@ -114,5 +115,21 @@ describe('Stats — Treinos recentes com corridas', () => {
     const html = renderStats()
     expect(html).toContain('Todos os cards de Estatísticas estão ocultos.')
     expect(html).toContain('Mostrar todos os cards')
+  })
+
+  it('pinta o quadrado do mapa de atividades para dia com corrida e combina treino + corrida', () => {
+    const today = todayISO()
+    mockS = baseState({
+      activities: { r1: run(today, 5.2, 1721) },
+    })
+    const runOnlyHtml = renderStats()
+    expect(runOnlyHtml).toMatch(new RegExp(`class="hm-c l[1-4] today" title="${today} · 1 corrida · 29 min · 5,2 km"`))
+
+    mockS = baseState({
+      workouts: [workout('w1', today)],
+      activities: { r1: run(today, 5.2, 1721) },
+    })
+    const bothHtml = renderStats()
+    expect(bothHtml).toContain(`${today} · 1 treino · 1 corrida · 59 min · 500 kg · 5,2 km`)
   })
 })

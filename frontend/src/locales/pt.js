@@ -1140,6 +1140,15 @@ export default {
   "Show all cards": "Mostrar todos os cards",
   "All cards visible": "Todos os cards visíveis",
   "All Stats cards are hidden.": "Todos os cards de Estatísticas estão ocultos.",
+  // tela dedicada de corrida (views/RunEdit.jsx e atalho na Home)
+  "Last: {0} · {1}": "Última: {0} · {1}",
+  "Outdoor or treadmill": "Ao ar livre ou esteira",
+  "Other date": "Outra data",
+  "Enter distance and time to see your pace": "Informe distância e tempo para ver seu ritmo",
+  "Tap or slide": "Toque ou arraste",
+  "Hard effort": "Forte",
+  "Max effort": "Máximo",
+  "How did the run feel? (optional)": "Como foi a corrida? (opcional)",
   // taxonomia do catálogo expandido (5.632 exercícios)
   "full body": "Corpo inteiro",
   "front delts": "Deltoide anterior",

@@ -6,7 +6,10 @@ import { loadOfRoutine, loadOfWorkouts, rankOf, MUSCLE_NAME } from '../lib/muscl
 import { todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan } from '../sheets.jsx'
-import { runDays } from '../lib/activities.js'
+import { runsOf, runDays, fmtKm, fmtPace, paceOf } from '../lib/activities.js'
+import { thisWeekKm } from '../lib/run-stats.js'
+import { EXIDX } from '../lib/exercises.js'
+import { ExerciseAnim } from '../components/Media.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
@@ -80,6 +83,13 @@ export default function Home() {
 
   // today's session shown right under the week strip
   const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
+  const runs = runsOf(S)
+  const dispRunKm = thisWeekKm(runs, isoOf(monday))
+  const lastRun = runs[0] || null
+  const runSub = dispRunKm > 0
+    ? (weekOffset === 0 ? `${fmtKm(dispRunKm)} ${t('this week')}` : fmtKm(dispRunKm))
+    : lastRun ? t('Last: {0} · {1}', fmtKm(lastRun.km), fmtPace(paceOf(lastRun.km, lastRun.sec)))
+    : t('Outdoor or treadmill')
   const hidden = id => isCardHidden(S, 'home', id)
 
   return <div className="narrow">
@@ -109,6 +119,20 @@ export default function Home() {
           : routine ? <span className="tag acc">{t('Start')}</span>
           : <Icon name="plus" className="chev" />}
       </div>
+      <button type="button" className="run-quick" onClick={() => nav('/run/new')}>
+        <div className="row" style={{ gap: 9, minWidth: 0 }}>
+          {EXIDX['0685'] && (
+            <span className="run-quick-gif">
+              <ExerciseAnim ex={EXIDX['0685']} alt="" />
+            </span>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div className="run-quick-t">{t('Log a run')}</div>
+            <div className="run-quick-s">{runSub}</div>
+          </div>
+        </div>
+        <span className="tag run-tag"><Icon name="plus" />{t('Run')}</span>
+      </button>
     </div>
 
     {!S.routines.length && !S.active && !hidden('welcome') && (

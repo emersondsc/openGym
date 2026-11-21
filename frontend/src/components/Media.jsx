@@ -30,6 +30,38 @@ export function autoplayClip(el) {
   return () => io.unobserve(el)
 }
 
+export function ExerciseAnim({ ex, playing = true, alt = '', className = 'catvid', onError }) {
+  const [failed, setFailed] = useState(false)
+  if (!ex) return null
+  const animUrl = ex.gif ? gifSrc(ex) : ''
+  const stillUrl = ex.img ? imgSrc(ex) : ''
+  const showAnim = playing && !failed && !!animUrl
+  const handleError = () => {
+    if (showAnim && stillUrl) setFailed(true)
+    onError?.(showAnim ? 'gif' : 'all')
+  }
+  if (showAnim && isVideoSrc(animUrl)) {
+    return (
+      <video
+        ref={autoplayClip}
+        className={className}
+        src={animUrl}
+        autoPlay
+        muted
+        loop
+        playsInline
+        disablePictureInPicture
+        aria-label={alt || undefined}
+        aria-hidden={!alt || undefined}
+        onError={handleError}
+      />
+    )
+  }
+  const imgUrl = showAnim ? animUrl : stillUrl
+  if (!imgUrl) return null
+  return <img decoding="async" draggable={false} src={imgUrl} alt={alt} onError={handleError} />
+}
+
 // Big autoplaying animation; tap toggles to the still frame. `compact` shrinks it (superset cards).
 // Custom exercises have no media — the animation stays blank by design (issue #11).
 // `minimizable` (workout view) adds a persistent minimize/expand control so the animation stops
@@ -46,11 +78,7 @@ export default function Media({ ex, id, compact, minimizable }) {
   // 'full' from the old default, and that stale value must not beat the new default.
   const mini = minimizable && !(gifSizeChosen && gifSize === 'full')
   const toggleSize = e => { e.stopPropagation(); update(s => { s.gifSize = mini ? 'full' : 'mini'; s.gifSizeChosen = true }) }
-  const animUrl = gifSrc(ex)
-  const stillUrl = imgSrc(ex)
-  const showAnim = playing && failed == null
-  const clip = showAnim && isVideoSrc(animUrl) ? animUrl : null
-  const onError = () => setFailed(showAnim ? 'gif' : 'all')
+  const onError = kind => setFailed(kind)
   const onTap = () => {
     if (failed) { setFailed(null); setPlaying(true); return }
     setPlaying(p => !p)
@@ -59,10 +87,7 @@ export default function Media({ ex, id, compact, minimizable }) {
     <div className={'exmedia' + (compact ? ' compact' : '') + (mini ? ' mini' : '') + (failed === 'all' ? ' broken' : '')} id={id} onClick={onTap}>
       {failed === 'all'
         ? <div className="exmedia-x"><Icon name="dumbbell" /></div>
-        : clip
-          ? <video ref={autoplayClip} className="catvid" src={clip} autoPlay muted loop playsInline disablePictureInPicture
-              aria-label={exName(ex)} onError={onError} />
-          : <img decoding="async" draggable={false} src={showAnim ? animUrl : stillUrl} alt={exName(ex)} onError={onError} />}
+        : <ExerciseAnim key={failed || 'ok'} ex={ex} playing={playing && failed == null} alt={exName(ex)} onError={onError} />}
       {minimizable && (
         <button className="giftoggle" onClick={toggleSize}>
           <Icon name={mini ? 'expand' : 'minimize'} />{mini ? t('Expand') : t('Minimize')}
