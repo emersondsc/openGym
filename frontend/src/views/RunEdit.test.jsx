@@ -83,6 +83,7 @@ describe('RunEdit — helpers e tela dedicada', () => {
     expect(html).toContain('21,1 km')
     expect(html).toContain('Mais detalhes')
     expect(html).toContain('Elevação, FC, esforço e nota')
+    expect(html).toContain('0685-oLrKqDH.gif')
     expect(html).not.toContain('FC média')
   })
 
@@ -127,6 +128,7 @@ describe('RunEdit — helpers e tela dedicada', () => {
     })
     const html = renderRoute('/run/r2')
     expect(html).toContain('Esteira')
+    expect(html).toContain('0684-y5p0H8a.gif')
     expect(html).toContain('FC média')
     expect(html).not.toContain('Ganho de elevação')
   })

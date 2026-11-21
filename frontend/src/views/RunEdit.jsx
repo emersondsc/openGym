@@ -9,11 +9,13 @@ import { NOTE_MAX, noteLength } from '../lib/notes.js'
 import {
   runsOf, withRun, removeRun, parseKm, parseDuration, fmtDuration, fmtKm, fmtPace, paceOf, round2, validateRun,
 } from '../lib/activities.js'
+import { EXIDX, gifSrc, imgSrc } from '../lib/exercises.js'
 import { confirmSheet, workoutDateSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Segmented, TextArea } from '../components/ui.jsx'
 
 const DIST_PRESETS = [3, 5, 10, 15, 21.1]
+const RUN_MEDIA_ID = { outdoor: '0685', treadmill: '0684' }
 const RPE_STOPS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const heat = (i, n) => `hsl(${Math.round(130 * (1 - i / (n - 1)))} 62% 48%)`
 
@@ -148,6 +150,7 @@ function RunEditForm({ id, had, initDay }) {
   const [more, setMore] = useState(
     !!had && ['elev', 'hrAvg', 'hrMax', 'rpe', 'note'].some(k => had[k] != null && had[k] !== '')
   )
+  const [playing, setPlaying] = useState(true)
   const [touched, setTouched] = useState({})
   const touch = k => () => setTouched(x => ({ ...x, [k]: true }))
 
@@ -277,6 +280,7 @@ function RunEditForm({ id, had, initDay }) {
   const livePace = hasPositiveKm && hasPositiveSec ? fmtPace(paceOf(round2(fields.km), fields.sec)) : null
   const [paceNum, paceUnit] = livePace ? livePace.split('/') : ['—:—', 'km']
   const isOtherDate = d !== today && d !== yesterday
+  const runEx = EXIDX[RUN_MEDIA_ID[place]]
 
   const detailBadges = [
     place !== 'treadmill' && opt.elev.trim() !== '' ? `${opt.elev.trim()} m` : null,
@@ -307,25 +311,44 @@ function RunEditForm({ id, had, initDay }) {
         </button>
       </div>
 
-      {/* Hero: ritmo calculado ao vivo */}
+      {/* Hero: ritmo calculado ao vivo + animação do exercício */}
       <div className={'card run-hero' + (livePace ? ' ready' : '')}>
-        <div className="run-hero-top">
-          <span className="run-hero-lbl">
-            <Icon name="timer" style={{ fontSize: 14 }} />
-            {t('Pace')}
-          </span>
-          <span className={'tag' + (livePace ? ' run-tag' : '')}>
-            <Icon name={place === 'treadmill' ? 'treadmill' : 'sun'} />
-            {t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
-          </span>
-        </div>
-        <div className={'run-pace-val' + (livePace ? '' : ' empty')}>
-          {paceNum}<span className="u">/{paceUnit}</span>
-        </div>
-        <div className="run-hero-sub">
-          {(hasPositiveKm || hasPositiveSec)
-            ? `${hasPositiveKm ? fmtKm(round2(fields.km)) : '— km'} · ${hasPositiveSec ? fmtDuration(fields.sec) : '—:—'} · ${fmtDate(d, true)}`
-            : t('Enter distance and time to see your pace')}
+        <div className="run-hero-main">
+          <div className="run-hero-info">
+            <div className="run-hero-top">
+              <span className="run-hero-lbl">
+                <Icon name="timer" style={{ fontSize: 14 }} />
+                {t('Pace')}
+              </span>
+              <span className={'tag' + (livePace ? ' run-tag' : '')}>
+                <Icon name={place === 'treadmill' ? 'treadmill' : 'sun'} />
+                {t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
+              </span>
+            </div>
+            <div className={'run-pace-val' + (livePace ? '' : ' empty')}>
+              {paceNum}<span className="u">/{paceUnit}</span>
+            </div>
+            <div className="run-hero-sub">
+              {(hasPositiveKm || hasPositiveSec)
+                ? `${hasPositiveKm ? fmtKm(round2(fields.km)) : '— km'} · ${hasPositiveSec ? fmtDuration(fields.sec) : '—:—'} · ${fmtDate(d, true)}`
+                : t('Enter distance and time to see your pace')}
+            </div>
+          </div>
+          {runEx && (
+            <button
+              type="button"
+              className="run-hero-media"
+              onClick={() => setPlaying(p => !p)}
+              aria-label={t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
+              title={t(playing ? 'tap to pause' : 'tap to play')}
+            >
+              <img
+                decoding="async"
+                src={playing ? gifSrc(runEx) : imgSrc(runEx)}
+                alt={t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
+              />
+            </button>
+          )}
         </div>
         {ok && warnings.map(w => (
           <div key={w} className="run-hero-warn">
