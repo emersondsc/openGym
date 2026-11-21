@@ -1,6 +1,6 @@
 /* openGym service worker — runtime caching (works with Vite's hashed asset names).
    Media (img/gif) cache-first; everything else network-first with offline fallback. */
-const CACHE = 'opengym-rt-v1'
+const CACHE = 'opengym-rt-v2'
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', e => {
