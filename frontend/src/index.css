@@ -346,6 +346,9 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .wday .dot.plan{background:var(--label-3)}
 .wday .dot.ovr{background:var(--orange)}
 .wday .dot.done{background:var(--acc)}
+.wday .dots{display:flex;gap:3px;justify-content:center}
+.wday .dots .dot{margin:0}
+.wday .dot.run{background:var(--blue)}
 .wday:active{background:var(--surface-2)}
 .wday.today .num{
   background:var(--acc);color:var(--on-acc);font-weight:600;
