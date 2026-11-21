@@ -286,7 +286,7 @@ Hoje é uma tela de 16 linhas de código que lista só os treinos. Ela é aberta
 2.  o cartão **"Corrida"** (`components/RunCard.jsx`), que aparece só se existir ao menos uma corrida;
 3.  uma lista única de **treinos e corridas por data**. No mesmo dia, as corridas vêm depois dos treinos. A linha da corrida (`RunRow`) usa o ícone `figureRun`, que já existe (`Icon.jsx:28`), e mostra "5,2 km · 28:41 · 5:31/km · Ao ar livre". Tocar abre o formulário em modo de edição.
 
-O subtítulo passa a contar "N treinos · M corridas".
+O subtítulo passa a contar "N treinos · M corridas". Em `views/Stats.jsx`, a lista "Treinos recentes" (até 6 itens) e o total do botão "Todos" usam a mesma lista combinada (`historyItems`), para que corridas apareçam ali também, inclusive quando ainda não há treinos de academia.
 
 #### Formulário (`RunLog`, em `sheets.jsx`)
 
@@ -786,7 +786,7 @@ Os caminhos são relativos à raiz do repositório do fork (`/mnt/drivebackup/ap
     *   **Cabeçalho:** um botão com o ícone `figureRun` e `aria-label={t('Log a run')}`, que chama `runSheet()` (de `../sheets.jsx`).
     *   **Subtítulo:** `t('{0} workouts', n)`, e, quando há corridas, `· ` mais `t(m === 1 ? '{0} run' : '{0} runs', m)`.
     *   **Acima da lista:** `<RunCard />`.
-    *   **Lista:** uma lista única de treinos e corridas, por `d` decrescente. No mesmo dia, os treinos vêm primeiro (por `w.start` decrescente) e as corridas depois (por `_ts` decrescente). Tocar numa corrida chama `runSheet(id)`.
+    *   **Lista:** uma lista única de treinos e corridas (`historyItems`), por `d` decrescente. No mesmo dia, os treinos vêm primeiro (por `w.start` decrescente) e as corridas depois (por `_ts` decrescente). Tocar numa corrida chama `runSheet(id)`. O mesmo helper alimenta o bloco "Treinos recentes" (primeiros 6 itens e total) em `views/Stats.jsx`.
     *   **Estado vazio:** só aparece quando não há treinos nem corridas.
 
 #### 14. `frontend/src/index.css` (Modify)

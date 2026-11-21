@@ -1,7 +1,7 @@
 // lib/activities.test.js — corridas (docs/specs/spec_corrida.md, DIP §4-5).
 import { describe, it, expect } from 'vitest'
 import {
-  readActivity, runsOf, runsOn, runDays, withRun, removeRun, mergeActivities,
+  readActivity, runsOf, runsOn, runDays, historyItems, withRun, removeRun, mergeActivities,
   parseKm, parseDuration, fmtDuration, fmtPace, paceOf, validateRun,
 } from './activities.js'
 import { sanitizeActivities } from '../../../api/activities.js'
@@ -145,5 +145,38 @@ describe('validateRun', () => {
     expect(v({ km: null, sec: null, d: '' }).errors).toEqual({ d: 'Required', km: 'Required', sec: 'Required' })
     expect(v({ d: '2026-11-22' }).errors.d).toBe('Date in the future')
     expect(v({ km: 52 }).warnings).toEqual(['Unusual pace, check distance and time'])
+  })
+})
+
+describe('historyItems', () => {
+  const workout = (id, d, start = 100) => ({ id, d, start, end: start + 60000, name: id, entries: [], vol: 0, prs: [] })
+
+  it('ordena treinos e corridas por data desc; no mesmo dia, treinos antes de corridas', () => {
+    const S = {
+      workouts: [
+        workout('w1', '2026-11-18', 100),
+        workout('w2', '2026-11-20', 100),
+        workout('w3', '2026-11-20', 200),
+      ],
+      activities: {
+        r1: stored({ d: '2026-11-19', _ts: 10 }),
+        r2: stored({ d: '2026-11-20', _ts: 50 }),
+        r3: stored({ d: '2026-11-20', _ts: 90 }),
+        r4: stored({ d: '2026-11-21', _ts: 30 }),
+        del: { deleted: true, _ts: 999 },
+      },
+    }
+    expect(historyItems(S).map(it => it.k)).toEqual(['rr4', 'ww3', 'ww2', 'rr3', 'rr2', 'rr1', 'ww1'])
+  })
+
+  it('funciona só com corridas, sem treinos, ou com estado vazio', () => {
+    expect(historyItems(null)).toEqual([])
+    expect(historyItems({ workouts: [], activities: { r1: stored({ d: '2026-11-21' }) } }).map(it => it.k)).toEqual(['rr1'])
+  })
+
+  it('aceita lista pré-calculada de corridas', () => {
+    const S = { workouts: [workout('w1', '2026-11-20')] }
+    const runs = [{ id: 'r1', d: '2026-11-21', km: 5, sec: 1500, _ts: 1 }]
+    expect(historyItems(S, runs).map(it => it.k)).toEqual(['rr1', 'ww1'])
   })
 })

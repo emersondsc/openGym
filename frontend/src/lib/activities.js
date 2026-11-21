@@ -53,6 +53,19 @@ export function runsOf(S) {
 export const runsOn = (S, iso) => runsOf(S).filter(r => r.d === iso)
 export const runDays = S => new Set(runsOf(S).map(r => r.d))
 
+/**
+ * Treinos e corridas numa lista só (docs/specs/spec_corrida.md, DIP §13): por dia, do mais recente
+ * para o mais antigo; no mesmo dia, os treinos primeiro (por `start` decrescente) e as corridas
+ * depois (por `_ts` decrescente).
+ */
+export function historyItems(S, runs = runsOf(S)) {
+  const ws = Array.isArray(S?.workouts) ? S.workouts : []
+  return [
+    ...ws.map(w => ({ k: 'w' + w.id, d: w.d || '', g: 0, o: w.start || 0, w })),
+    ...runs.map(r => ({ k: 'r' + r.id, d: r.d, g: 1, o: r._ts, r })),
+  ].sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : a.g - b.g || b.o - a.o))
+}
+
 /** Grava ou edita: a entrada nova SUBSTITUI a antiga. Devolve { map, id }. */
 export function withRun(map, id, fields, now = Date.now()) {
   const base = isObj(map) ? map : {}
