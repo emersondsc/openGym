@@ -1,10 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as R from './routines.js';
 import * as M from './micro.js';
 import * as P from './proposals.js';
 import * as SR from './set-roles.js';
-import { checkState } from './server.js';
+
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'og-set-roles-'));
+process.env.DATA_DIR = TMP;
+process.env.PORT = '0';
+const { checkState } = await import('./server.js');
+test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
 const catalog = new Map([
   ['0001', { id: '0001', eq: 'barbell', tg: 'pectorals', bp: 'chest' }],

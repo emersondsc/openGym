@@ -27,6 +27,8 @@ self.addEventListener('notificationclick', e => {
 })
 
 self.addEventListener('fetch', e => {
+  const swUrl = new URL(self.location.href)
+  if (swUrl.searchParams.get('dev') === '1' && (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1')) return
   const url = new URL(e.request.url)
   if (e.request.method !== 'GET' || url.origin !== location.origin) return
   if (url.pathname.startsWith('/api/')) return    // never cache auth/data
