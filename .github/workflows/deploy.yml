@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - emerson-custom
+  pull_request:
+    branches:
+      - emerson-custom
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
+  test-frontend:
     name: Frontend Test & Build
     runs-on: ubuntu-latest
     defaults:
@@ -24,7 +27,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -37,9 +40,48 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+  test-api:
+    name: API Test Suite
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run API tests
+        run: node --test
+
+  test-scripts:
+    name: Local Scripts Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run scripts tests
+        run: node --test "scripts/*.test.mjs"
+
   deploy:
     name: Deploy to vps_oracle
-    needs: test
+    needs: [test-frontend, test-api]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Configure SSH
@@ -63,7 +105,27 @@ jobs:
           set -euo pipefail
           cd /mnt/drivebackup/apps/openGym/openGym
           git fetch origin emerson-custom
-          git checkout emerson-custom
+
+          CURRENT_BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+          if [ "$CURRENT_BRANCH" != "emerson-custom" ]; then
+            echo "Aborting deploy: VPS branch is '$CURRENT_BRANCH' instead of 'emerson-custom'"
+            git status -sb
+            exit 1
+          fi
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Aborting deploy: VPS working tree is dirty"
+            git status --porcelain
+            exit 1
+          fi
+
+          AHEAD="$(git rev-list origin/emerson-custom..HEAD)"
+          if [ -n "$AHEAD" ]; then
+            echo "Aborting deploy: VPS has local commits ahead of origin/emerson-custom"
+            git log --oneline origin/emerson-custom..HEAD
+            exit 1
+          fi
+
           git pull --ff-only origin emerson-custom
           docker compose up -d --build
           for i in $(seq 1 30); do

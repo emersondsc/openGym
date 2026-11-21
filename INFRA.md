@@ -112,6 +112,20 @@ Nunca coloque o dado vivo dentro do clone, e nunca aponte o `DATA_DIR` para dent
 no lugar errado publicaria segredo de sessão e histórico de treino num repo público. Se algum dia
 precisar rodar o app fora da VM, aponte o `DATA_DIR` para fora da árvore do git.
 
+### Ambiente local de desenvolvimento no Windows (`%LOCALAPPDATA%\opengym-dev`)
+
+No PC Windows do operador (`C:\Users\emerson\work\openGym`), todo dado e mídia de teste vive
+fora do repositório git, sob `%LOCALAPPDATA%\opengym-dev\`:
+
+| Caminho | O que é |
+|---|---|
+| `%LOCALAPPDATA%\opengym-dev\data` | `DATA_DIR` único persistente (`db.json`, `secret`, `vapid.json`, `.snapshot-uid`, `state-*`, `diet-*`) |
+| `%LOCALAPPDATA%\opengym-dev\media` | cache único das ~140 MB de imagens (`img/`) e animações (`gif/`) |
+
+- Subir API local (`127.0.0.1:3000`) + Vite (`http://localhost:5173`): `node scripts/dev.mjs` (aceita `--pull [<nome|uid>]` e `--refresh-media`).
+- Puxar snapshot sanitizado da VPS (apenas 1 usuário via allowlist, sem `creds`/`subs`/`secret`, com a API local parada): `node scripts/dev-snapshot.mjs --user <nome|uid>`.
+- Limpar dados de usuário secundário criado para testes zerados (mantendo intactos o perfil do snapshot e a passkey `localhost`): `node scripts/dev-snapshot.mjs --reset-zero`.
+
 Confira sempre com:
 
 ```bash
@@ -255,26 +269,25 @@ absolutos do host, não volumes nomeados do Docker. Recriar os containers é seg
 
 ### Como uma mudança de código anda (o fluxo oficial)
 
-A **VPS é a fonte de verdade do código**: é onde o app roda e é o clone de onde o trabalho sai.
-O GitHub é a cópia publicada. Não existe terceira via.
+O repositório oficial de desenvolvimento e testes fica no PC Windows em
+`C:\Users\emerson\work\openGym`. O checkout da VPS (`/mnt/drivebackup/apps/openGym/openGym`) fica
+**restrito a deploys automatizados na branch `emerson-custom`** e nunca recebe edições manuais.
 
 ```
-editar na VPS  ->  git commit  ->  git push  ->  docker compose up -d --build
-/mnt/drivebackup/apps/openGym/openGym          (GitHub: emersondsc/openGym, ramo emerson-custom)
+branch local (C:\Users\emerson\work\openGym) -> PR -> merge em emerson-custom -> GitHub Actions (deploy.yml) -> VPS
 ```
 
-- **A VPS empurra com uma deploy key própria:** `~/.ssh/id_ed25519_opengym`, com o alias
-  `github-opengym` no `~/.ssh/config` e cadastrada no repo como **read-write**, título
-  "VPS openGym (push)". O alias é separado do `Host github.com` de propósito: deploy key do
-  GitHub vale para **um** repositório só, e a `id_ed25519_github` é a do repo de backup.
-- **A identidade dos commits está configurada na VPS**, a mesma dos commits anteriores, para o
-  histórico não ficar com dois autores.
+- **Regra de ouro:** nada de editar código direto na VPS ou empurrar direto para produção sem
+  passar pelos testes no PC local + validação do `pull_request` no GitHub Actions.
+- **Trava na VPS:** antes de atualizar no deploy automático, o workflow verifica na VPS que a branch
+  ativa já é `emerson-custom`, que `git status --porcelain` está vazio e que não existem commits locais
+  à frente de `origin/emerson-custom` (se houver divergência, o deploy aborta antes do `git pull`).
+- **A identidade dos commits** configurada no clone local deve ser a mesma dos commits anteriores
+  (`Emerson <125198740+emersondsc@users.noreply.github.com>`), para o histórico não ficar com dois autores.
 - **O clone do Pi é dormente.** Ele existe, está parado e não recebe push: depois da migração,
   trabalhar nele é trabalhar numa cópia velha.
-- **Não mantenha cópia deste projeto fora da VPS.** Duas árvores são duas verdades, e foi assim
-  que apareceram, numa máquina de trabalho, três `server.js` de datas diferentes. Precisa ler
-  código? Leia pelo ssh, na VPS. Não copie.
-- **Push não é deploy.** O que está no ar só muda com `docker compose up -d --build`.
+- **Push em branch de feature não é deploy.** O job `deploy` só roda em `push` para `emerson-custom`
+  (após aprovação de `test-frontend` e `test-api`) ou `workflow_dispatch`.
 
 ## 8. Limites do free tier
 
