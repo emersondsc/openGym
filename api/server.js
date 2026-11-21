@@ -21,6 +21,7 @@ import * as coachLink from './coach-link.js';
 import * as coachAccess from './coach-access.js';
 import * as diet from './diet.js';
 import { sanitizeRoutineEntry, validateCustomSetRoles } from './set-roles.js';
+import { sanitizeActivities } from './activities.js';
 import { restOverPayload, dayReminderPayload } from './push-copy.js';
 
 const PORT = +(process.env.PORT || 3000);
@@ -912,6 +913,12 @@ const routes = {
       for (const e of r?.ex || []) {
         sanitizeRoutineEntry(e, allCustomRoles, { isValidTargetRir: routines.isValidTargetRir, normTargetRir: routines.normTargetRir });
       }
+    }
+    // Corridas (docs/specs/spec_corrida.md §5): limpa, não recusa. Chave ausente mantém a do arquivo.
+    const act = sanitizeActivities(body.state.activities, cur?.activities);
+    body.state.activities = act.map;
+    if (act.dropped + act.fields.length > 0) {
+      console.log(`[og-state] op=activities-cleaned uid=${user.id} dropped=${act.dropped} fields=${act.fields.join(',')}`);
     }
     const badEx = checkRoutineFields(body.state, cur);
     if (badEx) {
