@@ -122,6 +122,7 @@ fora do repositório git, sob `%LOCALAPPDATA%\opengym-dev\`:
 | `%LOCALAPPDATA%\opengym-dev\data` | `DATA_DIR` único persistente (`db.json`, `secret`, `vapid.json`, `.snapshot-uid`, `state-*`, `diet-*`) |
 | `%LOCALAPPDATA%\opengym-dev\media` | cache único das ~140 MB de imagens (`img/`) e animações (`gif/`) |
 
+- No Windows, você também pode abrir diretamente `opengym-dev.bat` na raiz de `C:\Users\emerson\work\openGym` para escolher essas ações em menu (sem decorar comandos).
 - Subir API local (`127.0.0.1:3000`) + Vite (`http://localhost:5173`): `node scripts/dev.mjs` (aceita `--pull [<nome|uid>]` e `--refresh-media`).
 - Puxar snapshot sanitizado da VPS (apenas 1 usuário via allowlist, sem `creds`/`subs`/`secret`, com a API local parada): `node scripts/dev-snapshot.mjs --user <nome|uid>`.
 - Limpar dados de usuário secundário criado para testes zerados (mantendo intactos o perfil do snapshot e a passkey `localhost`): `node scripts/dev-snapshot.mjs --reset-zero`.
