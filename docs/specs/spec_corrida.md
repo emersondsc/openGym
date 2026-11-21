@@ -623,6 +623,8 @@ Os caminhos são relativos à raiz do repositório do fork (`/mnt/drivebackup/ap
     *   **`parseDuration(text)`**:
         *   tira os espaços das pontas;
         *   aceita `m` (minutos inteiros), `mm:ss` (com `ss` < 60) e `h:mm:ss` (com `mm` e `ss` < 60);
+        *   aceita também só números, porque o teclado numérico do celular não tem `:`: 1-2 dígitos são minutos, 3-4 são `m:ss`/`mm:ss` (`2841` = 28:41) e 5-6 são `h:mm:ss` (`10205` = 1:02:05). Ponto, vírgula, espaço e hífen valem como `:` (`28.41` = 28:41), desde que os segundos tenham 2 dígitos;
+        *   ao sair do campo, o formulário reescreve o valor no formato `28:41`, e uma dica embaixo diz "Só números: 2841 = 28:41";
         *   devolve os segundos ou `null`. `'28,5'` e `'28:61'` devolvem `null`.
     *   **Formatação:**
         *   `fmtDuration(sec)`: `28:41`, ou `1:02:05` com uma hora ou mais;

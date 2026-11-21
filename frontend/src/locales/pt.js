@@ -1122,5 +1122,6 @@ export default {
   "Max heart rate is below average": "A FC máxima está abaixo da média",
   "Elevation must be between 0 and 10,000 m": "A elevação precisa ficar entre 0 e 10.000 m",
   "Effort must be 1 to 10": "O esforço vai de 1 a 10",
-  "Unusual pace, check distance and time": "Ritmo fora do comum, confira distância e tempo"
+  "Unusual pace, check distance and time": "Ritmo fora do comum, confira distância e tempo",
+  "Numbers only: 2841 = 28:41": "Só números: 2841 = 28:41"
 }

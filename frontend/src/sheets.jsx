@@ -1235,7 +1235,9 @@ function RunLog({ id, day, close }) {
     <input className="input" inputMode="decimal" placeholder="5,2" value={km} onChange={e => setKm(e.target.value)} onBlur={touch('km')} />
     {err('km')}
     <label className="small muted" style={{ display: 'block', marginTop: 10 }}>{t('Moving time')}</label>
-    <input className="input" inputMode="numeric" placeholder="mm:ss" value={time} onChange={e => setTime(e.target.value)} onBlur={touch('sec')} />
+    <input className="input" inputMode="numeric" placeholder="28:41" value={time} onChange={e => setTime(e.target.value)}
+      onBlur={() => { const s = parseDuration(time); if (s != null) setTime(fmtDuration(s)); touch('sec')() }} />
+    {!(touched.sec && bad.sec) && <div className="small dim" style={{ marginTop: 4 }}>{t('Numbers only: 2841 = 28:41')}</div>}
     {err('sec')}
     {pace && <div className="small" style={{ marginTop: 8 }}>{t('Pace')}: <b>{pace}</b></div>}
     {ok && warnings.map(w => <div key={w} className="small" style={{ color: 'var(--orange)', marginTop: 4 }}>{t(w)}</div>)}

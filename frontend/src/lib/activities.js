@@ -113,11 +113,23 @@ export function parseKm(text) {
   return Number(s.replace(',', '.'))
 }
 
-/** "28" (minutos), "28:41" ou "1:02:05" → segundos. Qualquer outra coisa → null. */
+/**
+ * Tempo → segundos, ou null. Aceita "28:41" e "1:02:05", e também só números, porque o teclado
+ * numérico do celular não tem ":": 1-2 dígitos são minutos ("28" = 28:00), 3-4 são m:ss/mm:ss
+ * ("2841" = 28:41) e 5-6 são h:mm:ss ("10205" = 1:02:05). Ponto, vírgula, espaço e hífen valem
+ * como ":" ("28.41" = 28:41), desde que os segundos tenham 2 dígitos ("28,5" continua inválido).
+ */
 export function parseDuration(text) {
-  const s = String(text ?? '').trim()
+  const s = String(text ?? '').trim().replace(/[.,\s-]/g, ':')
   let m
-  if ((m = /^(\d+)$/.exec(s))) return Number(m[1]) * 60
+  if ((m = /^(\d{1,2})$/.exec(s))) return Number(m[1]) * 60
+  if ((m = /^(\d{1,4})(\d{2})$/.exec(s)) && s.length <= 6) {
+    const head = m[1], ss = Number(m[2])
+    if (ss >= 60) return null
+    if (head.length <= 2) return Number(head) * 60 + ss
+    const h = Number(head.slice(0, -2)), mm = Number(head.slice(-2))
+    return mm < 60 ? h * 3600 + mm * 60 + ss : null
+  }
   if ((m = /^(\d+):(\d{2})$/.exec(s))) return Number(m[2]) < 60 ? Number(m[1]) * 60 + Number(m[2]) : null
   if ((m = /^(\d+):(\d{2}):(\d{2})$/.exec(s))) {
     return Number(m[2]) < 60 && Number(m[3]) < 60 ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null

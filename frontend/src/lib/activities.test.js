@@ -100,7 +100,16 @@ describe('parsers e formatação', () => {
     expect(parseDuration('28:41')).toBe(1721)
     expect(parseDuration('1:02:05')).toBe(3725)
     expect(parseDuration(' 28:41 ')).toBe(1721)
-    for (const bad of ['28:61', '28,5', '', '1:61:00', 'x']) expect(parseDuration(bad)).toBeNull()
+    for (const bad of ['28:61', '28,5', '', '1:61:00', 'x', '2861', '16100', '1234567']) expect(parseDuration(bad)).toBeNull()
+  })
+  it('parseDuration aceita só números (teclado numérico do celular)', () => {
+    expect(parseDuration('2841')).toBe(1721)
+    expect(parseDuration('941')).toBe(581)
+    expect(parseDuration('10205')).toBe(3725)
+    expect(parseDuration('010205')).toBe(3725)
+    expect(parseDuration('28.41')).toBe(1721)
+    expect(parseDuration('28,41')).toBe(1721)
+    expect(parseDuration('1.02.05')).toBe(3725)
   })
   it('parseKm', () => {
     expect(parseKm('5,2')).toBe(5.2)
