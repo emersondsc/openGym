@@ -928,6 +928,8 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .cal-d i.done{background:var(--acc)}
 .cal-d i.plan{background:var(--label-3)}
 .cal-d i.ovr{background:var(--orange)}
+.cal-dots{display:flex;gap:3px}
+.cal-d i.run{background:var(--blue)}
 .cal-legend{display:flex;gap:14px;justify-content:center;margin-top:12px;font-size:12px;color:var(--label-3)}
 .cal-legend i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
 
@@ -1545,3 +1547,10 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .setup-nav{display:flex;gap:10px;margin-top:auto;padding-top:22px}
 .setup-nav .btn{flex:1}
 .setup :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+/* --- corrida (docs/specs/spec_corrida.md) --- */
+.run-card .run-line{padding:6px 0;border-bottom:1px solid var(--sep, transparent);font-size:15px}
+.run-bars{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;align-items:end;height:68px;margin:6px 0 10px}
+.run-bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+.run-bar i{display:block;width:100%;max-width:22px;border-radius:4px;background:var(--blue)}
+.run-bar span{font-size:10px;color:var(--label-3)}

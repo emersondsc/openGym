@@ -18,6 +18,8 @@ import BodyMap from './components/BodyMap.jsx'
 import StylePreview from './components/StylePreview.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
 import { removeWorkout } from './lib/workout-edit.js'
+import { runsOf, runsOn, runDays, withRun, removeRun, parseKm, parseDuration, fmtDuration, fmtPace, paceOf, validateRun } from './lib/activities.js'
+import RunRow from './components/RunRow.jsx'
 import { NOTE_MAX, NOTE_TYPES, noteLength, notesOf, applyNote, routineExOf, withoutNote } from './lib/notes.js'
 import { NOTE_META, NOTE_ORDER, NoteLines } from './components/NoteList.jsx'
 import { parseImport, mergeImport } from './lib/import-csv.js'
@@ -1075,6 +1077,7 @@ function DayOverride({ iso, close }) {
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
         {effId === r.id && <Icon name="check" className="accent" />}</div>)}
       <div className="item" onClick={() => set('rest')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="moon" /></span><div className="grow"><div className="tt">{t('Rest / skip this day')}</div></div>{effId === null && <Icon name="check" className="accent" />}</div>
+      {iso <= todayISO() && <div className="item" onClick={() => { close(); runSheet(null, iso) }}><span className="lrow-i flat"><Icon name="figureRun" /></span><div className="grow"><div className="tt">{t('Log a run on this day')}</div></div></div>}
       {hasOvr && <div className="item" onClick={() => set('')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="reset" /></span><div className="grow"><div className="tt">{t('Back to weekly plan')}</div></div></div>}
     </div>
   </>
@@ -1172,6 +1175,93 @@ function WorkoutDate({ iso, onPick, close }) {
 }
 export const workoutDateSheet = (iso, onPick) => ui().openSheet(close => <WorkoutDate iso={iso} onPick={onPick} close={close} />)
 
+/* ============================ corrida (docs/specs/spec_corrida.md) ============================ */
+// Formulário de uma corrida já feita. Fica aqui, ao lado do DayOverride, para reaproveitar o seletor
+// de data (workoutDateSheet, que já desabilita dias futuros), o confirmSheet, o update e o toast.
+const RUN_OPT = [
+  ['elev', 'Elevation gain', 'm'], ['hrAvg', 'Avg HR', 'bpm'], ['hrMax', 'Max HR', 'bpm'],
+]
+const numOrEmpty = v => { const s = String(v ?? '').trim(); if (!s) return null; const n = Number(s.replace(',', '.')); return Number.isFinite(n) ? n : NaN }
+function RunLog({ id, day, close }) {
+  const st = useStore(s => s.S)
+  const had = id ? runsOf(st).find(x => x.id === id) : null
+  const [d, setD] = useState(had?.d || day || todayISO())
+  const [place, setPlace] = useState(had?.place || 'outdoor')
+  const [km, setKm] = useState(had ? fmtNum(had.km) : '')
+  const [time, setTime] = useState(had ? fmtDuration(had.sec) : '')
+  const [opt, setOpt] = useState(() => ({ elev: had?.elev ?? '', hrAvg: had?.hrAvg ?? '', hrMax: had?.hrMax ?? '' }))
+  const [rpe, setRpe] = useState(had?.rpe ?? null)
+  const [note, setNote] = useState(had?.note || '')
+  const [more, setMore] = useState(!!had && ['elev', 'hrAvg', 'hrMax', 'rpe', 'note'].some(k => had[k] != null && had[k] !== ''))
+  const [touched, setTouched] = useState({})
+  const touch = k => () => setTouched(x => ({ ...x, [k]: true }))
+  const fields = {
+    d, place, km: parseKm(km), sec: parseDuration(time),
+    elev: place === 'treadmill' ? null : numOrEmpty(opt.elev), hrAvg: numOrEmpty(opt.hrAvg), hrMax: numOrEmpty(opt.hrMax),
+    rpe, note,
+  }
+  // Texto que não vira número conta como inválido, não como vazio.
+  if (km.trim() && fields.km == null) fields.km = NaN
+  if (time.trim() && fields.sec == null) fields.sec = NaN
+  const { errors, warnings } = validateRun(fields)
+  const bad = { ...errors }
+  if (Number.isNaN(fields.km)) bad.km = 'Distance must be between 0 and 300 km'
+  if (Number.isNaN(fields.sec)) bad.sec = 'Time must be between 1:00 and 24:00:00'
+  const ok = !Object.keys(bad).length
+  const err = k => touched[k] && bad[k] ? <div className="small" style={{ color: 'var(--red)', marginTop: 4 }}>{t(bad[k])}</div> : null
+  const save = () => {
+    if (!ok) return
+    update(s => { s.activities = withRun(s.activities, id, fields).map })
+    close()
+    toast(had ? t('Saved') : t('Run logged'))
+  }
+  const remove = () => confirmSheet({
+    title: t('Delete run?'), confirmText: t('Delete'), danger: true,
+    onConfirm: () => { update(s => { s.activities = removeRun(s.activities, id) }); close(); toast(t('Run deleted')) },
+  })
+  const pace = ok ? fmtPace(paceOf(fields.km, fields.sec)) : null
+  return <>
+    <h3>{had ? t('Edit run') : t('Log a run')}</h3>
+    <div className="item" onClick={() => workoutDateSheet(d, setD)}>
+      <div className="grow"><div className="tt">{t('Date')}</div><div className="ss">{fmtDate(d, true)}</div></div>
+      <Icon name="calendar" className="chev" />
+    </div>
+    {err('d')}
+    <div className="chips" role="radiogroup" aria-label={t('Run')} style={{ margin: '12px 0' }}>
+      {['outdoor', 'treadmill'].map(k => <button key={k} type="button" role="radio" aria-checked={place === k}
+        className={'chip' + (place === k ? ' on' : '')} onClick={() => setPlace(k)}>{t(k === 'outdoor' ? 'Outdoor' : 'Treadmill')}</button>)}
+    </div>
+    <label className="small muted">{t('Distance')} (km)</label>
+    <input className="input" inputMode="decimal" placeholder="5,2" value={km} onChange={e => setKm(e.target.value)} onBlur={touch('km')} />
+    {err('km')}
+    <label className="small muted" style={{ display: 'block', marginTop: 10 }}>{t('Moving time')}</label>
+    <input className="input" inputMode="numeric" placeholder="mm:ss" value={time} onChange={e => setTime(e.target.value)} onBlur={touch('sec')} />
+    {err('sec')}
+    {pace && <div className="small" style={{ marginTop: 8 }}>{t('Pace')}: <b>{pace}</b></div>}
+    {ok && warnings.map(w => <div key={w} className="small" style={{ color: 'var(--orange)', marginTop: 4 }}>{t(w)}</div>)}
+    <button type="button" className="btn plain" style={{ marginTop: 10 }} onClick={() => setMore(v => !v)}>
+      <span>{t('More details')}</span><Icon name={more ? 'chevronUp' : 'chevronDown'} /></button>
+    {more && <div style={{ marginTop: 6 }}>
+      {RUN_OPT.filter(([k]) => !(k === 'elev' && place === 'treadmill')).map(([k, label, unit]) => <div key={k} style={{ marginBottom: 8 }}>
+        <label className="small muted">{t(label)} ({unit})</label>
+        <input className="input" inputMode="numeric" value={opt[k]} onChange={e => setOpt(o => ({ ...o, [k]: e.target.value }))} onBlur={touch(k)} />
+        {err(k)}
+      </div>)}
+      <label className="small muted">{t('Perceived effort')}</label>
+      <div className="chips" style={{ flexWrap: 'wrap', margin: '6px 0 10px' }}>
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <button key={n} type="button" aria-pressed={rpe === n}
+          className={'chip' + (rpe === n ? ' on' : '')} onClick={() => setRpe(rpe === n ? null : n)}>{n}</button>)}
+      </div>
+      <label className="small muted">{t('Note')}</label>
+      <TextArea rows={2} maxLength={NOTE_MAX} value={note} onChange={e => setNote(e.target.value)} />
+    </div>}
+    <div style={{ height: 12 }} />
+    <Button variant="primary" icon="check" onClick={save} disabled={!ok}>{t('Save')}</Button>
+    {had && <><div style={{ height: 8 }} /><Button variant="ghost" className="dim" icon="trash" onClick={remove}>{t('Delete')}</Button></>}
+  </>
+}
+export const runSheet = (id = null, day = null) => ui().openSheet(close => <RunLog id={id} day={day} close={close} />)
+
 /* A folha de unidade do treino grava em `S.active` E na rotina de origem; aqui o alvo e o rascunho
    de um treino JA finalizado, e a rotina nao pode ser tocada. O numero nao e convertido: `200`
    continua `200` — a regra da BACKLOG-01. */
@@ -1189,12 +1279,23 @@ function WorkoutUnit({ value, onPick, close }) {
 export const workoutUnitSheet = (value, onPick) => ui().openSheet(close => <WorkoutUnit value={value} onPick={onPick} close={close} />)
 
 /* ============================ calendar ============================ */
+// Lista do dia: a folha que o Calendar já abria para vários treinos, agora com as corridas depois.
+function DayList({ iso, ws, close }) {
+  const st = useStore(s => s.S)
+  const runs = runsOn(st, iso)
+  return <><h3>{fmtDate(iso, true)}</h3><div className="list">
+    {ws.map(w => <WorkoutRow key={w.id} w={w} onClick={() => { close(); workoutDetailSheet(w) }} />)}
+    {runs.map(x => <RunRow key={x.id} run={x} showDate={false} onClick={() => { close(); runSheet(x.id) }} />)}
+    {iso <= todayISO() && <div className="item" onClick={() => { close(); runSheet(null, iso) }}><span className="lrow-i flat"><Icon name="figureRun" /></span><div className="grow"><div className="tt">{t('Log a run on this day')}</div></div></div>}
+  </div></>
+}
 function Calendar({ start, close }) {
   const st = useStore(s => s.S)
   const [cur, setCur] = useState(() => { const d = start ? new Date(start) : new Date(); d.setDate(1); return d })
   const y = cur.getFullYear(), mo = cur.getMonth()
   const byDay = {}
   st.workouts.forEach(w => (byDay[w.d] = byDay[w.d] || []).push(w))
+  const rDays = runDays(st)
   const startOffset = (new Date(y, mo, 1).getDay() + 6) % 7
   const daysIn = new Date(y, mo + 1, 0).getDate()
   const monthWs = st.workouts.filter(w => w.d.startsWith(y + '-' + String(mo + 1).padStart(2, '0')))
@@ -1206,11 +1307,12 @@ function Calendar({ start, close }) {
     const iso = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0')
     const ws = byDay[iso], effId = effectiveRoutineId(st, iso), ovr = st.dayPlan[iso] !== undefined
     const dotCls = ws ? 'done' : ovr && effId ? 'ovr' : effId ? 'plan' : ''
+    const ran = rDays.has(iso)
     cells.push(<button key={d} className={'cal-d' + (ws ? ' has' : '') + (iso === todayISO() ? ' today' : '')} onClick={() => {
-      if (!ws) { close(); dayOverrideSheet(iso); return }
-      if (ws.length === 1) { close(); workoutDetailSheet(ws[0]); return }
-      close(); ui().openSheet(c2 => <><h3>{fmtDate(iso, true)}</h3><div className="list">{ws.map(w => <WorkoutRow key={w.id} w={w} onClick={() => { c2(); workoutDetailSheet(w) }} />)}</div></>)
-    }}><span>{d}</span><i className={dotCls} /></button>)
+      if (!ws && !ran) { close(); dayOverrideSheet(iso); return }
+      if (ws && ws.length === 1 && !ran) { close(); workoutDetailSheet(ws[0]); return }
+      close(); ui().openSheet(c2 => <DayList iso={iso} ws={ws || []} close={c2} />)
+    }}><span>{d}</span><span className="cal-dots"><i className={dotCls} />{ran && <i className="run" />}</span></button>)
   }
   return <>
     <div className="row between" style={{ marginBottom: 2 }}>
@@ -1224,6 +1326,7 @@ function Calendar({ start, close }) {
       <span><i style={{ background: 'var(--acc)' }} />{t('Trained')}</span>
       <span><i style={{ background: 'var(--label-3)' }} />{t('Planned')}</span>
       <span><i style={{ background: 'var(--orange)' }} />{t('Rescheduled')}</span>
+      <span><i style={{ background: 'var(--blue)' }} />{t('Run')}</span>
     </div>
     <div className="small dim" style={{ textAlign: 'center', marginTop: 10 }}>{t('Tap a trained day for details · tap any other day to plan a session')}</div>
   </>
