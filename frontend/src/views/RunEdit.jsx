@@ -147,9 +147,6 @@ function RunEditForm({ id, had, initDay }) {
   }))
   const [rpe, setRpe] = useState(had?.rpe ?? null)
   const [note, setNote] = useState(had?.note || '')
-  const [more, setMore] = useState(
-    !!had && ['elev', 'hrAvg', 'hrMax', 'rpe', 'note'].some(k => had[k] != null && had[k] !== '')
-  )
   const [playing, setPlaying] = useState(true)
   const [touched, setTouched] = useState({})
   const touch = k => () => setTouched(x => ({ ...x, [k]: true }))
@@ -282,13 +279,6 @@ function RunEditForm({ id, had, initDay }) {
   const isOtherDate = d !== today && d !== yesterday
   const runEx = EXIDX[RUN_MEDIA_ID[place]]
 
-  const detailBadges = [
-    opt.elev.trim() !== '' ? `${opt.elev.trim()} m` : null,
-    opt.hrAvg.trim() !== '' ? `${opt.hrAvg.trim()} bpm` : null,
-    rpe != null ? `${t('Effort')} ${rpe}/10` : null,
-    note.trim() ? t('Note') : null,
-  ].filter(Boolean)
-
   return (
     <div className="narrow">
       <div className="hdr">
@@ -311,35 +301,25 @@ function RunEditForm({ id, had, initDay }) {
         </button>
       </div>
 
-      {/* Hero: ritmo calculado ao vivo + animação do exercício */}
+      {/* Hero: cabeçalho de largura total + animação à esquerda e ritmo à direita */}
       <div className={'card run-hero' + (livePace ? ' ready' : '')}>
+        <div className="run-hero-top">
+          <span className="run-hero-lbl">
+            <Icon name="timer" style={{ fontSize: 14 }} />
+            {t('Pace')}
+          </span>
+          <span className={'tag' + (livePace ? ' run-tag' : '')}>
+            <Icon name={place === 'treadmill' ? 'treadmill' : 'sun'} />
+            {t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
+          </span>
+        </div>
         <div className="run-hero-main">
-          <div className="run-hero-info">
-            <div className="run-hero-top">
-              <span className="run-hero-lbl">
-                <Icon name="timer" style={{ fontSize: 14 }} />
-                {t('Pace')}
-              </span>
-              <span className={'tag' + (livePace ? ' run-tag' : '')}>
-                <Icon name={place === 'treadmill' ? 'treadmill' : 'sun'} />
-                {t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
-              </span>
-            </div>
-            <div className={'run-pace-val' + (livePace ? '' : ' empty')}>
-              {paceNum}<span className="u">/{paceUnit}</span>
-            </div>
-            <div className="run-hero-sub">
-              {(hasPositiveKm || hasPositiveSec)
-                ? `${hasPositiveKm ? fmtKm(round2(fields.km)) : '— km'} · ${hasPositiveSec ? fmtDuration(fields.sec) : '—:—'} · ${fmtDate(d, true)}`
-                : t('Enter distance and time to see your pace')}
-            </div>
-          </div>
           {runEx && (
             <button
               type="button"
               className="run-hero-media"
               onClick={() => setPlaying(p => !p)}
-              aria-label={t(place === 'treadmill' ? 'Treadmill' : 'Outdoor')}
+              aria-label={t(playing ? 'tap to pause' : 'tap to play')}
               title={t(playing ? 'tap to pause' : 'tap to play')}
             >
               <img
@@ -349,6 +329,16 @@ function RunEditForm({ id, had, initDay }) {
               />
             </button>
           )}
+          <div className="run-hero-info">
+            <div className={'run-pace-val' + (livePace ? '' : ' is-empty')}>
+              {paceNum}<span className="u">/{paceUnit}</span>
+            </div>
+            <div className="run-hero-sub">
+              {(hasPositiveKm || hasPositiveSec)
+                ? `${hasPositiveKm ? fmtKm(round2(fields.km)) : '— km'} · ${hasPositiveSec ? fmtDuration(fields.sec) : '—:—'} · ${fmtDate(d, true)}`
+                : t('Enter distance and time to see your pace')}
+            </div>
+          </div>
         </div>
         {ok && warnings.map(w => (
           <div key={w} className="run-hero-warn">
@@ -459,28 +449,11 @@ function RunEditForm({ id, had, initDay }) {
         )}
       </div>
 
-      {/* Mais detalhes (opcional) */}
+      {/* Mais detalhes (sempre visível) */}
       <div className="card">
-        <button
-          type="button"
-          className="run-more-btn"
-          aria-expanded={more}
-          onClick={() => setMore(v => !v)}
-        >
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 16 }}>{t('More details')}</div>
-            {!more && (
-              <div className="small muted" style={{ marginTop: 2 }}>
-                {detailBadges.length ? detailBadges.join(' · ') : t('Elevation, HR, effort and note')}
-              </div>
-            )}
-          </div>
-          <Icon name={more ? 'chevronUp' : 'chevronDown'} style={{ color: 'var(--label-3)', fontSize: 18, flex: 'none' }} />
-        </button>
-
-        {more && (
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: 'var(--hair) solid var(--sep)' }}>
-            <div className="grid2">
+        <h2>{t('More details')}</h2>
+        <div>
+          <div className="grid2">
               <div>
                 <label htmlFor="run-hr-avg" className="run-field-lbl">{t('Avg HR')}</label>
                 <div className={'run-box sm' + (touched.hrAvg && bad.hrAvg ? ' bad' : '')}>
@@ -560,8 +533,7 @@ function RunEditForm({ id, had, initDay }) {
                 onChange={e => setNote(e.target.value)}
               />
             </div>
-          </div>
-        )}
+        </div>
       </div>
 
       <Button variant="primary" icon="check" onClick={save} disabled={!ok}>

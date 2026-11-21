@@ -65,10 +65,11 @@ describe('RunEdit — helpers e tela dedicada', () => {
     expect(rpeEffortKey(10)).toBe('Max effort')
   })
 
-  it('renderiza criação (/run/new) com ritmo hero, chips de data, presets e mais detalhes recolhido', () => {
+  it('renderiza criação (/run/new) com ritmo hero, chips de data, presets e mais detalhes sempre visível', () => {
     const html = renderRoute('/run/new')
     expect(html).toContain('Registrar corrida')
     expect(html).toContain('Ritmo')
+    expect(html).toContain('run-pace-val is-empty')
     expect(html).toContain('Informe distância e tempo para ver seu ritmo')
     expect(html).toContain('Ao ar livre')
     expect(html).toContain('Esteira')
@@ -82,9 +83,12 @@ describe('RunEdit — helpers e tela dedicada', () => {
     expect(html).toContain('10 km')
     expect(html).toContain('21,1 km')
     expect(html).toContain('Mais detalhes')
-    expect(html).toContain('Elevação, FC, esforço e nota')
     expect(html).toContain('0685-oLrKqDH.gif')
-    expect(html).not.toContain('FC média')
+    expect(html).toContain('FC média')
+    expect(html).toContain('FC máxima')
+    expect(html).toContain('Ganho de elevação')
+    expect(html).toContain('Esforço percebido')
+    expect(html).toContain('Nota')
   })
 
   it('pré-seleciona outra data quando aberto com ?day=AAAA-MM-DD', () => {

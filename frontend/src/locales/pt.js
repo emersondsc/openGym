@@ -1145,7 +1145,6 @@ export default {
   "Outdoor or treadmill": "Ao ar livre ou esteira",
   "Other date": "Outra data",
   "Enter distance and time to see your pace": "Informe distância e tempo para ver seu ritmo",
-  "Elevation, HR, effort and note": "Elevação, FC, esforço e nota",
   "Tap or slide": "Toque ou arraste",
   "Hard effort": "Forte",
   "Max effort": "Máximo",

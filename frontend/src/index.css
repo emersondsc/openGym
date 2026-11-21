@@ -1592,20 +1592,20 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
   border-color:color-mix(in srgb,var(--blue) 42%,transparent);
   background:linear-gradient(180deg,color-mix(in srgb,var(--blue) 9%,var(--surface)),var(--surface));
 }
-.run-hero-main{display:flex;align-items:center;justify-content:space-between;gap:14px}
-.run-hero-info{flex:1;min-width:0}
-.run-hero-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.run-hero-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
 .run-hero-lbl{font-size:13px;color:var(--label-2);display:flex;align-items:center;gap:5px}
+.run-hero-main{display:flex;align-items:center;gap:14px}
+.run-hero-info{flex:1;min-width:0}
 .run-pace-val{
-  font-size:clamp(34px,9vw,44px);font-weight:700;letter-spacing:-.035em;line-height:1.05;
+  font-size:clamp(32px,8.5vw,40px);font-weight:700;letter-spacing:-.035em;line-height:1.05;
   font-variant-numeric:tabular-nums;color:var(--label);
 }
-.run-pace-val.empty{color:var(--label-3)}
-.run-pace-val .u{font-size:17px;font-weight:500;color:var(--label-2);letter-spacing:-.01em;margin-left:3px}
-.run-hero-sub{font-size:13.5px;color:var(--label-2);margin-top:6px;line-height:1.35}
+.run-pace-val.is-empty{color:var(--label-3)}
+.run-pace-val .u{font-size:16px;font-weight:500;color:var(--label-2);letter-spacing:-.01em;margin-left:3px}
+.run-hero-sub{font-size:13.5px;color:var(--label-2);margin-top:4px;line-height:1.35}
 .run-hero-media{
-  width:84px;height:84px;flex:none;border-radius:var(--r);overflow:hidden;
-  background:#fff;padding:4px;border:var(--hair) solid var(--sep-op);
+  width:68px;height:68px;flex:none;border-radius:var(--r);overflow:hidden;
+  background:#fff;padding:3px;border:var(--hair) solid var(--sep-op);
   display:flex;align-items:center;justify-content:center;
   transition:transform var(--fast) var(--ease);
 }
@@ -1634,8 +1634,6 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 .run-box input::placeholder{color:var(--label-4)}
 .run-box .u{font-size:14px;font-weight:500;color:var(--label-2);flex:none}
 .run-box.sm input{font-size:20px;font-weight:600}
-
-.run-more-btn{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:2px 0;text-align:left}
 
 .run-rpe-bar{
   display:grid;grid-template-columns:repeat(10,1fr);gap:4px;padding:6px 0;
