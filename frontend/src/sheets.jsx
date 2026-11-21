@@ -1210,6 +1210,7 @@ function DayList({ iso, ws, close }) {
     {iso <= todayISO() && <div className="item" onClick={() => { close(); runSheet(null, iso) }}><span className="lrow-i flat"><Icon name="figureRun" /></span><div className="grow"><div className="tt">{t('Log a run on this day')}</div></div></div>}
   </div></>
 }
+export const dayListSheet = (iso, ws = []) => ui().openSheet(close => <DayList iso={iso} ws={ws} close={close} />)
 function Calendar({ start, close }) {
   const st = useStore(s => s.S)
   const [cur, setCur] = useState(() => { const d = start ? new Date(start) : new Date(); d.setDate(1); return d })
