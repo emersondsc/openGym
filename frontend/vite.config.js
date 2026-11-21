@@ -21,9 +21,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: backend, changeOrigin: true },
+      '/exercise-media': { target: media, changeOrigin: true },
       '/img': { target: media, changeOrigin: true },
       '/gif': { target: media, changeOrigin: true }
     }
   },
-  build: { chunkSizeWarningLimit: 1500 }
+  build: { chunkSizeWarningLimit: 5000 }
 })

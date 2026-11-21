@@ -20,4 +20,6 @@ RUN npm run build
 FROM nginx:alpine
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-# exercise media (img/gif) is mounted at runtime from the media volume
+# The exercise stills and animations (180 px), licensed from Gym visual for openGym only:
+# see catalogue/media/NOTICE.md.
+COPY catalogue/media/ /usr/share/nginx/html/exercise-media/

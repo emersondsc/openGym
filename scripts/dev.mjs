@@ -200,11 +200,18 @@ async function main() {
     console.log(`✓ Snapshot atualizado (${snap.remoteUid} -> ${snap.localUid}).`)
   }
 
-  const mediaRes = await ensureMediaCache(paths.mediaDir, { refresh: args.refreshMedia })
-  if (mediaRes.skipped) {
-    console.log(`✓ Mídia em cache pronta (${paths.mediaDir}).`)
+  const repoMediaDir = path.join(repoRoot, 'catalogue', 'media')
+  let viteMediaDir = repoMediaDir
+  if (hasNonEmptyDir(path.join(repoMediaDir, 'still')) && hasNonEmptyDir(path.join(repoMediaDir, 'clip'))) {
+    console.log(`✓ Mídia local pronta (${repoMediaDir}).`)
   } else {
-    console.log(`✓ Cache de mídia criado em ${paths.mediaDir} (${mediaRes.imgCount} JPGs, ${mediaRes.gifCount} GIFs).`)
+    const mediaRes = await ensureMediaCache(paths.mediaDir, { refresh: args.refreshMedia })
+    viteMediaDir = paths.mediaDir
+    if (mediaRes.skipped) {
+      console.log(`✓ Mídia em cache pronta (${paths.mediaDir}).`)
+    } else {
+      console.log(`✓ Cache de mídia criado em ${paths.mediaDir} (${mediaRes.imgCount} JPGs, ${mediaRes.gifCount} GIFs).`)
+    }
   }
 
   const apiEnv = { ...process.env }
@@ -221,7 +228,7 @@ async function main() {
   const viteEnv = {
     ...process.env,
     API_TARGET: 'http://127.0.0.1:3000',
-    OPENGYM_MEDIA_DIR: paths.mediaDir
+    OPENGYM_MEDIA_DIR: viteMediaDir
   }
 
   const apiProc = spawn(process.execPath, [path.join(repoRoot, 'api', 'server.js')], {

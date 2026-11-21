@@ -6,7 +6,6 @@
 **/node_modules
 /frontend/dist
 /data
-/media
 /docs
 /website
 /assets

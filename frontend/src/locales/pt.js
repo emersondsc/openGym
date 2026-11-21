@@ -1139,5 +1139,16 @@ export default {
   "Show all": "Mostrar todos",
   "Show all cards": "Mostrar todos os cards",
   "All cards visible": "Todos os cards visíveis",
-  "All Stats cards are hidden.": "Todos os cards de Estatísticas estão ocultos."
+  "All Stats cards are hidden.": "Todos os cards de Estatísticas estão ocultos.",
+  // taxonomia do catálogo expandido (5.632 exercícios)
+  "full body": "Corpo inteiro",
+  "front delts": "Deltoide anterior",
+  "side delts": "Deltoide lateral",
+  "rear delts": "Deltoide posterior",
+  "suspension trainer": "Fita de suspensão",
+  "landmine": "Landmine",
+  "weight plate": "Anilha",
+  "massage ball": "Bola de massagem",
+  "sandbag": "Saco de areia",
+  "macebell": "Macebell"
 }

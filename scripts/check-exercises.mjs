@@ -6,7 +6,7 @@
 //
 // O que confere:
 //   1. é JSON válido e é uma lista;
-//   2. todo `id` é único e tem 4 dígitos;
+//   2. todo `id` é único e tem 4 ou 5 dígitos;
 //   3. as 10 chaves existem em TODAS as entradas (id n bp eq tg mg sm st img gif);
 //   4. `n` não é vazio e não tem caractere fora do Latin-1 básico — foi assim que um `в`
 //      cirílico (U+0432) entrou em 4 nomes (`0738`, `0739`, `0740`, `0742`) e sobreviveu
@@ -53,7 +53,7 @@ if (process.env.OG_CATALOG) {
     + 'ignora o override e olha o arquivo canônico.')
 }
 
-const mediaDir = opt('--media') || join(root, 'media')
+const mediaDir = opt('--media') || join(root, 'catalogue', 'media')
 const fix = flag('--fix')
 
 let raw, data
@@ -82,8 +82,8 @@ for (const [i, e] of data.entries()) {
     continue
   }
   for (const f of FIELDS) if (!(f in e)) problems.push([where, `campo ausente: ${f}`, ''])
-  if (!/^\d{4}$/.test(String(e.id ?? ''))) {
-    problems.push([where, `id fora do padrão 4 dígitos: ${JSON.stringify(e.id)}`, ''])
+  if (!/^\d{4,5}$/.test(String(e.id ?? ''))) {
+    problems.push([where, `id fora do padrão 4-5 dígitos: ${JSON.stringify(e.id)}`, ''])
   }
   if (seen.has(e.id)) problems.push([where, `id repetido (também em #${seen.get(e.id)})`, ''])
   else seen.set(e.id, i)
@@ -103,13 +103,13 @@ for (const [i, e] of data.entries()) {
     }
   }
 
-  for (const k of ['img', 'gif']) {
+  for (const [k, dirName] of [['img', 'still'], ['gif', 'clip']]) {
     // Campo ausente já é erro no laço de FIELDS; aqui o valor precisa ser string não vazia,
     // senão `img: null` passaria calado.
     if (typeof e[k] !== 'string' || !e[k]) {
       problems.push([where, `${k} vazio ou não é texto: ${JSON.stringify(e[k])}`, ''])
-    } else if (!existsSync(join(mediaDir, k, e[k]))) {
-      problems.push([where, `${k} não encontrado em ${join(mediaDir, k)}: ${e[k]}`, ''])
+    } else if (!existsSync(join(mediaDir, dirName, e[k]))) {
+      problems.push([where, `${k} não encontrado em ${join(mediaDir, dirName)}: ${e[k]}`, ''])
     }
   }
 }
