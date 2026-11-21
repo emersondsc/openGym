@@ -10,6 +10,7 @@ import { pinUnits } from '../lib/unit-migration.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
 import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
 import { mergeWorkouts, mergeExWeights, mergeCustomSetRoles, freshMark, sigOf } from '../lib/workout-edit.js'
+import { mergeActivities } from '../lib/activities.js'
 import { migrateLegacyRepRange } from '../lib/history.js'
 
 const KEY = 'gym_state_v1'
@@ -38,7 +39,9 @@ export const DEF = {
   gifSizeChosen: false,
   confirmTopWeight: false,
   reminder: { on: false, time: '08:00', tz: null }, effort: null,
-  mesos: [], activeMeso: null, mesoPrev: null, customSetRoles: []
+  mesos: [], activeMeso: null, mesoPrev: null, customSetRoles: [],
+  // Corridas (docs/specs/spec_corrida.md): mapa por id, juntado por mergeActivities nos dois merges.
+  activities: {}
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 // Um aviso por MUDANÇA: a chave guarda a revisão em que o aviso já apareceu. A chave antiga
@@ -293,6 +296,7 @@ export const useStore = create((set, get) => {
               merged.exNotes = { ...(srv.exNotes || {}), ...(S.exNotes || {}) }
               merged.mesos = mergeMesos(srv.mesos, S.mesos)
               merged.customSetRoles = mergeCustomSetRoles(srv.customSetRoles, S.customSetRoles)      // nada criado aqui se perde
+              merged.activities = mergeActivities(srv.activities, S.activities)               // corrida salva offline não se perde no 409
               // Ponteiro do mesociclo: o do SERVIDOR manda (a API é overwrite total e quem
               // coordena é o assistente, lendo antes de escrever). Id que sumiu vira null.
               fixMesoPointers(merged)
@@ -367,6 +371,7 @@ export const useStore = create((set, get) => {
           merged.exNotes = { ...(state.exNotes || {}), ...(S.exNotes || {}) }
           merged.mesos = mergeMesos(state.mesos, S.mesos)
           merged.customSetRoles = mergeCustomSetRoles(state.customSetRoles, S.customSetRoles)
+          merged.activities = mergeActivities(state.activities, S.activities)
           fixMesoPointers(merged)
           if (S.active) merged.active = S.active
           merged.routines = adoptServerRoutines(state.routines || [], S.routines || [], base).routines

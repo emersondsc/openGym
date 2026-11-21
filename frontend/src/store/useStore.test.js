@@ -205,3 +205,18 @@ describe('PUT recusado (400)', () => {
     expect(SRC.lastIndexOf("setItem('gym_dirty', '1')", i)).toBeGreaterThan(-1)
   })
 })
+
+// Corridas (docs/specs/spec_corrida.md, DIP §8-9): sem mergeActivities nos dois merges, a chave
+// fica com a versão do servidor e uma corrida salva neste aparelho some num conflito.
+describe('corridas no sync', () => {
+  it('o 409 junta activities com mergeActivities', () => {
+    expect(SRC).toMatch(/merged\.activities = mergeActivities\(srv\.activities, S\.activities\)/)
+  })
+  it('o pullState junta activities com mergeActivities', () => {
+    const pull = SRC.slice(SRC.indexOf('async pullState('))
+    expect(pull).toMatch(/merged\.activities = mergeActivities\(state\.activities, S\.activities\)/)
+  })
+  it('o DEF tem activities vazio', () => {
+    expect(SRC).toMatch(/activities: \{\}/)
+  })
+})
