@@ -1,22 +1,39 @@
 import { useEffect, useRef } from 'react'
 import { fmtVol, isoOf, todayISO, MONTHS } from '../lib/format.js'
+import { runsOf, fmtKm } from '../lib/activities.js'
 import { t } from '../lib/i18n.js'
 
-// GitHub-style activity heatmap, shaded by time trained per day.
+// GitHub-style activity heatmap, shaded by time trained per day (treinos + corridas).
 export default function Heatmap({ S, onDay }) {
   const wrapRef = useRef(null)
   useEffect(() => { if (wrapRef.current) wrapRef.current.scrollLeft = wrapRef.current.scrollWidth }, [])
 
   const agg = {}
-  S.workouts.forEach(w => {
-    const a = agg[w.d] = agg[w.d] || { n: 0, vol: 0, min: 0 }
-    a.n++; a.vol += w.vol || 0
+  const dayOf = d => (agg[d] = agg[d] || { w: 0, r: 0, vol: 0, min: 0, km: 0 })
+  ;(S.workouts || []).forEach(w => {
+    const a = dayOf(w.d)
+    a.w++; a.vol += w.vol || 0
     a.min += Math.max(0, Math.round(((w.end || w.start) - w.start) / 60000))
+  })
+  runsOf(S).forEach(r => {
+    const a = dayOf(r.d)
+    a.r++; a.km += r.km; a.min += r.min
   })
   const mins = Object.values(agg).map(a => a.min).filter(v => v > 0).sort((a, b) => a - b)
   const q = p => (mins.length ? mins[Math.min(mins.length - 1, Math.floor(p * mins.length))] : 0)
   const t1 = q(0.25), t2 = q(0.5), t3 = q(0.75)
   const level = a => !a ? 0 : !a.min ? 1 : a.min >= t3 ? 4 : a.min >= t2 ? 3 : a.min >= t1 ? 2 : 1
+  const tip = (key, a) => {
+    if (!a) return key
+    return [
+      key,
+      a.w ? t(a.w === 1 ? '{0} workout' : '{0} workouts', a.w) : null,
+      a.r ? t(a.r === 1 ? '{0} run' : '{0} runs', a.r) : null,
+      a.min ? `${a.min} min` : null,
+      a.vol ? fmtVol(a.vol, S.unit) : null,
+      a.km ? fmtKm(a.km) : null,
+    ].filter(Boolean).join(' · ')
+  }
 
   const today = new Date(); today.setHours(12, 0, 0, 0)
   const end = new Date(today); end.setDate(today.getDate() - ((today.getDay() + 6) % 7))
@@ -37,8 +54,8 @@ export default function Heatmap({ S, onDay }) {
       const a = agg[key]
       const cls = 'hm-c l' + level(a) + (key === todayISO() ? ' today' : '') + (day > today ? ' future' : '')
       cells.push(<div key={d} className={cls}
-        title={key + (a ? ` · ${t(a.n === 1 ? '{0} workout' : '{0} workouts', a.n)} · ${a.min} min · ${fmtVol(a.vol, S.unit)}` : '')}
-        onClick={a ? () => onDay(key) : undefined} />)
+        title={tip(key, a)}
+        onClick={a && onDay ? () => onDay(key) : undefined} />)
     }
     cols.push(<div key={wk} className="hm-col">{cells}</div>)
   }

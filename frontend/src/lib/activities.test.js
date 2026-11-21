@@ -35,9 +35,9 @@ describe('withRun', () => {
     expect(map.m1.hrAvg).toBeUndefined()
     expect(map.m1._ts).toBe(300)
   })
-  it('não grava elev na esteira nem id na entrada', () => {
+  it('grava elev na esteira e não grava id na entrada', () => {
     const { map, id } = withRun({}, null, fields({ place: 'treadmill', elev: 30 }), 1)
-    expect(map[id].elev).toBeUndefined()
+    expect(map[id].elev).toBe(30)
     expect(map[id].id).toBeUndefined()
   })
 })
