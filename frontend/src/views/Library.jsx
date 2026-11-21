@@ -44,7 +44,9 @@ export default function Library() {
           <Thumb ex={e} />
           <div className="grow"><div className="tt capitalize">{exName(e)}</div><div className="ss capitalize">{t(e.tg || e.bp)} · {t(e.eq)}</div></div>
           {best > 0 && <span className="tag acc">{fmtNum(best)}</span>}
-          <Button size="sm" variant="tinted" icon="plus" onClick={ev => { ev.stopPropagation(); addToRoutineSheet(e) }}>{t('Plan')}</Button>
+          <Button size="sm" variant="tinted" icon="plus" style={{ padding: '8px 10px' }}
+            aria-label={t('Add to my plan')} title={t('Add to my plan')}
+            onClick={ev => { ev.stopPropagation(); addToRoutineSheet(e) }} />
         </div>
       })}
       {f.length === 0 && <div className="empty"><div className="ico"><Icon name="magnifier" /></div>{t('No match')}</div>}
