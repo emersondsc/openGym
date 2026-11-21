@@ -40,6 +40,8 @@ export const DEF = {
   confirmTopWeight: false,
   reminder: { on: false, time: '08:00', tz: null }, effort: null,
   mesos: [], activeMeso: null, mesoPrev: null, customSetRoles: [],
+  // Cards ocultos em Home e Stats: { home: { [id]: true }, stats: { [id]: true } }.
+  hiddenCards: { home: {}, stats: {} },
   // Corridas (docs/specs/spec_corrida.md): mapa por id, juntado por mergeActivities nos dois merges.
   activities: {}
 }

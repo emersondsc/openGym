@@ -8,7 +8,9 @@ import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet } from '../sheets.jsx'
 import { historyItems } from '../lib/activities.js'
+import { isCardHidden, clearHiddenCards } from '../lib/cards.js'
 import HistoryList from '../components/HistoryList.jsx'
+import HideCardBtn from '../components/HideCardBtn.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import Icon from '../components/Icon.jsx'
@@ -47,8 +49,11 @@ function MuscleBalance({ S }) {
   return <div className="card">
     <div className="row between" style={{ marginBottom: 8 }}>
       <h2 style={{ margin: 0 }}>{t('Muscle balance')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {on ? t('by hard sets') : t('by sets worked')}</span></h2>
-      {rated && <Button size="sm" icon="flame" style={on ? { color: 'var(--yellow)' } : undefined}
-        onClick={() => { setHard(h => !h); setSel(null) }}>{on ? t('Hard') : t('All')}</Button>}
+      <div className="row" style={{ gap: 8 }}>
+        {rated && <Button size="sm" icon="flame" style={on ? { color: 'var(--yellow)' } : undefined}
+          onClick={() => { setHard(h => !h); setSel(null) }}>{on ? t('Hard') : t('All')}</Button>}
+        <HideCardBtn screen="stats" id="muscles" label={t('Muscle balance')} />
+      </div>
     </div>
     <Segmented className="seg-range" value={win} onChange={v => { setWin(v); setSel(null) }}
       options={[{ value: 7, label: t('Week') }, { value: 30, label: '30d' }, { value: 90, label: '90d' }, { value: 0, label: t('All') }]} />
@@ -97,7 +102,10 @@ function EffortCard({ S }) {
   const binLabel = b => kind === 'rpe' ? (b.tail ? '≤ 6' : String(10 - b.rir)) : (b.tail ? b.rir + '+' : String(b.rir))
 
   return <div className="card">
-    <h2>{t('Effort')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('how close to failure')}</span></h2>
+    <div className="row between" style={{ marginBottom: 12 }}>
+      <h2 style={{ margin: 0 }}>{t('Effort')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('how close to failure')}</span></h2>
+      <HideCardBtn screen="stats" id="effort" label={t('Effort')} />
+    </div>
     <Segmented className="seg-range" value={win} onChange={setWin}
       options={[{ value: 30, label: '30d' }, { value: 90, label: '90d' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
     {sum.rated === 0 ? <div className="muted small">{t('No rated sets in this period.')}</div> : <>
@@ -137,19 +145,23 @@ function CoachAnalysisCard(){
   const [coach,setCoach]=useState(null);
   const [err,setErr]=useState(null);
   useEffect(()=>{ if(!user){ setCoach(null); setErr(null); return; } fetchAnalysis().then(d=>{ setCoach(d); setErr(null); }).catch(e=>setErr(e)); },[user]);
-  if(!user) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}>
+  if(!user) return <div className="card" style={{position:'relative',textAlign:'center',padding:'20px 16px'}}>
+    <div style={{position:'absolute',top:14,right:14}}><HideCardBtn screen="stats" id="coach" label={t('Your progress')} /></div>
     <div style={{fontSize:28,marginBottom:8}}>📊</div>
-    <div style={{fontWeight:700}}>Your progress</div>
+    <div style={{fontWeight:700}}>{t('Your progress')}</div>
     <div className="muted small" style={{marginTop:4}}>Log in to see your progress — volume, records and weeks</div>
   </div>;
-  if(err && err.status===401) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div className="muted small">Session expired — please log in again</div></div>;
-  if(err) return <div className="card" style={{textAlign:'center',padding:'20px 16px'}}><div style={{fontSize:22}}>⚠️</div><div className="muted small" style={{marginTop:6}}>Unable to load your progress</div><button className="btn" style={{marginTop:10}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Try again</button></div>;
-  if(!coach) return <div className="card"><div className="muted small">Loading your progress…</div></div>;
+  if(err && err.status===401) return <div className="card" style={{position:'relative',textAlign:'center',padding:'20px 16px'}}><div style={{position:'absolute',top:14,right:14}}><HideCardBtn screen="stats" id="coach" label={t('Your progress')} /></div><div className="muted small">Session expired — please log in again</div></div>;
+  if(err) return <div className="card" style={{position:'relative',textAlign:'center',padding:'20px 16px'}}><div style={{position:'absolute',top:14,right:14}}><HideCardBtn screen="stats" id="coach" label={t('Your progress')} /></div><div style={{fontSize:22}}>⚠️</div><div className="muted small" style={{marginTop:6}}>Unable to load your progress</div><button className="btn" style={{marginTop:10}} onClick={()=>fetchAnalysis(true).then(d=>{setCoach(d); setErr(null);}).catch(e=>setErr(e))}>Try again</button></div>;
+  if(!coach) return <div className="card row between"><div className="muted small">Loading your progress…</div><HideCardBtn screen="stats" id="coach" label={t('Your progress')} /></div>;
   const a=coach.analysis;
   return <div className="card">
     <div className="row between" style={{marginBottom:12}}>
-      <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📈</span> Your progress</h2>
-      <span className="dim small">{a.period.first ? `${a.period.first} → ${a.period.last}` : '—'}</span>
+      <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>📈</span> {t('Your progress')}</h2>
+      <div className="row" style={{gap:8}}>
+        <span className="dim small">{a.period.first ? `${a.period.first} → ${a.period.last}` : '—'}</span>
+        <HideCardBtn screen="stats" id="coach" label={t('Your progress')} />
+      </div>
     </div>
     {a.weeks?.length>0 && <>
       <h4 className="sec" style={{marginTop:8,marginBottom:6}}>Recent weeks</h4>
@@ -178,10 +190,15 @@ function CoachAnalysisCard(){
 export default function Stats() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
+  const update = useStore(s => s.update)
   const [range, setRange] = useState(90)
   const now = Date.now()
   const anyEffort = hasEffort(S)
   const items = historyItems(S)
+  const hidden = id => isCardHidden(S, 'stats', id)
+  const anyVisible = !hidden('heatmap') || (items.length > 0 && !hidden('recent')) || !hidden('coach')
+    || (S.workouts.length > 0 && !hidden('muscles')) || (anyEffort && !hidden('effort'))
+    || !hidden('weight') || !hidden('exercise')
 
   const bwPts = S.bodyweight.filter(b => range === 0 || (b.t || new Date(b.d).getTime()) > now - range * 86400000)
     .map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))
@@ -190,39 +207,56 @@ export default function Stats() {
     <div className="hdr"><div><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
       <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button></div>
 
-    <div className="card">
-      <h2>{t('Activity — last 12 months')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
-      <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
-    </div>
+    {!anyVisible && <div className="empty">
+      <div className="ico"><Icon name="eyeOff" /></div>
+      <div>{t('All Stats cards are hidden.')}</div>
+      <div style={{ marginTop: 12 }}>
+        <Button size="sm" variant="primary" onClick={() => update(s => { s.hiddenCards = clearHiddenCards(s.hiddenCards, 'stats') })}>
+          {t('Show all cards')}
+        </Button>
+      </div>
+    </div>}
 
-    {items.length > 0 && <>
+    {!hidden('heatmap') && <div className="card">
+      <div className="row between" style={{ marginBottom: 12 }}>
+        <h2 style={{ margin: 0 }}>{t('Activity — last 12 months')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
+        <HideCardBtn screen="stats" id="heatmap" label={t('Activity — last 12 months')} />
+      </div>
+      <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
+    </div>}
+
+    {items.length > 0 && !hidden('recent') && <>
       <div className="row between" style={{ marginBottom: 10 }}>
         <h4 className="sec" style={{ margin: 0 }}>{t('Recent workouts')}</h4>
-        <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={() => nav('/history')}>{t('All')} {items.length}</Button>
+        <div className="row" style={{ gap: 8 }}>
+          <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={() => nav('/history')}>{t('All')} {items.length}</Button>
+          <HideCardBtn screen="stats" id="recent" label={t('Recent workouts')} />
+        </div>
       </div>
       <HistoryList items={items.slice(0, 6)} style={{ marginBottom: 12 }} />
     </>}
 
-    <CoachAnalysisCard />
+    {!hidden('coach') && <CoachAnalysisCard />}
 
-    {S.workouts.length > 0 && <MuscleBalance S={S} />}
-    {anyEffort && <EffortCard S={S} />}
+    {S.workouts.length > 0 && !hidden('muscles') && <MuscleBalance S={S} />}
+    {anyEffort && !hidden('effort') && <EffortCard S={S} />}
 
-    <div className="cols">
-      <div className="card">
+    {(!hidden('weight') || !hidden('exercise')) && <div className={!hidden('weight') && !hidden('exercise') ? 'cols' : undefined}>
+      {!hidden('weight') && <div className="card">
         <div className="row between" style={{ marginBottom: 8 }}>
           <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
           <div className="row" style={{ gap: 8 }}>
             <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
             <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
+            <HideCardBtn screen="stats" id="weight" label={t('Body weight')} />
           </div>
         </div>
         <Segmented className="seg-range" value={range} onChange={setRange}
           options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
         <div className="chart"><LineChart points={bwPts} h={160} unit={S.unit} goal={S.targetW} /></div>
-      </div>
+      </div>}
 
-      <ExerciseProgressCard />
-    </div>
+      {!hidden('exercise') && <ExerciseProgressCard screen="stats" />}
+    </div>}
   </>
 }

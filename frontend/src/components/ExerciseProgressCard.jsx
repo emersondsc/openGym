@@ -10,6 +10,7 @@ import { e1rmSeries, best1RM } from '../lib/onerm.js'
 import { displayScale, scaleName, toScale, avgRir } from '../lib/effort.js'
 import LineChart from './LineChart.jsx'
 import { Segmented, SelectRow } from './ui.jsx'
+import HideCardBtn from './HideCardBtn.jsx'
 
 // O exercício em foco é preferência do aparelho, não dado de treino: mora no localStorage para
 // sobreviver à troca de aba (App.jsx remonta a view inteira a cada rota) e ao reload.
@@ -23,7 +24,7 @@ const readEx = () => { try { return localStorage.getItem(EX_KEY) } catch { retur
 const saveEx = id => { try { localStorage.setItem(EX_KEY, id) } catch { /* sem storage: vale só nesta sessão */ } }
 
 
-export default function ExerciseProgressCard() {
+export default function ExerciseProgressCard({ screen }) {
   const S = useStore(s => s.S)
   const [exId, setExId] = useState(readEx)
   const pickEx = id => { setExId(id); saveEx(id) }
@@ -85,7 +86,10 @@ export default function ExerciseProgressCard() {
   if (showEff) exOpts.push({ value: 'effort', label: t('Effort') })
 
   return <div className="card">
-    <h2>{t('Exercise progress')}</h2>
+    <div className="row between" style={{ marginBottom: 12 }}>
+      <h2 style={{ margin: 0 }}>{t('Exercise progress')}</h2>
+      {screen && <HideCardBtn screen={screen} id="exercise" label={t('Exercise progress')} />}
+    </div>
     {exHist.length ? <>
       <div className="sect-b" style={{ marginBottom: 10 }}>
         <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={pickEx}

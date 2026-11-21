@@ -217,6 +217,13 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
   padding:16px;margin-bottom:12px;
 }
 .card .big{font-size:30px;font-weight:600;letter-spacing:-.026em;line-height:1.1}
+.card-hide{
+  color:var(--label-3);font-size:15px;background:none;line-height:0;flex:none;
+  padding:8px;margin:-8px -6px -8px 0;border-radius:8px;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:color var(--fast),background var(--fast);
+}
+.card-hide:active{color:var(--label);background:var(--surface-2)}
 
 /* ------------------------------------------------------ inset group list -- */
 .sect{margin-bottom:22px}

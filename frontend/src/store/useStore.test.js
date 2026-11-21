@@ -219,4 +219,7 @@ describe('corridas no sync', () => {
   it('o DEF tem activities vazio', () => {
     expect(SRC).toMatch(/activities: \{\}/)
   })
+  it('o DEF tem hiddenCards vazio para home e stats', () => {
+    expect(SRC).toMatch(/hiddenCards: \{ home: \{\}, stats: \{\} \}/)
+  })
 })
