@@ -6,7 +6,9 @@ import { EXIDX, exName } from '../lib/exercises.js'
 import { effortOf } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow } from '../sheets.jsx'
+import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet } from '../sheets.jsx'
+import { historyItems } from '../lib/activities.js'
+import HistoryList from '../components/HistoryList.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import Icon from '../components/Icon.jsx'
@@ -179,6 +181,7 @@ export default function Stats() {
   const [range, setRange] = useState(90)
   const now = Date.now()
   const anyEffort = hasEffort(S)
+  const items = historyItems(S)
 
   const bwPts = S.bodyweight.filter(b => range === 0 || (b.t || new Date(b.d).getTime()) > now - range * 86400000)
     .map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))
@@ -192,12 +195,12 @@ export default function Stats() {
       <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
     </div>
 
-    {S.workouts.length > 0 && <>
+    {items.length > 0 && <>
       <div className="row between" style={{ marginBottom: 10 }}>
         <h4 className="sec" style={{ margin: 0 }}>{t('Recent workouts')}</h4>
-        <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={() => nav('/history')}>{t('All')} {S.workouts.length}</Button>
+        <Button size="sm" variant="ghost" trailingIcon="chevronRight" onClick={() => nav('/history')}>{t('All')} {items.length}</Button>
       </div>
-      <div className="list" style={{ marginBottom: 12 }}>{[...S.workouts].reverse().slice(0, 6).map(w => <WorkoutRow key={w.id} w={w} onClick={() => workoutDetailSheet(w)} />)}</div>
+      <HistoryList items={items.slice(0, 6)} style={{ marginBottom: 12 }} />
     </>}
 
     <CoachAnalysisCard />
