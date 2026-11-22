@@ -174,8 +174,11 @@ export function cimdClient(id, doc) {
   if (!uris.length || uris.length > 10 || !uris.every(redirectOk)) {
     return { ok: false, error: 'the client metadata document lists no usable redirect_uris' };
   }
+  const methods = Array.isArray(doc.token_endpoint_auth_methods_supported) ? doc.token_endpoint_auth_methods_supported : null;
   const method = doc.token_endpoint_auth_method || 'none';
-  if (method !== 'none') return { ok: false, error: 'only public clients (token_endpoint_auth_method none) are supported' };
+  if (method !== 'none' && !(methods && methods.includes('none'))) {
+    return { ok: false, error: 'only public clients (token_endpoint_auth_method none) are supported' };
+  }
   const grants = Array.isArray(doc.grant_types) ? GRANTS.filter(g => doc.grant_types.includes(g)) : ['authorization_code'];
   let name = cleanName(doc.client_name, '');
   if (!name) { try { name = new URL(id).hostname; } catch { name = 'MCP client'; } }

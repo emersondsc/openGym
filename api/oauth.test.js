@@ -129,6 +129,25 @@ describe('oauth unidade', () => {
     assert.equal(r1.client.name, 'Claude');
     assert.equal(r2.ok, true);
     assert.equal(fetches, 1);
+
+    // ChatGPT CIMD: declara token_endpoint_auth_method private_key_jwt mas inclui none em supported
+    const gpt = O.cimdClient('https://chatgpt.com/oauth/client.json', {
+      client_id: 'https://chatgpt.com/oauth/client.json',
+      client_name: 'ChatGPT',
+      redirect_uris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
+      grant_types: ['authorization_code', 'refresh_token'],
+      token_endpoint_auth_method: 'private_key_jwt',
+      token_endpoint_auth_methods_supported: ['none', 'private_key_jwt']
+    });
+    assert.equal(gpt.ok, true);
+    assert.equal(gpt.client.name, 'ChatGPT');
+
+    const semNone = O.cimdClient('https://outro.example/client.json', {
+      client_id: 'https://outro.example/client.json',
+      redirect_uris: ['https://outro.example/cb'],
+      token_endpoint_auth_method: 'private_key_jwt'
+    });
+    assert.equal(semNone.ok, false);
   });
 
   test('convidado recebe apenas read e dono recebe write; limite de 10 evicta mais antigo', () => {
