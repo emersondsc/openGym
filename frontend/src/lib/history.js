@@ -4,6 +4,7 @@ import { isCardio, isBodyweightEq } from './exercises.js'
 import { t } from './i18n.js'
 import { normUnit, unitOfSet, toKg, fromKg } from './units.js'
 import { NATIVE_SET_ROLES, resolveRoleClass, resolveRoleName, normSetReps, isValidSetReps } from './set-roles.js'
+import { effectiveRoutineIdsForDate } from './schedule.js'
 
 // How an exercise is logged (issue #16). This used to be derived from the body part alone,
 // which meant a plank or a farmer's carry could only be timed by filing it under cardio.
@@ -301,12 +302,15 @@ export function bestEntryFor(S, exId, exclude) {
   return { w, d, src }
 }
 export function bestWeightFor(S, exId, exclude) { return bestEntryFor(S, exId, exclude).w }
+export function effectiveRoutineIds(S, iso) {
+  return effectiveRoutineIdsForDate(S, iso, todayISO())
+}
+export function effectiveRoutines(S, iso) {
+  const byId = new Map((S?.routines || []).map(r => [r.id, r]))
+  return effectiveRoutineIds(S, iso).map(id => byId.get(id)).filter(Boolean)
+}
 export function effectiveRoutineId(S, iso) {
-  const ov = S.dayPlan[iso]
-  if (ov === 'rest') return null
-  if (ov && S.routines.some(r => r.id === ov)) return ov
-  const wd = new Date(iso + 'T12:00:00').getDay()
-  return S.week[wd] || null
+  return effectiveRoutineIds(S, iso)[0] || null
 }
 export function effectiveRoutine(S, iso) {
   const id = effectiveRoutineId(S, iso)

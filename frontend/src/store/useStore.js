@@ -31,7 +31,7 @@ export const DEF = {
   // Estado antigo nao tem a chave: o Object.assign com o DEF devolve `false` e a folha
   // aparece na proxima abertura, que e exatamente o que se quer para quem ja usa o app.
   skinIntro: false,
-  bodyweight: [], routines: [], week: {}, dayPlan: {},
+  bodyweight: [], routines: [], week: {}, weekMode: {}, scheduleMode: 'fixed', rotation: [], dayPlan: {},
   exWeights: {}, exNotes: {}, workouts: [], active: null, customEx: [], gifSize: 'mini',
   // GIF starts minimized (2026-07). gifSizeChosen is written ONLY by the Minimize/Expand button:
   // a state saved before this change carries gifSize 'full' from the old default, and pullState

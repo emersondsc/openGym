@@ -12,18 +12,19 @@ import { starterRoutines } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
-import { Button, Slider, Switch, Segmented, SelectRow, Row, TextField, TextArea } from './components/ui.jsx'
+import { Button, NumberField, Slider, Switch, Segmented, SelectRow, Row, TextField, TextArea } from './components/ui.jsx'
 import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
 import StylePreview from './components/StylePreview.jsx'
 import { loadOfWorkouts } from './lib/muscles.js'
+import { dayIdsOf, encodeDayIds, dayModeOf, rotationItemsOf, advanceRotationOnFinish } from './lib/schedule.js'
 import { removeWorkout } from './lib/workout-edit.js'
 import { runsOn, runDays } from './lib/activities.js'
 import RunRow from './components/RunRow.jsx'
 import { NOTE_MAX, NOTE_TYPES, noteLength, notesOf, applyNote, routineExOf, withoutNote } from './lib/notes.js'
 import { NOTE_META, NOTE_ORDER, NoteLines } from './components/NoteList.jsx'
 import { parseImport, mergeImport } from './lib/import-csv.js'
-import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
+import { buildPlanBundle, buildRoutineBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { MOBILE, shareExport } from './lib/mobile.js'
 import { unitOfCfg, unitOfEntry, normUnit } from './lib/units.js'
@@ -962,6 +963,47 @@ export const glyphPicker = (current, onPick) => {
   </>)
 }
 
+export const ARCHIVE_FOLDER = '__archive__'
+
+function FolderPicker({ current, folders, onPick, close }) {
+  const [name, setName] = useState(current && current !== ARCHIVE_FOLDER ? current : '')
+  const pick = v => { close(); onPick(v || null) }
+  const customFolders = [...new Set((folders || []).filter(f => f && f !== ARCHIVE_FOLDER))]
+  return <>
+    <h3>{t('Folder')}</h3>
+    <div className="muted small" style={{ marginBottom: 14 }}>{t('Group routines by block or by goal. Put old ones in Archive, it stays folded.')}</div>
+    <TextField
+      value={name}
+      onChange={e => setName(e.target.value)}
+      placeholder={t('Folder name')}
+      maxLength={40}
+      onKeyDown={e => { if (e.key === 'Enter' && name.trim()) pick(name.trim()) }}
+    />
+    <div className="chips" style={{ margin: '12px 0 14px' }}>
+      {current && <button type="button" className="chip" onClick={() => pick(null)}>{t('None')}</button>}
+      <button type="button" className={'chip' + (current === ARCHIVE_FOLDER ? ' on' : '')} onClick={() => pick(ARCHIVE_FOLDER)}>{t('Archive')}</button>
+      {customFolders.map(f => (
+        <button key={f} type="button" className={'chip' + (current === f ? ' on' : '')} onClick={() => pick(f)}>{f}</button>
+      ))}
+    </div>
+    <Button variant="primary" disabled={!name.trim()} onClick={() => pick(name.trim())}>{t('Save')}</Button>
+  </>
+}
+export const folderPickerSheet = (current, folders, onPick) =>
+  ui().openSheet(close => <FolderPicker current={current} folders={folders} onPick={onPick} close={close} />)
+
+export async function shareRoutine(routine) {
+  const st = S()
+  const bundle = buildRoutineBundle(st, routine)
+  const json = JSON.stringify(bundle, null, 2)
+  const slug = (routine?.name || 'routine').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'routine'
+  const fileName = `opengym-${slug}-${todayISO()}.json`
+  if (MOBILE) { try { await shareExport(json, fileName) } catch { /* dismissed */ } return }
+  const blob = new Blob([json], { type: 'application/json' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fileName; a.click(); URL.revokeObjectURL(a.href)
+  toast(t('Routine file saved — send it to a friend'))
+}
+
 /* ============================ share / print / import a plan ============================ */
 export const planToolsSheet = () => ui().openSheet(close => <PlanTools close={close} />)
 
@@ -1060,7 +1102,7 @@ function PlanImport({ bundle, close }) {
 function DayOverride({ iso, close }) {
   const st = useStore(s => s.S)
   const wd = new Date(iso + 'T12:00:00').getDay()
-  const weeklyR = st.routines.find(r => r.id === st.week[wd])
+  const weeklyName = dayIdsOf(st.week[wd]).map(id => st.routines.find(r => r.id === id)?.name).filter(Boolean).join(' + ')
   const hasOvr = st.dayPlan[iso] !== undefined
   const effId = effectiveRoutineId(st, iso)
   const set = v => {
@@ -1070,7 +1112,7 @@ function DayOverride({ iso, close }) {
   }
   return <>
     <h3>{fmtDate(iso, true)}</h3>
-    <div className="muted small" style={{ marginBottom: 12 }}>{t('Weekly plan:')} {weeklyR ? weeklyR.name : t('Rest')}{hasOvr && <span style={{ color: 'var(--orange)' }}> · {t('changed for this day')}</span>}<br />{t('Sick, missed a day or want a different session? Pick what to train instead.')}</div>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Weekly plan:')} {weeklyName || t('Rest')}{hasOvr && <span style={{ color: 'var(--orange)' }}> · {t('changed for this day')}</span>}<br />{t('Sick, missed a day or want a different session? Pick what to train instead.')}</div>
     <div className="list">
       {st.routines.map(r => <div key={r.id} className="item" onClick={() => set(r.id)}>
         <span className="lrow-i"><Icon name={glyphOf(r.emoji)} /></span>
@@ -1086,19 +1128,91 @@ export const dayOverrideSheet = iso => ui().openSheet(close => <DayOverride iso=
 
 function DayAssign({ day, close }) {
   const st = useStore(s => s.S)
-  const set = v => { update(s => { if (v) s.week[day] = v; else delete s.week[day] }); close() }
+  const [sel, setSel] = useState(() => dayIdsOf(st.week?.[day]).filter(id => st.routines.some(r => r.id === id)))
+  const [mode, setMode] = useState(() => dayModeOf(st, day))
+  const toggle = rid => setSel(cur => (cur.includes(rid) ? cur.filter(x => x !== rid) : [...cur, rid]))
+  const commit = () => {
+    update(s => {
+      const encoded = encodeDayIds(sel)
+      if (encoded === undefined) {
+        delete s.week[day]
+        if (s.weekMode) delete s.weekMode[day]
+      } else {
+        s.week[day] = encoded
+        if (Array.isArray(encoded)) {
+          s.weekMode = s.weekMode || {}
+          s.weekMode[day] = mode
+        } else if (s.weekMode) {
+          delete s.weekMode[day]
+        }
+      }
+    })
+    close()
+  }
   return <>
     <h3>{t(DAYN[day])}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Pick one routine, or more to train them together.')}</div>
     <div className="list">
-      <div className="item" onClick={() => set('')}><span className="lrow-i flat" style={{ background: 'var(--surface-3)' }}><Icon name="moon" /></span><div className="grow"><div className="tt">{t('Rest day')}</div></div>{!st.week[day] && <Icon name="check" className="accent" />}</div>
-      {st.routines.map(r => <div key={r.id} className="item" onClick={() => set(r.id)}>
-        <span className="lrow-i"><Icon name={glyphOf(r.emoji)} /></span>
-        <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
-        {st.week[day] === r.id && <Icon name="check" className="accent" />}</div>)}
+      <button type="button" className="item" aria-pressed={!sel.length} onClick={() => setSel([])}>
+        <span className="plan-ico rest"><Icon name="moon" /></span>
+        <div className="grow"><div className="tt">{t('Rest day')}</div></div>
+        {!sel.length && <Icon name="check" className="accent" />}
+      </button>
+      {st.routines.map(r => {
+        const on = sel.includes(r.id)
+        return <button type="button" key={r.id} className="item" aria-pressed={on} onClick={() => toggle(r.id)}>
+          <span className={'plan-ico' + (on ? ' acc' : ' dim')}><Icon name={glyphOf(r.emoji)} /></span>
+          <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
+          {on && <Icon name="check" className="accent" />}
+        </button>
+      })}
     </div>
+    {sel.length >= 2 && <div style={{ marginTop: 14 }}>
+      <div className="row between" style={{ gap: 10 }}>
+        <span className="small muted">{t('Train them')}</span>
+        <Segmented className="seg-inline" options={[{ value: 'together', label: t('Together') }, { value: 'separate', label: t('Separately') }]} value={mode} onChange={setMode} />
+      </div>
+      <div className="dim small" style={{ marginTop: 6 }}>
+        {mode === 'together' ? t('One workout, one after the other.') : t('Pick which one to start from Home.')}
+      </div>
+    </div>}
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={commit}>{t('Done')}</Button>
   </>
 }
 export const dayAssignSheet = day => ui().openSheet(close => <DayAssign day={day} close={close} />)
+
+function RotationAdd({ close }) {
+  const st = useStore(s => s.S)
+  const inLoop = new Set(rotationItemsOf(st).map(x => x.rid))
+  const add = rid => {
+    update(s => {
+      s.rotation = Array.isArray(s.rotation) ? s.rotation : []
+      s.rotation.push({ id: uid(), rid, done: false })
+    })
+    close()
+  }
+  return <>
+    <h3>{t('Add to the rotation')}</h3>
+    <div className="list" style={{ marginTop: 10 }}>
+      <button type="button" className="item" onClick={() => add('rest')}>
+        <span className="plan-ico rest"><Icon name="moon" /></span>
+        <div className="grow">
+          <div className="tt">{t('Rest day')}</div>
+          <div className="ss">{t('A day off before the next one')}</div>
+        </div>
+      </button>
+      {st.routines.map(r => <button type="button" key={r.id} className="item" onClick={() => add(r.id)}>
+        <span className="plan-ico dim"><Icon name={glyphOf(r.emoji)} /></span>
+        <div className="grow">
+          <div className="tt">{r.name}</div>
+          <div className="ss">{inLoop.has(r.id) ? t('Already in the loop: adds it again') : exCount(r.ex.length)}</div>
+        </div>
+      </button>)}
+    </div>
+  </>
+}
+export const rotationAddSheet = () => ui().openSheet(close => <RotationAdd close={close} />)
 
 /* ============================ workout detail ============================ */
 function WorkoutDetail({ w, close }) {
@@ -1274,6 +1388,44 @@ export function startFlow(routineId) {
   // tapping a workout starts it immediately. beginWorkout already tolerates a missing bw.
   beginWorkout(routineId)
 }
+export function startDayFlow(routines, mode = 'together') {
+  if (!routines || !routines.length) { startFlow(null); return }
+  if (routines.length === 1) { startFlow(routines[0].id); return }
+  if (mode === 'separate') {
+    ui().openSheet(close => <>
+      <h3>{t('Which workout today?')}</h3>
+      <div className="list" style={{ marginTop: 10 }}>
+        {routines.map(r => <button type="button" key={r.id} className="item" onClick={() => { close(); startFlow(r.id) }}>
+          <span className="plan-ico acc"><Icon name={glyphOf(r.emoji)} /></span>
+          <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
+          <Icon name="chevronRight" className="chev" />
+        </button>)}
+      </div>
+    </>)
+    return
+  }
+  beginCombinedWorkout(routines.map(r => r.id))
+}
+export function beginCombinedWorkout(routineIds, bw) {
+  const st = S()
+  const rs = (routineIds || []).map(id => st.routines.find(x => x.id === id)).filter(Boolean)
+  if (!rs.length) { beginWorkout(null, bw); return }
+  if (rs.length === 1) { beginWorkout(rs[0].id, bw); return }
+  const entries = rs.flatMap(r => (r.ex || []).map(cfg => {
+    const entry = { id: cfg.id, sg: cfg.sg, target: withoutNote(cfg), setsTagged: true, sets: buildSets(st, cfg) }
+    if (isValidRest(cfg.restSec)) entry.restSec = cfg.restSec
+    return entry
+  }))
+  update(s => {
+    s.active = {
+      id: uid(), d: todayISO(), start: Date.now(),
+      routineId: rs[0].id, routineIds: rs.map(r => r.id),
+      name: rs.map(r => r.name).join(' + '), bw: bw || null, cur: 0, entries
+    }
+  })
+  useUI.getState().stopRest()
+  nav('/workout')
+}
 export function beginWorkout(routineId, bw) {
   const st = S()
   const r = routineId ? st.routines.find(x => x.id === routineId) : null
@@ -1417,6 +1569,7 @@ function doFinishWorkout() {
       if (mx > 0) { const cur = s.exWeights[e.id]; if (!cur || mx > cur.w) s.exWeights[e.id] = { w: mx, d: w.d } }
     })
     s.workouts.push(w)
+    advanceRotationOnFinish(s, A.routineIds || A.routineId)
     s.active = null
   })
   useUI.getState().stopRest()

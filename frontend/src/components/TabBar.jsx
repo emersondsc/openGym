@@ -1,12 +1,13 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { effectiveRoutine } from '../lib/history.js'
+import { effectiveRoutines } from '../lib/history.js'
+import { dayModeOf } from '../lib/schedule.js'
 import { todayISO } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import Icon from './Icon.jsx'
 
-export default function TabBar({ onStart }) {
+export default function TabBar({ onStart, onStartDay }) {
   const nav = useNavigate()
   const loc = useLocation()
   const S = useStore(s => s.S)
@@ -20,8 +21,14 @@ export default function TabBar({ onStart }) {
   const startWorkout = () => {
     if (guard && !guard('/workout')) return
     if (!S.active) {
-      const r = effectiveRoutine(S, todayISO())
-      if (r && r.ex.length) { onStart(r.id); return }
+      const iso = todayISO()
+      const rs = effectiveRoutines(S, iso).filter(r => r.ex.length)
+      if (rs.length > 1 && onStartDay) {
+        const mode = dayModeOf(S, new Date(iso + 'T12:00:00').getDay())
+        onStartDay(rs, mode)
+        return
+      }
+      if (rs.length === 1) { onStart(rs[0].id); return }
     }
     nav('/workout')
   }

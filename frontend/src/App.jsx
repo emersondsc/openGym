@@ -7,7 +7,7 @@ import { resolveSkin, effAccent } from './lib/format.js'
 import { setLang, useLang, effLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
-import { startFlow, styleIntroSheet } from './sheets.jsx'
+import { startFlow, startDayFlow, styleIntroSheet } from './sheets.jsx'
 import { shellMode } from './lib/setup.js'
 import Icon from './components/Icon.jsx'
 import TabBar from './components/TabBar.jsx'
@@ -122,7 +122,7 @@ function Shell() {
           )}
         </ErrorBoundary>
       </div>
-      {mode !== 'setup' && <TabBar onStart={startFlow} />}
+      {mode !== 'setup' && <TabBar onStart={startFlow} onStartDay={startDayFlow} />}
       {mode !== 'setup' && <RestTimer />}
       <Modals />
       <Toast />

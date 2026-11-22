@@ -14,6 +14,7 @@ import { NATIVE_SET_ROLES, resolveRoleClass, isValidSetReps, normSetReps } from 
 import { uid, todayISO, DAYN, fmtNum, exCount } from './format.js'
 import { t, getLang } from './i18n.js'
 import { unitOfCfg } from './units.js'
+import { dayIdsOf, encodeDayIds } from './schedule.js'
 
 const PLAN_FMT = 1
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]   // Mon-first, matching the Plan screen
@@ -64,7 +65,10 @@ function cleanEx(e) {
 /** Build the shareable bundle: every routine, the week schedule, referenced customs. */
 export function buildPlanBundle(S, name) {
   const routines = (S.routines || []).map(r => ({
-    id: r.id, name: r.name, emoji: r.emoji, ex: (r.ex || []).map(cleanEx)
+    id: r.id, name: r.name, emoji: r.emoji,
+    ...(r.folder ? { folder: r.folder } : {}),
+    ...(r.fav ? { fav: true } : {}),
+    ex: (r.ex || []).map(cleanEx)
   }))
   const usedIds = new Set(routines.flatMap(r => r.ex.map(e => e.id)))
   const customEx = (S.customEx || [])
@@ -73,6 +77,11 @@ export function buildPlanBundle(S, name) {
   const week = {}
   WEEK_ORDER.forEach(d => { if (S.week?.[d]) week[d] = S.week[d] })
   return { opengym_plan: PLAN_FMT, exported: todayISO(), name: name || '', week, routines, customEx }
+}
+
+/** Build a shareable bundle containing a single routine and its custom exercises. */
+export function buildRoutineBundle(S, routine) {
+  return buildPlanBundle({ ...S, routines: routine ? [routine] : [], week: {} }, routine?.name || '')
 }
 
 /**
@@ -165,14 +174,16 @@ export function mergePlan(s, bundle, { schedule } = {}) {
       id: nid,
       name: r.name || t('Shared routine'),
       emoji: r.emoji,
-      
+      ...(r.folder ? { folder: String(r.folder) } : {}),
+      ...(r.fav ? { fav: true } : {}),
       ex: (r.ex || []).map(e => ({ ...e, id: exIdMap[e.id] || e.id }))
     })
   })
   if (schedule) {
     WEEK_ORDER.forEach(d => { delete s.week[d] })
-    Object.entries(bundle.week || {}).forEach(([d, oldId]) => {
-      if (ridMap[oldId]) s.week[d] = ridMap[oldId]
+    Object.entries(bundle.week || {}).forEach(([d, oldVal]) => {
+      const mapped = encodeDayIds(dayIdsOf(oldVal).map(oldId => ridMap[oldId]).filter(Boolean))
+      if (mapped !== undefined) s.week[d] = mapped
     })
   }
   return { routines: bundle.routines.length }
@@ -237,23 +248,18 @@ function routineHTML(r, S) {
 
 function weekHTML(S) {
   const rows = WEEK_ORDER.map(d => {
-    const r = S.routines.find(x => x.id === S.week?.[d])
-    const val = r ? esc(r.name) : `<span class="rest">${esc(t('Rest'))}</span>`
+    const names = dayIdsOf(S.week?.[d]).map(id => S.routines.find(x => x.id === id)?.name).filter(Boolean)
+    const val = names.length ? esc(names.join(' + ')) : `<span class="rest">${esc(t('Rest'))}</span>`
     return `<div class="w-row"><div class="w-day">${esc(t(DAYN[d]))}</div><div class="w-r">${val}</div></div>`
   }).join('')
   return `<div class="week">${rows}</div>`
 }
 
-/** Full self-contained HTML for the print/PDF view. */
-export function planPrintHTML(S, owner) {
-  const routines = (S.routines || []).filter(r => r.ex && r.ex.length)
-  const body = routines.length
-    ? routines.map(r => routineHTML(r, S)).join('')
-    : `<p class="none">${esc(t('No routines yet.'))}</p>`
+function wrapPrintDoc(title, owner, contentHtml) {
   const sub = [owner, todayISO()].filter(Boolean).map(esc).join(' · ')
   const htmlLang = getLang() === 'pt' ? 'pt-BR' : getLang()
   return `<!doctype html><html lang="${esc(htmlLang)}"><head><meta charset="utf-8">
-<title>${esc(t('Weekly Training Plan'))}</title>
+<title>${esc(title)}</title>
 <style>
   @page { margin: 16mm 15mm; }
   * { box-sizing: border-box; }
@@ -301,22 +307,33 @@ export function planPrintHTML(S, owner) {
 <body><div class="doc">
   <header>
     <div class="kicker">openGym</div>
-    <h1>${esc(t('Weekly Training Plan'))}</h1>
+    <h1>${esc(title)}</h1>
     ${sub ? `<div class="sub">${sub}</div>` : ''}
   </header>
-  <h3 class="block">${esc(t('Week schedule'))}</h3>
-  ${weekHTML(S)}
-  <h3 class="block">${esc(t('Routines'))}</h3>
-  ${body}
+  ${contentHtml}
   <footer>${esc(t('Made with openGym'))} · opengym.duarte-santos.ch</footer>
 </div></body></html>`
 }
 
-/**
- * Render the plan and open the browser's print dialog (→ Save as PDF).
- * Uses a hidden iframe so we never navigate away or trip a popup blocker.
- */
-export function printPlan(S, owner) {
+/** Full self-contained HTML for the print/PDF view. */
+export function planPrintHTML(S, owner) {
+  const routines = (S.routines || []).filter(r => r.ex && r.ex.length)
+  const body = routines.length
+    ? routines.map(r => routineHTML(r, S)).join('')
+    : `<p class="none">${esc(t('No routines yet.'))}</p>`
+  return wrapPrintDoc(
+    t('Weekly Training Plan'),
+    owner,
+    `<h3 class="block">${esc(t('Week schedule'))}</h3>${weekHTML(S)}<h3 class="block">${esc(t('Routines'))}</h3>${body}`
+  )
+}
+
+/** Self-contained HTML to print a single routine as PDF. */
+export function routinePrintHTML(S, routine, owner) {
+  return wrapPrintDoc(routine?.name || t('Routine'), owner, routineHTML(routine, S))
+}
+
+function printHTMLDoc(html) {
   const ifr = document.createElement('iframe')
   ifr.setAttribute('aria-hidden', 'true')
   ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;'
@@ -331,8 +348,16 @@ export function printPlan(S, owner) {
     try { w.print() } catch (e) { cleanup() }
   }
   const doc = ifr.contentWindow.document
-  doc.open(); doc.write(planPrintHTML(S, owner)); doc.close()
+  doc.open(); doc.write(html); doc.close()
   // Give the iframe a tick to lay out before printing.
   if (doc.readyState === 'complete') setTimeout(run, 120)
   else ifr.onload = () => setTimeout(run, 120)
 }
+
+/**
+ * Render the plan and open the browser's print dialog (→ Save as PDF).
+ * Uses a hidden iframe so we never navigate away or trip a popup blocker.
+ */
+export function printPlan(S, owner) { printHTMLDoc(planPrintHTML(S, owner)) }
+
+export function printRoutine(S, routine, owner) { printHTMLDoc(routinePrintHTML(S, routine, owner)) }
