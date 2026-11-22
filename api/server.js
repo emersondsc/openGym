@@ -19,6 +19,7 @@ import * as micro from './micro.js';
 import * as proposals from './proposals.js';
 import * as coachLink from './coach-link.js';
 import * as coachAccess from './coach-access.js';
+import * as oauth from './oauth.js';
 import * as diet from './diet.js';
 import { sanitizeRoutineEntry, validateCustomSetRoles } from './set-roles.js';
 import { sanitizeActivities } from './activities.js';
@@ -37,6 +38,9 @@ const RP_NAME = process.env.RP_NAME || 'openGym';
 const COACH_OWNER_UID = (process.env.COACH_OWNER_UID || '').trim();
 // Gravação direta do treinador (spec_gravacao_direta_treinador.md). Sem a variável, tudo pede passkey.
 const COACH_AUTO_APPLY = process.env.COACH_AUTO_APPLY === '1';
+const MCP_RESOURCE = (process.env.MCP_RESOURCE || 'https://gym-mcp.edsc.fun/mcp').trim().replace(/\/+$/, '');
+const COACH_LINKS_DIR = process.env.COACH_LINKS_DIR || '/coach-links';
+const OAUTH_ORIGIN = ORIGIN.replace(/\/+$/, '');
 // Admin dashboard (issue): admins are matched by uid; INVITE_ONLY gates new signups behind a
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -61,10 +65,12 @@ if (!fs.existsSync(secretFile)) fs.writeFileSync(secretFile, crypto.randomBytes(
 const SECRET = fs.readFileSync(secretFile, 'utf8').trim();
 
 const dbFile = path.join(DATA, 'db.json');
-let db = { users: [], creds: [], subs: [], invites: [] };
+let db = { users: [], creds: [], subs: [], invites: [], oauthClients: [], oauthTokens: [] };
 try { db = JSON.parse(fs.readFileSync(dbFile, 'utf8')); } catch {}
 db.subs = db.subs || [];
 db.invites = db.invites || [];
+db.oauthClients = db.oauthClients || [];
+db.oauthTokens = db.oauthTokens || [];
 const isAdmin = user => !!user && (user.admin === true || ADMIN_UIDS.includes(user.id));
 const publicUser = user => ({ id: user.id, name: user.name, admin: isAdmin(user),
   coachOwner: !!COACH_OWNER_UID && user.id === COACH_OWNER_UID,
@@ -471,6 +477,59 @@ async function readBody(req) {
   try { return raw.length ? JSON.parse(raw) : {}; }
   catch { return {}; }
 }
+function readForm(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', d => {
+      size += d.length;
+      if (size > 16384) { reject(new Error('body too large')); req.destroy(); return; }
+      chunks.push(d);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (/json/i.test(req.headers['content-type'] || '')) {
+        try {
+          const o = JSON.parse(raw || '{}');
+          return resolve(new URLSearchParams(Object.entries(o).map(([k, v]) => [k, String(v)])));
+        } catch { return resolve(new URLSearchParams()); }
+      }
+      resolve(new URLSearchParams(raw));
+    });
+    req.on('error', reject);
+  });
+}
+const oauthJson = (res, status, body) => {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Pragma: 'no-cache' });
+  res.end(JSON.stringify(body));
+};
+const redirectTo = (res, location) => { res.writeHead(302, { Location: location, 'Cache-Control': 'no-store' }); res.end(); };
+const oauthPending = new Map();
+const oauthCodes = new Map();
+const CIMD_LOOKUP = oauth.publicLookup();
+const oauthAnon = new Map();
+const OAUTH_ANON_MAX = Math.max(1, +(process.env.OAUTH_ANON_PER_MIN || 30) || 30);
+function oauthBudget(req, res) {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',').pop().trim() || 'local';
+  const now = Date.now();
+  let b = oauthAnon.get(ip);
+  if (!b || now - b.start >= 60000) {
+    if (oauthAnon.size > 5000) oauthAnon.clear();
+    b = { start: now, n: 0 };
+  }
+  b.n++;
+  oauthAnon.set(ip, b);
+  if (b.n > OAUTH_ANON_MAX) {
+    const wait = Math.max(1, Math.ceil((b.start + 60000 - now) / 1000));
+    json(res, 429, { error: 'too many requests' }, { 'Retry-After': String(wait) });
+    return false;
+  }
+  return true;
+}
+const userById = uid => db.users.find(u => u.id === uid) || null;
+function syncOauth() {
+  try { oauth.syncCoachState(COACH_LINKS_DIR, db, userById, COACH_OWNER_UID); }
+  catch (e) { console.error('[og-oauth] sync', e.message); }
+}
 const b64uToBuf = s => Buffer.from(s, 'base64url');
 
 /* ---------- passkeys da conta ---------- */
@@ -647,7 +706,17 @@ const routes = {
   // handler de padrão só em ROUTINE_HANDLERS.
   'POST /api/plan/micro': (req, res) => ROUTINE_HANDLERS.publishMicro(req, res),
   'GET /api/proposals': (req, res) => ROUTINE_HANDLERS.listProposals(req, res),
-  'GET /api/coach-link': (req, res) => COACH_LINK.getLink(req, res),
+  'GET /api/coach-link': (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in', code: 'UNAUTH' });
+    let linkBody = null;
+    COACH_LINK.getLink(req, {
+      writeHead: () => {},
+      end: s => { try { linkBody = JSON.parse(s); } catch { linkBody = {}; } }
+    });
+    const base = linkBody || { linked: null, allowed: null, owner: !!COACH_OWNER_UID && user.id === COACH_OWNER_UID };
+    json(res, 200, { ...base, connectorUrl: MCP_RESOURCE, oauthConnections: oauth.listForUser(db, user.id) });
+  },
   'POST /api/coach-link/challenge': (req, res) => COACH_LINK.challengeLink(req, res),
   'POST /api/coach-link/start': (req, res) => COACH_LINK.startLink(req, res),
   'POST /api/coach-link/unlink': (req, res) => COACH_LINK.unlink(req, res),
@@ -656,6 +725,99 @@ const routes = {
   // a entrada vem assinada pelo time e a resposta sai assinada pela chave do app.
   'GET /api/coach-access/keys': (req, res) => COACH_ACCESS.keys(req, res),
   'POST /api/coach-access/evaluate': (req, res) => COACH_ACCESS.evaluate(req, res),
+
+  // OAuth 2.1 nativo do conector MCP (substitui o fluxo Cloudflare Access + e-mail/OTP).
+  'GET /.well-known/oauth-authorization-server': (req, res) => oauthJson(res, 200, oauth.authServerMetadata(OAUTH_ORIGIN)),
+  'GET /.well-known/openid-configuration': (req, res) => oauthJson(res, 200, oauth.authServerMetadata(OAUTH_ORIGIN)),
+  'POST /api/oauth/register': async (req, res) => {
+    if (!oauthBudget(req, res)) return;
+    const body = await readBody(req);
+    const r = oauth.registerClient(db, body);
+    if (r.status === 201) saveDb();
+    oauthJson(res, r.status, r.body);
+  },
+  'GET /api/oauth/authorize': async (req, res) => {
+    if (!oauthBudget(req, res)) return;
+    const q = new URL(req.url, 'http://x').searchParams;
+    const opts = { issuer: OAUTH_ORIGIN, resource: MCP_RESOURCE };
+    if (oauth.isCimdId(q.get('client_id'))) {
+      const c = await oauth.resolveCimd(q.get('client_id'), { lookup: CIMD_LOOKUP });
+      if (!c.ok) {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end('openGym could not start this sign-in: ' + c.error);
+      }
+      opts.client = c.client;
+    }
+    const r = oauth.startAuthorize(db, q, oauthPending, Date.now(), opts);
+    if (r.ok) return redirectTo(res, `${OAUTH_ORIGIN}/#/connect/${r.request.id}`);
+    if (r.redirect) return redirectTo(res, r.redirect);
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('openGym could not start this sign-in: ' + r.error);
+  },
+  'GET /api/oauth/request': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const id = new URL(req.url, 'http://x').searchParams.get('id') || '';
+    const d = oauth.describeRequest(oauthPending, id, user, COACH_OWNER_UID);
+    if (!d) return json(res, 404, { error: 'this sign-in has expired; start it again from the assistant', code: 'expired' });
+    json(res, 200, d);
+  },
+  'POST /api/oauth/approve': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const r = oauth.approve(oauthPending, oauthCodes, String(body.id || ''), user, db, { ownerUid: COACH_OWNER_UID });
+    if (!r.ok) return json(res, r.status, { error: r.error, code: 'expired' });
+    saveDb();
+    syncOauth();
+    console.log(`[og-oauth] op=approve uid=${user.id} assistant=${r.row.assistant}`);
+    json(res, 200, { redirect: r.redirect });
+  },
+  'POST /api/oauth/deny': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const r = oauth.deny(oauthPending, String(body.id || ''));
+    if (!r.ok) return json(res, r.status, { error: r.error, code: 'expired' });
+    json(res, 200, { redirect: r.redirect });
+  },
+  'POST /api/oauth/token': async (req, res) => {
+    let form;
+    try { form = await readForm(req); }
+    catch { return oauthJson(res, 413, { error: 'invalid_request', error_description: 'body too large' }); }
+    if (!form.get('client_id')) {
+      const id = oauth.basicClientId(req.headers.authorization);
+      if (id) form.set('client_id', id);
+    }
+    if (form.get('grant_type') === 'refresh_token') {
+      const r = oauth.refresh(db, form, userById, COACH_OWNER_UID);
+      if (r.changed) { saveDb(); syncOauth(); }
+      return oauthJson(res, r.status, r.body);
+    }
+    const r = oauth.exchange(oauthCodes, form, db);
+    if (r.status === 200) saveDb();
+    oauthJson(res, r.status, r.body);
+  },
+  'POST /api/oauth/revoke': async (req, res) => {
+    let form;
+    try { form = await readForm(req); }
+    catch { res.writeHead(200, { 'Cache-Control': 'no-store' }); return res.end(); }
+    if (oauth.revokeByValue(db, form.get('token') || '')) { saveDb(); syncOauth(); }
+    res.writeHead(200, { 'Cache-Control': 'no-store' });
+    res.end();
+  },
+  'POST /api/oauth/connections/revoke': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const n = oauth.revokeForUser(db, user.id, body.id ? String(body.id) : null);
+    if (n > 0) {
+      saveDb();
+      syncOauth();
+      console.log(`[og-oauth] op=revoke uid=${user.id} count=${n}`);
+    }
+    json(res, 200, { ok: true, connections: oauth.listForUser(db, user.id) });
+  },
 
   // Public config the login screen needs before anyone is signed in.
   'GET /api/config': async (req, res) => json(res, 200, { invite_only: INVITE_ONLY }),
@@ -870,7 +1032,9 @@ const routes = {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
     user.sv = sessionVersion(user) + 1;
+    oauth.revokeForUser(db, user.id);
     saveDb();
+    syncOauth();
     json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie });
   },
 
@@ -1101,8 +1265,10 @@ const routes = {
     if (u.disabled) {
       presence.delete(u.id);   // drop them off "training now" at once
       COACH_LINK.removerUsuario(u.id);   // e do treinador do chat: lista do Cloudflare e ligação
+      oauth.revokeForUser(db, u.id);
     }
     saveDb();
+    if (u.disabled) syncOauth();
     json(res, 200, { ok: true, id: u.id, disabled: u.disabled });
   },
 
@@ -1264,4 +1430,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     try { proposals.gravarPolitica(process.env.PROPOSALS_DIR || '/coach-proposals', COACH_AUTO_APPLY); }
     catch (e) { console.error('[og-proposal] politica', e.message); }
   }
+  syncOauth();
 }

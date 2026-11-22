@@ -6,10 +6,11 @@ import { coachStage, errorText, minutesLeft } from './coach-link-time.js'
 export const CONNECTOR_URL = 'https://gym-mcp.edsc.fun/mcp'
 const post = (url, body) => api(url, { method: 'POST', body: JSON.stringify(body || {}) })
 
-/** `{linked, allowed, owner}`: ligação, e-mail ativado e se é o dono. */
+/** `{linked, allowed, owner, connectorUrl, oauthConnections}` */
 export const getCoachAccess = () => api('/api/coach-link')
 export const getCoachLink = () => getCoachAccess().then(r => r.linked)
 export const unlinkCoach = () => post('/api/coach-link/unlink')
+export const revokeOauthConnection = id => post('/api/oauth/connections/revoke', id ? { id } : {})
 /** Passkey com biometria ou PIN e, de volta, o código de uso único. */
 export async function startCoachLink() {
   const challenge = await post('/api/coach-link/challenge')
