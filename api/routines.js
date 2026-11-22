@@ -299,7 +299,17 @@ export function mergeRoutine(cur, body, catalog, custom, customRoles = null) {
 /** Remove a rotina de week/dayPlan. workouts[] fica INTACTO (histórico é registro, não ponteiro). */
 export function sweepRoutineRefs(S, rid) {
   let weekCleaned = 0, dayPlanCleaned = 0;
-  for (const k of Object.keys(S.week || {})) if (S.week[k] === rid) { delete S.week[k]; weekCleaned++; }
+  for (const k of Object.keys(S.week || {})) {
+    const v = S.week[k];
+    if (v === rid) { delete S.week[k]; weekCleaned++; }
+    else if (Array.isArray(v) && v.includes(rid)) {
+      const next = v.filter(x => x !== rid);
+      if (!next.length) delete S.week[k];
+      else S.week[k] = next.length === 1 ? next[0] : next;
+      weekCleaned++;
+    }
+  }
+  if (Array.isArray(S.rotation)) S.rotation = S.rotation.filter(x => (typeof x === 'string' ? x !== rid : x?.rid !== rid));
   for (const k of Object.keys(S.dayPlan || {})) if (S.dayPlan[k] === rid) { delete S.dayPlan[k]; dayPlanCleaned++; }
   const orphanWorkouts = (S.workouts || []).filter(w => w.routineId === rid).length;
   return { weekCleaned, dayPlanCleaned, orphanWorkouts };

@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, isValidRest } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr, exName } from '../lib/exercises.js'
-import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, targetSummary, targetEffortLabel, repsLabel } from '../lib/history.js'
+import { effectiveRoutines, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, defaultConfig, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, fmtSec, targetSummary, targetEffortLabel, repsLabel } from '../lib/history.js'
+import { dayModeOf } from '../lib/schedule.js'
 import { resolveRoleClass, resolveRoleName } from '../lib/set-roles.js'
 import { fmtNum, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
 import { api } from '../lib/api.js'
 import Media from '../components/Media.jsx'
-import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet, openNotes } from '../sheets.jsx'
+import { startFlow, startDayFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet, openNotes } from '../sheets.jsx'
 import { notesOf, applyNote } from '../lib/notes.js'
 import { NoteChip, NoteLines } from '../components/NoteList.jsx'
 import Icon from '../components/Icon.jsx'
@@ -24,18 +25,22 @@ import EffortSheet from '../components/EffortSheet.jsx'
 function StartChooser() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
-  const todayR = effectiveRoutine(S, todayISO())
+  const todayRs = effectiveRoutines(S, todayISO())
+  const todayR = todayRs[0] || null
+  const todayName = todayRs.map(r => r.name).join(' + ')
+  const todayTotalEx = todayRs.reduce((n, r) => n + r.ex.length, 0)
   const todayOvr = S.dayPlan[todayISO()] !== undefined
-  const others = S.routines.filter(r => r !== todayR)
+  const todaySet = new Set(todayRs.map(r => r.id))
+  const others = S.routines.filter(r => !todaySet.has(r.id))
   return <div className="narrow">
-    <div className="hdr"><div><h1>{t('Start workout')}</h1><div className="sub">{t(DAYN[new Date().getDay()])} — {todayR ? t('today is {0}', todayR.name) : t('rest day, but no one’s stopping you')}</div></div></div>
+    <div className="hdr"><div><h1>{t('Start workout')}</h1><div className="sub">{t(DAYN[new Date().getDay()])} — {todayR ? t('today is {0}', todayName) : t('rest day, but no one’s stopping you')}</div></div></div>
     {todayR && <div className="card" style={{ borderColor: 'var(--acc)' }}>
       <h2 className="accent">{t("Today's plan")}{todayOvr ? ' · ' + t('rescheduled') : ''}</h2>
       <div className="row between" style={{ marginBottom: 12 }}>
-        <div><div className="big">{todayR.name}</div><div className="muted small">{exCount(todayR.ex.length)}</div></div>
+        <div><div className="big">{todayName}</div><div className="muted small">{exCount(todayTotalEx)}</div></div>
         <span className="lrow-i" style={{ width: 38, height: 38, borderRadius: 'var(--r-sm)', fontSize: 22 }}><Icon name={glyphOf(todayR.emoji)} /></span>
       </div>
-      <Button variant="primary" icon="play" onClick={() => startFlow(todayR.id)}>{t('Start {0}', todayR.name)}</Button>
+      <Button variant="primary" icon="play" onClick={() => startDayFlow(todayRs, dayModeOf(S, new Date().getDay()))}>{t('Start {0}', todayName)}</Button>
     </div>}
     {others.length > 0 && <><h4 className="sec">{t('Other routines')}</h4>
       <div className="list">{others.map(r => <div key={r.id} className="item" onClick={() => startFlow(r.id)}>

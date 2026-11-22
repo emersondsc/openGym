@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
-import { effectiveRoutine, effectiveRoutineId, streakWeeks, setsDoneActive } from '../lib/history.js'
+import { effectiveRoutines, effectiveRoutineId, streakWeeks, setsDoneActive } from '../lib/history.js'
+import { dayIdsOf, dayModeOf } from '../lib/schedule.js'
 import { loadOfRoutine, loadOfWorkouts, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
 import { todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
-import { dayOverrideSheet, calendarSheet, startFlow, loadStarterPlan } from '../sheets.jsx'
+import { dayOverrideSheet, calendarSheet, startDayFlow, loadStarterPlan } from '../sheets.jsx'
 import { runsOf, runDays, fmtKm, fmtPace, paceOf } from '../lib/activities.js'
 import { thisWeekKm } from '../lib/run-stats.js'
 import { EXIDX } from '../lib/exercises.js'
@@ -26,7 +27,9 @@ export default function Home() {
   const [weekOffset, setWeekOffset] = useState(0)
 
   const today = new Date()
-  const routine = effectiveRoutine(S, todayISO())
+  const todayRs = effectiveRoutines(S, todayISO())
+  const routine = todayRs[0] || null
+  const todayName = todayRs.map(r => r.name).join(' + ')
   const todayOvr = S.dayPlan[todayISO()] !== undefined
 
   const monday = new Date(today); monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) + weekOffset * 7)
@@ -45,7 +48,7 @@ export default function Home() {
   const wkLabel = weekOffset === 0 ? t('This week') : `${monday.getDate()} ${monday.toLocaleDateString(dateLocale(), { month: 'short' })} – ${sunday.getDate()} ${sunday.toLocaleDateString(dateLocale(), { month: 'short' })}`
 
   const wThisWeek = S.workouts.filter(w => weekKey(w.d) === weekKey(todayISO())).length
-  const plannedPerWeek = Object.keys(S.week).filter(k => S.week[k]).length
+  const plannedPerWeek = Object.keys(S.week).filter(k => dayIdsOf(S.week[k]).length > 0).length
 
   // Planned weekly volume per muscle (spec_home_weekly_volume_card.md): effective
   // routine of each day in the strip week -> loadOfRoutine, ranked; follows weekOffset.
@@ -53,11 +56,13 @@ export default function Home() {
   let nPlan = 0
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday); d.setDate(monday.getDate() + i)
-    const r = S.routines.find(r => r.id === effectiveRoutineId(S, isoOf(d)))
-    if (!r) continue
+    const rs = effectiveRoutines(S, isoOf(d))
+    if (!rs.length) continue
     nPlan++
-    const l = loadOfRoutine(r)
-    for (const k in l) plan[k] = (plan[k] || 0) + l[k]
+    for (const r of rs) {
+      const l = loadOfRoutine(r)
+      for (const k in l) plan[k] = (plan[k] || 0) + l[k]
+    }
   }
   const planWorked = rankOf(plan).worked
   const planTop = planWorked.slice(0, 4)
@@ -82,7 +87,11 @@ export default function Home() {
   const isDoneOnlyExtra = doneWorked.filter(m=>!plan[m]).slice(0,2)
 
   // today's session shown right under the week strip
-  const onToday = () => { if (S.active) nav('/workout'); else if (routine) startFlow(routine.id); else dayOverrideSheet(todayISO()) }
+  const onToday = () => {
+    if (S.active) nav('/workout')
+    else if (todayRs.length) startDayFlow(todayRs, dayModeOf(S, today.getDay()))
+    else dayOverrideSheet(todayISO())
+  }
   const runs = runsOf(S)
   const dispRunKm = thisWeekKm(runs, isoOf(monday))
   const lastRun = runs[0] || null
@@ -112,7 +121,7 @@ export default function Home() {
           </span>
           <div style={{ minWidth: 0 }}>
             <div className="lbl2">{t('Today')}</div>
-            <div className="ttl">{S.active ? t('{0} — in progress', S.active.name) : routine ? routine.name : t('Rest day')}{todayOvr && routine ? ' · ' + t('rescheduled') : ''}</div>
+            <div className="ttl">{S.active ? t('{0} — in progress', S.active.name) : routine ? todayName : t('Rest day')}{todayOvr && routine ? ' · ' + t('rescheduled') : ''}</div>
           </div>
         </div>
         {S.active ? <span className="tag" style={{ color: 'var(--orange)', background: 'color-mix(in srgb,var(--orange) 16%,transparent)' }}>{t('Resume')}</span>

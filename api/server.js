@@ -270,7 +270,9 @@ function effectiveRoutineId(S, iso) {
   if (ov === 'rest') return null;
   if (ov && S.routines?.some(r => r.id === ov)) return ov;
   const wd = new Date(iso + 'T12:00:00').getDay();
-  return S.week?.[wd] || null;
+  const wv = S.week?.[wd];
+  if (Array.isArray(wv)) return wv[0] || null;
+  return wv || null;
 }
 // Computes "now" in an arbitrary IANA zone (e.g. "Europe/Lisbon") instead of the server's own —
 // each user's reminder fires by their own clock, wherever they and their phone actually are.

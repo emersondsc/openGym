@@ -990,7 +990,7 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
   .cols>*{min-width:0}
   #app .list{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  #modal-root .list,.narrow .list{display:flex;flex-direction:column}
+  #modal-root .list,#app .narrow .list{display:flex;flex-direction:column}
   .narrow{max-width:640px;margin:0 auto}
   .wnav{max-width:640px;bottom:86px}
   body:has(.wnav) #timer{bottom:152px}
@@ -1668,3 +1668,76 @@ body.resting:has(.wnav) #app{padding-bottom:calc(294px + var(--sab))}
 :root[data-skin="takt"] .run-pace-val{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
 :root[data-skin="takt"] .run-quick{border:1px solid var(--sep)}
 :root[data-skin="pulse"] .run-hero.ready{border-color:color-mix(in srgb,var(--blue) 45%,transparent)}
+
+/* ------------------------------------------------------------- plan view --- */
+.plan-seg{margin:4px 0 14px}
+.plan-how{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--surface);border-radius:var(--r-card);padding:11px 12px;
+}
+.plan-how .seg-inline button{white-space:nowrap;padding:5px 10px}
+.plan-how-lbl{
+  display:flex;align-items:center;gap:10px;min-width:0;
+  font-size:16px;font-weight:500;letter-spacing:-.01em;
+}
+.plan-ico{
+  width:32px;height:32px;border-radius:9px;flex:none;font-size:18px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--surface-2);color:var(--label-2);
+}
+.plan-ico.acc{background:var(--acc);color:var(--on-acc)}
+.plan-ico.orange{background:var(--orange);color:#fff}
+.plan-ico.rest{border-radius:50%;background:var(--surface-3);color:var(--label-2);font-size:16px}
+.plan-ico.dim{background:var(--surface-2);color:var(--label-2)}
+.plan-day-lbl{width:28px;flex:none;font-size:14px;font-weight:500;color:var(--label-2)}
+.plan-day-lbl.today{color:var(--acc);font-weight:600}
+.bodymap.bm-mini{gap:3px;flex:none;width:46px;align-items:center}
+.bodymap.bm-mini .bm-v{height:36px;max-height:36px;width:auto}
+.bodymap.bm-mini .bm-ph{height:36px;width:46px}
+.plan-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 10px;min-height:34px}
+.plan-edit-btn{font-size:15px;font-weight:500;color:var(--acc);padding:4px 2px}
+.plan-edit-btn:active{opacity:.6}
+.plan-loop-num{
+  width:24px;height:24px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;background:var(--surface-3);color:var(--label-2);
+  font-variant-numeric:tabular-nums;
+}
+.plan-loop-num.next{background:var(--acc);color:var(--on-acc)}
+.plan-del{
+  width:26px;height:26px;border-radius:50%;flex:none;
+  background:var(--red);color:#fff;font-size:14px;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform var(--fast) var(--ease);
+}
+.plan-del:active{transform:scale(.9)}
+.plan-drag{
+  width:34px;height:34px;margin:-6px -6px -6px 0;border-radius:8px;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--label-3);font-size:16px;touch-action:none;cursor:grab;
+}
+.plan-drag:active{cursor:grabbing;color:var(--label);background:var(--surface-2)}
+.item.plan-dragging{position:relative;z-index:4;box-shadow:0 10px 24px rgba(0,0,0,.35);opacity:.96}
+.plan-hint{font-size:13px;color:var(--label-2);padding:8px 4px 0;line-height:1.4}
+:root[data-skin="takt"] .plan-how{border:1px solid var(--sep)}
+:root[data-skin="takt"] .plan-ico{border-radius:var(--r-sm)}
+:root[data-skin="takt"] .plan-ico.rest{border-radius:50%}
+:root[data-skin="takt"] .plan-day-lbl,
+:root[data-skin="takt"] .plan-loop-num{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace}
+
+/* ----------------------------------------------------------- routine edit -- */
+.re-hdr{align-items:center;gap:10px}
+.re-grip{
+  width:22px;height:36px;margin:-4px -4px -4px -4px;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--label-3);font-size:16px;touch-action:none;cursor:grab;border-radius:6px;
+}
+.re-grip:active{cursor:grabbing;color:var(--label);background:var(--surface-2)}
+.re-ex-controls{display:flex;align-items:center;gap:6px;flex:none}
+.re-arrows{display:flex;flex-direction:column;gap:3px;flex:none}
+.re-arrows .iconbtn:disabled{opacity:.28;pointer-events:none}
+.plan-fav{color:var(--yellow);font-size:13px;flex:none}
+.plan-archive-btn{
+  display:flex;align-items:center;justify-content:space-between;width:100%;
+  padding:4px 2px 8px;text-align:left;
+}
