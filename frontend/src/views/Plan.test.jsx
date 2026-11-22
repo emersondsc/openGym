@@ -46,31 +46,43 @@ describe('Plan view', () => {
     }
   })
 
-  it('renders Schedule/Routines toggle, How you train, multi-routine days, Mesocycle and Diet without Coach or Weekly muscle volume', () => {
+  it('defaults to Routines on the left and omits Coach and Weekly muscle volume', () => {
     const html = renderPlan()
-    expect(html).toContain('Cronograma')
     expect(html).toContain('Rotinas')
-    expect(html).toContain('Como você treina')
-    expect(html).toContain('Semana fixa')
-    expect(html).toContain('Rotação')
-    expect(html).toContain('Push Day + Pull Day')
-    expect(html).toContain('Dia de descanso')
-    expect(html).toContain('Mesociclo')
-    expect(html).toContain('Dieta')
+    expect(html).toContain('Cronograma')
+    expect(html.indexOf('Rotinas')).toBeLessThan(html.indexOf('Cronograma'))
+    expect(html).toContain('Editar')
+    expect(html).toContain('Nova rotina')
+    expect(html).toContain('Push Day')
+    expect(html).toContain('1 exercício · Se')
     expect(html).not.toContain('Coach')
     expect(html).not.toContain('Weekly muscle volume')
     expect(html).not.toContain('Volume muscular semanal')
   })
 
-  it('renders Rotation loop mode with progress and Also on fixed days', () => {
-    mockS.scheduleMode = 'rotation'
-    mockS.rotation = [{ id: 's1', rid: 'r1', done: false }]
-    mockS.week = { 1: 'r1', 3: 'r2' }
-    const html = renderPlan()
-    expect(html).toContain('A sequência')
-    expect(html).toContain('Próxima')
-    expect(html).toContain('0 de 1 concluídas neste ciclo.')
-    expect(html).toContain('Também em dias fixos')
-    expect(html).toContain('Pull Day')
+  it('renders Schedule tab (Fixed Week and Rotation) with Mesocycle and Diet when selected', () => {
+    const prevStorage = globalThis.localStorage
+    globalThis.localStorage = { getItem: k => (k === 'gym_plan_tab_v2' ? 'schedule' : null) }
+    try {
+      const fixedHtml = renderPlan()
+      expect(fixedHtml).toContain('Como você treina')
+      expect(fixedHtml).toContain('Semana fixa')
+      expect(fixedHtml).toContain('Push Day + Pull Day')
+      expect(fixedHtml).toContain('Dia de descanso')
+      expect(fixedHtml).toContain('Mesociclo')
+      expect(fixedHtml).toContain('Dieta')
+
+      mockS.scheduleMode = 'rotation'
+      mockS.rotation = [{ id: 's1', rid: 'r1', done: false }]
+      mockS.week = { 1: 'r1', 3: 'r2' }
+      const rotHtml = renderPlan()
+      expect(rotHtml).toContain('A sequência')
+      expect(rotHtml).toContain('Próxima')
+      expect(rotHtml).toContain('0 de 1 concluídas neste ciclo.')
+      expect(rotHtml).toContain('Também em dias fixos')
+      expect(rotHtml).toContain('Pull Day')
+    } finally {
+      globalThis.localStorage = prevStorage
+    }
   })
 })

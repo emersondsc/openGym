@@ -26,7 +26,7 @@ import {
   sweepRoutineFromSchedule,
 } from '../lib/schedule.js'
 
-const PLAN_TAB_KEY = 'gym_plan_tab'
+const PLAN_TAB_KEY = 'gym_plan_tab_v2'
 
 export default function Plan() {
   const nav = useNavigate()
@@ -40,7 +40,7 @@ export default function Plan() {
   }, [user?.id, loadDiet])
 
   const [tab, setTabState] = useState(() => {
-    try { return localStorage.getItem(PLAN_TAB_KEY) === 'routines' ? 'routines' : 'schedule' } catch { return 'schedule' }
+    try { return localStorage.getItem(PLAN_TAB_KEY) === 'schedule' ? 'schedule' : 'routines' } catch { return 'routines' }
   })
   const [editRoutines, setEditRoutines] = useState(false)
   const [editLoop, setEditLoop] = useState(false)
@@ -223,8 +223,8 @@ export default function Plan() {
     <div className="plan-seg">
       <Segmented
         options={[
-          { value: 'schedule', label: t('Schedule') },
           { value: 'routines', label: t('Routines') },
+          { value: 'schedule', label: t('Schedule') },
         ]}
         value={tab}
         onChange={setTab}
