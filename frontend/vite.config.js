@@ -21,6 +21,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: backend, changeOrigin: true },
+      '/.well-known': { target: backend, changeOrigin: true },
       '/exercise-media': { target: media, changeOrigin: true },
       '/img': { target: media, changeOrigin: true },
       '/gif': { target: media, changeOrigin: true }

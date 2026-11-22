@@ -27,6 +27,7 @@ services:
       - DATA_DIR=/data
       # Time do Cloudflare Access que assina o login do conector (spec_liberacao_pelo_app.md). Nao e segredo.
       - COACH_ACCESS_TEAM=flat-snowflake-0a35.cloudflareaccess.com
+      - MCP_RESOURCE=https://gym-mcp.edsc.fun/mcp
     volumes:
       - /mnt/drivebackup/apps/openGym/data:/data         # users, passkeys, per-user state, session secret — BACK THIS UP
       # Propostas do treinador: `pending` vem do MCP e é só leitura aqui; a API grava o resto.
